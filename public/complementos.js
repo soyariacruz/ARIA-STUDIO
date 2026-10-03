@@ -26,7 +26,7 @@
   // ------------------------------------------------ Crear imagen
   const scene = () => { const b = state.comp.biblio; return b ? [b.neutro || b.prompt || '', b.drop ? '' : b.name || ''].join(' ') : ''; };
   const sceneId = () => (state.comp.biblio && state.comp.biblio.id) || 'estudio';
-  function overrides() { if (state.accFor !== sceneId()) { state.accFor = sceneId(); state.accOn = {}; } return state.accOn; }
+  function overrides() { state.accOn = state.accOn || {}; return state.accOn; }   // lo que se enciende o apaga a mano se queda así al cambiar de imagen (antes se deshacía y, p. ej., volvían los pendientes); se limpia al cambiar de personaje
   function auto(c) { if (c.regla === 'siempre') return true; if (c.regla === 'nunca') return false; const t = tipoOf(c.tipo); const txt = scene(); const ks = (c.claves || []).concat(c.clave ? String(c.clave).split('|') : []).map(k => k.trim()).filter(Boolean); return !!(t.kw && t.kw.test(txt)) || ks.some(k => new RegExp('\\b' + k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\b', 'i').test(txt)); }
   const isOn = c => { const o = overrides(); return c.id in o ? o[c.id] : auto(c); };
   window.accActive = () => list().filter(isOn);

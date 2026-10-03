@@ -770,7 +770,8 @@
   window.finishJob = function (job, st) { if (job.persona) return onJobDone(job, st); return _fin(job, st); };
   window.failJob = function (job, msg) { if (job.persona) return onJobFail(job, msg); return _fail(job, msg); };
   window.pjBody = p => bodyOf(p);   // su cuerpo en palabras, para los prompts de Crear imagen
-  window.pjEyes = p => en('ojos', p.ojos) || (p.ojosHex ? p.ojosHex + ' colored' : '');   // color de ojos para la frase de identidad (también el elegido con las barras)
+  window.pjEyes = p => en('ojos', p.ojos) || (p.ojosHex ? p.ojosHex + ' colored' : '');
+  window.pjHair = p => ({ color: colorOf(p, 'pelo') || en('peloColor', p.peloColor) || '', style: p.peinado ? (p.peinado.desc || p.peinado.name || '') : '' });   // su pelo (color y peinado) para Crear imagen: al recrear una foto no se queda el pelo de la foto   // color de ojos para la frase de identidad (también el elegido con las barras)
   window.pjStart = () => startWiz();
   window.pjReload = () => load();   // releer los personajes del disco (p. ej. al terminar una ficha nueva)
   load().then(() => { if (state.tab === 'perfil') { renderProfile(); renderSide(); } });
