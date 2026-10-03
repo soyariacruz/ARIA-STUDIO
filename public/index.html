@@ -1538,23 +1538,28 @@ nav .navlib button.more span{font-size:9px}
 .apirow{display:flex;gap:8px;flex-wrap:wrap}.apirow .pjin{flex:1;min-width:160px}.apirow .btn{flex:none}.apix{color:#ff9a9a!important}
 .apicard.apiadd{border-style:dashed}.apinote{font-size:11.5px;line-height:1.45;opacity:.75}.apinew{align-self:stretch;padding:13px!important;border-style:dashed!important}.clavesbox{max-height:92vh;overflow:auto;width:min(600px,94vw)!important}.clavesbox .clavesvid{height:64px}
 .ed.edph{min-height:18px;cursor:text}.ed.edph::before{content:attr(data-ph);opacity:.45;font-weight:400}
-.bibrow.bibone{flex-wrap:wrap}.bibrow .bibmodo{flex:1 0 100%!important;min-width:100%;display:flex;gap:6px;margin-top:2px}.bibm{flex:1;white-space:nowrap;text-align:center;font:inherit;font-size:10.5px;font-weight:700;letter-spacing:.04em;padding:5px 10px;border-radius:999px;border:1px solid var(--line);background:transparent;color:var(--mut);cursor:pointer}.bibm:hover{border-color:var(--acc);color:var(--acc)}.bibm.on{background:var(--acc);border-color:var(--acc);color:#fff}.igup{cursor:pointer;opacity:.8}.genfoot{z-index:6;padding-bottom:4px}.chardd{position:fixed;left:auto;right:auto;top:auto;width:300px;margin-top:0;z-index:300;max-height:420px}.accnone{display:flex;flex-direction:column;gap:4px;padding:10px 10px 8px;font-size:12px}.accnone span{font-size:11px;line-height:1.4;color:var(--mut)}.galmet{margin:0 0 8px;font-weight:700;color:var(--acc)}.galchars{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:8px}.galchar{display:inline-flex;align-items:center;gap:7px;font-size:13px;font-weight:700;padding:4px 12px 4px 4px;border-radius:999px;border:1px solid var(--line);background:rgba(255,255,255,.05)}.galchar img,.galchar i{width:26px;height:26px;border-radius:50%;object-fit:cover;display:block;background:var(--acc)}.galacts{display:flex;gap:8px;align-items:stretch}.galacts .btn.w{flex:1;width:auto}.galacts .btn.eye{flex:none;width:44px;padding:0;display:flex;align-items:center;justify-content:center}.igrow{display:block;margin-top:4px}.igrow .igurl{display:block;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}.igrow .igurl:has(input){overflow:visible;white-space:normal}
+.bibrow.bibone{flex-wrap:wrap}.bibrow .bibmodo{flex:1 0 100%!important;min-width:100%;display:flex;gap:6px;margin-top:2px}.bibm{flex:1;white-space:nowrap;text-align:center;font:inherit;font-size:10.5px;font-weight:700;letter-spacing:.04em;padding:5px 10px;border-radius:999px;border:1px solid var(--line);background:transparent;color:var(--mut);cursor:pointer}.bibm:hover{border-color:var(--acc);color:var(--acc)}.bibm.on{background:var(--acc);border-color:var(--acc);color:#fff}.igup{cursor:pointer;opacity:.8}.genfoot{z-index:6;padding-bottom:4px}.chardd{position:fixed;left:auto;right:auto;top:auto;width:300px;margin-top:0;z-index:300;max-height:420px}.accdd .it.accadd .emo{background:rgba(236,72,153,.10);border:2px dashed var(--acc);color:var(--acc);font-weight:700}.accnone{display:flex;flex-direction:column;gap:4px;padding:10px 10px 8px;font-size:12px}.accnone span{font-size:11px;line-height:1.4;color:var(--mut)}.galmet{margin:0 0 8px;font-weight:700;color:var(--acc)}.galchars{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:8px}.galchar{display:inline-flex;align-items:center;gap:7px;font-size:13px;font-weight:700;padding:4px 12px 4px 4px;border-radius:999px;border:1px solid var(--line);background:rgba(255,255,255,.05)}.galchar img,.galchar i{width:26px;height:26px;border-radius:50%;object-fit:cover;display:block;background:var(--acc)}.galacts{display:flex;gap:8px;align-items:stretch}.galacts .btn.w{flex:1;width:auto}.galacts .btn.eye{flex:none;width:44px;padding:0;display:flex;align-items:center;justify-content:center}.igrow{display:block;margin-top:4px}.igrow .igurl{display:block;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}.igrow .igurl:has(input){overflow:visible;white-space:normal}
 .f3card.big.mini.pjaddb .f3img{height:132px!important}
 .pjc[draggable=true]{cursor:grab}.pjc.drag{opacity:.35}.pjc.dropL{box-shadow:-4px 0 0 var(--acc)}.pjc.dropR{box-shadow:4px 0 0 var(--acc)}
 </style>
 <script>
-/* Escala de la interfaz (v153). Max la quiere legible «como con un ⌘ +»: todas las medidas en px de las hojas de estilo se multiplican por ESCALA.
+/* Escala de la interfaz (v153, adaptable desde la v163). Todas las medidas en px de las hojas de estilo se multiplican por ESCALA.
    Se hace sobre el CSS y no con `zoom`: con zoom la página medía más que la ventana y los menús que se colocan por coordenadas salían desplazados.
-   `am_escala` en el navegador la cambia (1 = tamaño original). */
+   La escala sigue a la ventana: BASE en una ventana grande (>= REF) y baja en proporción en las pequeñas (portátiles, media pantalla) hasta MIN, para que quepa todo.
+   `am_escala` en el navegador cambia la BASE (1 = tamaño original). */
 (function () {
-  var Z = 1.15; try { var g = parseFloat(localStorage.getItem('am_escala')); if (g >= 0.8 && g <= 1.6) Z = g; } catch (e) {}
-  window.ESCALA = Z; if (Z === 1) return;
+  var BASE = 1.08, REF_W = 1560, REF_H = 850, MIN = 0.8;
+  try { var g = parseFloat(localStorage.getItem('am_escala')); if (g >= 0.8 && g <= 1.6) BASE = g; } catch (e) {}
+  var calc = function () { var k = Math.min(1, innerWidth / REF_W, innerHeight / REF_H); return Math.max(MIN, Math.round(BASE * k * 50) / 50); };   // pasos de 0,02
+  var Z = calc(); window.ESCALA = Z;
   var re = /url\([^)]*\)|(\d*\.?\d+)px\b/g;
-  var esc = function (t) { return t.replace(re, function (m, n) { if (n === undefined) return m; var v = parseFloat(n); return v <= 1 ? m : (Math.round(v * Z * 100) / 100) + 'px'; }); };   // las líneas de 1 px se quedan en 1 px
+  var esc = function (t) { return Z === 1 ? t : t.replace(re, function (m, n) { if (n === undefined) return m; var v = parseFloat(n); return v <= 1 ? m : (Math.round(v * Z * 100) / 100) + 'px'; }); };   // las líneas de 1 px se quedan en 1 px
   window.escalaCss = esc;
-  var una = function (st) { if (st.dataset.z) return; st.dataset.z = '1'; st.textContent = esc(st.textContent); };
-  document.querySelectorAll('style').forEach(una);
+  var una = function (st) { if (st._orig === undefined) st._orig = st.textContent; if (st._z === Z) return; st._z = Z; st.dataset.z = '1'; st.textContent = esc(st._orig); };
+  var todas = function () { document.querySelectorAll('style').forEach(una); };
+  todas();
   new MutationObserver(function (ms) { ms.forEach(function (m) { m.addedNodes.forEach(function (n) { if (n.tagName === 'STYLE') una(n); }); }); }).observe(document.head, { childList: true });   // las hojas que añaden los módulos después
+  var t = 0; addEventListener('resize', function () { clearTimeout(t); t = setTimeout(function () { var z = calc(); if (z === Z) return; Z = z; window.ESCALA = Z; todas(); setTimeout(function () { dispatchEvent(new Event('resize')); }, 40); }, 120); });   // al cambiar de tamaño la ventana, se recoloca todo
 })();
 </script>
 </head>
