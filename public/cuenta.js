@@ -118,10 +118,31 @@ html.sinapi #livedot,html.sinapi .meter{display:none!important}
   }
   const SERVIDOR_URL = LOCAL ? '' : 'https://aria-studio.onrender.com';   // el servidor de las cuentas (generar, personajes, creaciones). En desarrollo (localhost:3000) lo pone web_dev.py
   const fetch0 = window.fetch.bind(window);
+  // Si el servidor no contesta (se está reiniciando tras una actualización, o un corte de red), las LECTURAS se reintentan solas
+  // durante un minuto con un aviso a la vista. Antes la app lo tomaba por «no tienes nada» y enseñaba la cuenta vacía.
+  let avisoEl = null;
+  function aviso(on) {
+    if (!on) { if (avisoEl) { avisoEl.remove(); avisoEl = null; } return; }
+    if (avisoEl) return;
+    avisoEl = document.createElement('div'); avisoEl.textContent = 'Conectando con el servidor… tus datos están a salvo';
+    avisoEl.style.cssText = 'position:fixed;top:10px;left:50%;transform:translateX(-50%);z-index:100000;background:var(--acc);color:#fff;font:600 12.5px var(--sans);padding:9px 16px;border-radius:999px;box-shadow:0 8px 24px rgba(0,0,0,.3)';
+    document.body.appendChild(avisoEl);
+  }
+  async function conReintento(input, init) {
+    const lectura = !init.method || init.method === 'GET';
+    const esperas = lectura ? [2000, 4000, 8000, 12000, 16000, 20000] : [];
+    for (let i = 0; ; i++) {
+      try {
+        const r = await fetch0(input, init);
+        if (!(lectura && [502, 503, 504].includes(r.status)) || i >= esperas.length) { aviso(false); return r; }
+      } catch (e) { if (i >= esperas.length) { aviso(false); throw e; } }
+      aviso(true); await new Promise((ok) => setTimeout(ok, esperas[i]));
+    }
+  }
   window.fetch = (input, init) => {
     if (CU.token && typeof input === 'string' && input.startsWith('/api/')) {   // /api va directo al servidor (sin tope de tamaño ni de tiempo), con la sesión en la cabecera
       init = Object.assign({}, init); init.headers = new Headers(init.headers || {}); init.headers.set('Authorization', 'Bearer ' + CU.token);
-      input = SERVIDOR_URL + input;
+      return conReintento(SERVIDOR_URL + input, init);
     }
     return fetch0(input, init);
   };
