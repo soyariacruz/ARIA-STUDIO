@@ -743,6 +743,15 @@ APIS = (('ws', 'WaveSpeed', 'WS_API_KEY', 'wavespeed.env', 'Nano Banana Pro, GPT
 def _hf_ok(k):   # comprueba una clave de Higgsfield pidiendo un presupuesto (no genera ni cobra nada)
     M = MODELS['qwen']; rq = urllib.request.Request(BASE + '/estimate/' + M['ep'], data=json.dumps(M['body']('a photo', ['https://example.com/a.jpg'], '3:4', 'std')).encode(), method='POST')
     rq.add_header('Authorization', 'Key ' + k); rq.add_header('Content-Type', 'application/json'); rq.add_header('User-Agent', UA); urllib.request.urlopen(rq, timeout=30).read()
+def _ark_ok(k):   # comprueba una clave de BytePlus pidiendo su lista de trabajos (no genera ni cobra nada)
+    rq = urllib.request.Request(load_ark()[1] + '/api/v3/contents/generations/tasks?page_size=1'); rq.add_header('Authorization', 'Bearer ' + k); rq.add_header('User-Agent', UA)
+    urllib.request.urlopen(rq, timeout=30).read()
+def _de_quien(k):   # ¿de qué proveedor es esta clave? Se prueba con cada uno; None si ninguno la acepta
+    if not re.fullmatch(r'[\x21-\x7e]{16,400}', k): return None
+    for aid, prueba in ((('hf', _hf_ok),) if ':' in k else (('ws', _ws_saldo), ('ark', _ark_ok))):
+        try: prueba(k); return aid
+        except Exception: pass
+    return None
 def _apis_estado():   # qué APIs hay conectadas (nunca la clave: solo sus 4 últimos caracteres)
     out = []
     for aid, nombre, envn, homef, para in APIS:
@@ -1066,6 +1075,9 @@ class H(SimpleHTTPRequestHandler):
         if self.path == '/api/claves':   # {id, key} comprueba y guarda una clave · {id, off:true|false} desconecta o vuelve a conectar una API
             n = int(self.headers.get('Content-Length') or 0); body = json.loads(self.rfile.read(n) or b'{}')
             if 'ws' in body and 'id' not in body: body = {'id': 'ws', 'key': body.get('ws')} if body.get('ws') else {'id': 'ws', 'off': True}
+            if body.get('id') == 'auto':   # la pantalla ya no pregunta de quién es la clave
+                body['id'] = _de_quien(str(body.get('key') or '').strip())
+                if not body['id']: return self._json(400, {'error': 'no reconozco esa clave. Hoy funcionan las de WaveSpeed, Higgsfield (con la forma ID:SECRET) y BytePlus: revisa que esté copiada entera'})
             api_ = next((a for a in APIS if a[0] == body.get('id')), None)
             if not api_: return self._json(400, {'error': 'API desconocida'})
             aid, nombre, envn, homef, _para = api_

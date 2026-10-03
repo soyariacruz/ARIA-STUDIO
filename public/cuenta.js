@@ -109,7 +109,6 @@ html.sinapi #livedot,html.sinapi .meter{display:none!important}
   }
 
   // ---------- cargar la app (solo con sesión) ----------
-  const tag = (src) => new Promise((ok, ko) => { const s = document.createElement('script'); s.src = src; s.onload = ok; s.onerror = () => ko(new Error('no carga ' + src)); document.body.appendChild(s); });
   // ---------- la sesión viaja al servidor: cabecera en /api y cookie para las imágenes propias (<img> no manda cabeceras) ----------
   function sesion(session) {
     CU.token = (session && session.access_token) || '';
@@ -158,7 +157,10 @@ html.sinapi #livedot,html.sinapi .meter{display:none!important}
     const add = document.addEventListener.bind(document);
     document.addEventListener = (t, fn, o) => (t === 'DOMContentLoaded') ? void setTimeout(() => fn.call(document, new Event('DOMContentLoaded')), 0) : add(t, fn, o);
     arrancado = (async () => {
-      await catalogo(); for (const s of APP) await tag(s);
+      // Primero se bajan TODOS los ficheros y luego se ejecutan seguidos, sin pausas entre uno y otro, como en local:
+      // la app arranca 50 ms después de cargarse y para entonces los módulos (fichas, personajes…) ya tienen que estar puestos.
+      const [, textos] = await Promise.all([catalogo(), Promise.all(APP.map((s) => fetch0(s).then((r) => { if (!r.ok) throw new Error('no carga ' + s); return r.text(); })))]);
+      APP.forEach((s, i) => { const e = document.createElement('script'); e.textContent = textos[i] + '\n//# sourceURL=' + location.origin + '/' + s; document.body.appendChild(e); });
       fetch('/api/ping').then((r) => (r.ok ? r.json() : null)).then((j) => { if (!(j && j.ok)) sinApi(); }).catch(sinApi);
     })();
     arrancado.catch(() => { arrancado = null; });
