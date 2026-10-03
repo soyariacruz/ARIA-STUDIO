@@ -1532,8 +1532,9 @@ class H(SimpleHTTPRequestHandler):
             try:
                 url = resolve_ws(body['image'] if isinstance(body.get('image'), dict) else {'path': body.get('image')})
                 ask = ('Detect every clearly visible person in this image (maximum 6), ordered from left to right. Answer with ONLY a JSON array and nothing else. '
-                       'Each element is an object with two keys: "box": [x0, y0, x1, y1] as fractions between 0 and 1 of the image width and height, covering the whole visible body of that person; '
-                       '"desc": a short English phrase that identifies that person unambiguously by position and look, starting with "the", for example "the woman on the left with long blonde hair and a red dress".')
+                       'Each element is an object with three keys: "box": [x0, y0, x1, y1] as fractions between 0 and 1 of the image width and height, covering the whole visible body of that person; '
+                       '"desc": a short English phrase that identifies that person unambiguously by position and look, starting with "the", for example "the woman on the left with long blonde hair and a red dress"; '
+                       '"es": that same phrase translated into natural Spanish, for example "la mujer de la izquierda, de pelo largo rubio y vestido rojo".')
                 r = ws('POST', '/api/v3/wavespeed-ai/any-llm/vision', {'prompt': ask, 'images': [url], 'model': 'google/gemini-2.5-flash', 'temperature': 0.1, 'max_tokens': 1200, 'priority': 'latency'})
                 rid = (r.get('data') or {}).get('id'); txt = ''
                 for _ in range(50):
@@ -1549,7 +1550,7 @@ class H(SimpleHTTPRequestHandler):
                     if max(b) > 1.5: b = [v / 1000.0 for v in b]   # algunos modelos contestan de 0 a 1000
                     x0, y0, x1, y1 = [max(0.0, min(1.0, float(v))) for v in b]
                     if x1 - x0 < 0.03 or y1 - y0 < 0.03: continue
-                    people.append({'box': [round(x0, 4), round(y0, 4), round(x1, 4), round(y1, 4)], 'desc': str(q.get('desc') or 'the person').strip()[:160]})
+                    people.append({'box': [round(x0, 4), round(y0, 4), round(x1, 4), round(y1, 4)], 'desc': str(q.get('desc') or 'the person').strip()[:160], 'es': str(q.get('es') or '').strip()[:180]})
                 people.sort(key=lambda z: z['box'][0])
             except Exception as e: return self._json(400, {'error': str(e)})
             plog(f'personas_img ok · {len(people)} persona(s)'); return self._json(200, {'ok': True, 'people': people})
