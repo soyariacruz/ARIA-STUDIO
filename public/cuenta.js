@@ -150,16 +150,6 @@ html.sinapi #livedot,html.sinapi .meter{display:none!important}
     window.buildNav = function () { bn.apply(this, arguments); pronto(); };
     pronto();
   }
-  async function bienvenida() {   // cuenta con la API ya conectada y todavía sin personaje propio: lo primero es crear el suyo (Aria queda como personaje de ejemplo). Una vez por visita
-    try {
-      if (sessionStorage.getItem('am_bienvenida')) return;
-      const j = await fetch('/api/personajes').then((r) => r.json());
-      if ((j.items || []).length || typeof window.pjStart !== 'function') return;
-      sessionStorage.setItem('am_bienvenida', '1');
-      if (window.setTab) setTab('perfil');
-      setTimeout(() => { if (!document.getElementById('clavesm')) window.pjStart(); }, 400);
-    } catch (e) {}
-  }
   let arrancado = null;
   CU.arrancar = function () {
     if (arrancado) return arrancado;
@@ -171,7 +161,7 @@ html.sinapi #livedot,html.sinapi .meter{display:none!important}
       // la app arranca 50 ms después de cargarse y para entonces los módulos (fichas, personajes…) ya tienen que estar puestos.
       const [, textos] = await Promise.all([catalogo(), Promise.all(APP.map((s) => fetch0(s).then((r) => { if (!r.ok) throw new Error('no carga ' + s); return r.text(); })))]);
       APP.forEach((s, i) => { const e = document.createElement('script'); e.textContent = textos[i] + '\n//# sourceURL=' + location.origin + '/' + s; document.body.appendChild(e); });
-      fetch('/api/ping').then((r) => (r.ok ? r.json() : null)).then((j) => { if (!(j && j.ok)) return sinApi(); if (j.servidor && (j.ws || j.key)) bienvenida(); }).catch(sinApi);
+      fetch('/api/ping').then((r) => (r.ok ? r.json() : null)).then((j) => { if (!(j && j.ok)) sinApi(); }).catch(sinApi);
     })();
     arrancado.catch(() => { arrancado = null; });
     return arrancado;

@@ -6,6 +6,7 @@
 (function () {
   const CUR = 'assets/personajes/_opciones/curso/';
   const pj = { list: [], sel: 'aria', wiz: null, jobs: {} };
+  const WEBM = !!(window.CUENTA && CUENTA.web);   // versión web: cada cuenta empieza por SU personaje; Aria queda como personaje de ejemplo (en local, Aria es el personaje de Max y va primero)
   window.PJ = pj;
 
   // ---------------------------------------------------------------- opciones (es = etiqueta, en = frase del prompt)
@@ -102,7 +103,12 @@
   }
 
   // ---------------------------------------------------------------- datos
-  async function load() { try { const r = await fetch('/api/personajes').then(x => x.json()); pj.list = r.items || []; pj.tarj = new Set(r.tarjetas || []); } catch (e) { pj.list = []; pj.tarj = new Set(); } syncChars(); recuperar(); }
+  async function load() { try { const r = await fetch('/api/personajes').then(x => x.json()); pj.list = r.items || []; pj.tarj = new Set(r.tarjetas || []); } catch (e) { pj.list = []; pj.tarj = new Set(); } webIni(); syncChars(); webChar(); recuperar(); }
+  function webIni() {   // web, al abrir: el perfil enseña su primer personaje; si no tiene ninguno, «Crear personaje» (nunca el de Aria como si fuera suyo)
+    if (!WEBM || pj.webIni) return; pj.webIni = true; if (!pj.wiz) pj.sel = pj.list.length ? pj.list[0].id : 'nuevo'; }
+  function webChar() {   // web: en Crear imagen el personaje principal es el suyo (el primero que tenga ficha), salvo que ya haya elegido otro
+    if (!WEBM || !window.setChar) return; let saved = null; try { saved = localStorage.getItem('am_charsel'); } catch (e) {}
+    const p0 = pj.list.find(p => p.ficha360); if (p0 && (!saved || (saved !== 'aria' && !pj.list.some(p => p.id === saved)))) setChar(p0.id, true); }
   async function recuperar() { // trabajos de personajes que se lanzaron antes de recargar: si ya están, se recogen; si no, se siguen esperando
     let r; try { r = await fetch('/api/pendientes').then(x => x.json()); } catch (e) { return; }
     for (const j of (r.jobs || [])) { const pid = j.meta.personaje, kind = j.meta.pjKind; if (!pid || !kind || !pj.list.some(p => p.id === pid) || pj.jobs[pid + ':' + kind]) continue;
@@ -112,7 +118,7 @@
   }
   const ARIA = 'assets/personajes/_opciones/aria/';
   const vis = (key, id, code) => (pj.tarj && pj.tarj.has(key + '_' + id)) ? `<img src="${ARIA}${key}_${id}.jpg" alt="" loading="lazy">` : visual(code);
-  function syncChars() { C.chars = [C.chars && C.chars[0] || { id: 'aria', name: C.perfil.name, avatar: C.perfil.avatar, ficha: C.perfil.ficha }].concat(pj.list.map(p => ({ id: p.id, name: p.nombre, avatar: p.avatar || p.retrato || p.foto || '', ficha: p.ficha360 || '' }))); if (window.charsReady) charsReady(); }
+  function syncChars() { C.chars = [C.chars && C.chars[0] || { id: 'aria', name: C.perfil.name, avatar: C.perfil.avatar, ficha: C.perfil.ficha }].concat(pj.list.map(p => ({ id: p.id, name: p.nombre, avatar: p.avatar || p.retrato || p.foto || '', ficha: p.ficha360 || '' }))); if (window.charsReady) charsReady(); if (WEBM && window.buildNav) { try { buildNav(); } catch (e) {} } }   // en la web, el círculo de «Perfil» del menú es el de su personaje
   const cur = () => pj.list.find(p => p.id === pj.sel) || null;
   const pron = g => g === 'masc' ? ['He', 'His'] : g === 'fem' ? ['She', 'Her'] : ['They', 'Their'];
   const list = (a) => a.length < 2 ? (a[0] || '') : a.slice(0, -1).join(', ') + ' and ' + a[a.length - 1];
@@ -530,7 +536,7 @@
   async function del(p) {
     if (!confirm(`¿Borrar a ${p.nombre}? Deja de verse y se borra del todo a los 30 días.`)) return;
     const r = await fetch('/api/personaje_borrar', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: p.id }) }).then(x => x.json()).catch(e => ({ error: String(e) }));
-    if (!r.ok) { toast('No se pudo borrar: ' + r.error); return; } pj.list = pj.list.filter(x => x.id !== p.id); if (state.char === p.id && window.setChar) setChar('aria', true); syncChars(); pj.sel = 'aria'; renderProfile(); renderSide(); toast(`${p.nombre} está en la papelera`);
+    if (!r.ok) { toast('No se pudo borrar: ' + r.error); return; } pj.list = pj.list.filter(x => x.id !== p.id); if (state.char === p.id && window.setChar) setChar('aria', true); syncChars(); pj.sel = WEBM ? (pj.list[0] ? pj.list[0].id : 'nuevo') : 'aria'; renderProfile(); renderSide(); toast(`${p.nombre} está en la papelera`);
   }
 
   // ---------------------------------------------------------------- pintar el Perfil
@@ -539,13 +545,15 @@
     const row = el('div', 'pjcircles');
     const add = (id, name, img) => { const c = el('button', 'pjc' + (!pj.wiz && pj.sel === id ? ' on' : ''), `<span class="pjav">${img ? `<img src="${img}" alt="">` : `<i>${(name || '?')[0]}</i>`}</span><small>${name}</small>`); c.onclick = () => { pj.wiz = null; if (window.FB) FB.open = false; if (window.F3) F3.open = false; saveDraft(); pj.sel = id; renderProfile(); renderSide(); };
       if (id !== 'aria') { c.draggable = true; c.title = 'Arrástralo para cambiar el orden'; c.ondragstart = e => { pj.dragId = id; e.dataTransfer.effectAllowed = 'move'; try { e.dataTransfer.setData('text/plain', id); } catch (x) {} setTimeout(() => c.classList.add('drag'), 0); }; c.ondragend = () => { pj.dragId = null; row.querySelectorAll('.pjc').forEach(x => x.classList.remove('drag', 'dropL', 'dropR')); }; }
-      c.ondragover = e => { if (!pj.dragId || pj.dragId === id) return; e.preventDefault(); const r = c.getBoundingClientRect(); const left = id !== 'aria' && e.clientX < r.left + r.width / 2; c.classList.toggle('dropL', left); c.classList.toggle('dropR', !left); };
+      c.ondragover = e => { if (!pj.dragId || pj.dragId === id) return; e.preventDefault(); const r = c.getBoundingClientRect(); const left = id === 'aria' ? WEBM : e.clientX < r.left + r.width / 2; c.classList.toggle('dropL', left); c.classList.toggle('dropR', !left); };
       c.ondragleave = () => c.classList.remove('dropL', 'dropR');
-      c.ondrop = e => { e.preventDefault(); const from = pj.dragId; const left = c.classList.contains('dropL'); if (!from || from === id) return; const L = pj.list.slice(); const [m] = L.splice(L.findIndex(p => p.id === from), 1); const at = id === 'aria' ? 0 : L.findIndex(p => p.id === id) + (left ? 0 : 1); L.splice(at, 0, m); L.forEach((p, i) => { p.orden = i; }); pj.list = L; pj.dragId = null; syncChars(); renderProfile();
+      c.ondrop = e => { e.preventDefault(); const from = pj.dragId; const left = c.classList.contains('dropL'); if (!from || from === id) return; const L = pj.list.slice(); const [m] = L.splice(L.findIndex(p => p.id === from), 1); const at = id === 'aria' ? (WEBM ? L.length : 0) : L.findIndex(p => p.id === id) + (left ? 0 : 1); L.splice(at, 0, m); L.forEach((p, i) => { p.orden = i; }); pj.list = L; pj.dragId = null; syncChars(); renderProfile();
         fetch('/api/personajes_orden', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids: L.map(p => p.id) }) }).catch(() => toast('No se pudo guardar el orden')); };
       row.appendChild(c); };
-    add('aria', C.perfil.name, C.perfil.avatar); pj.list.forEach(p => add(p.id, p.nombre, p.avatar || p.retrato || p.foto));
-    const nb = el('button', 'pjc new' + (pj.wiz ? ' on' : ''), `<span class="pjav"><i>＋</i></span><small>Crear personaje</small>`); nb.onclick = () => startWiz(); row.appendChild(nb);
+    const nb = el('button', 'pjc new' + (pj.wiz || (WEBM && pj.sel === 'nuevo') ? ' on' : ''), `<span class="pjav"><i>＋</i></span><small>Crear personaje</small>`); nb.onclick = () => startWiz();
+    const suyos = () => pj.list.forEach(p => add(p.id, p.nombre, p.avatar || p.retrato || p.foto));
+    if (WEBM) { if (!pj.list.length) row.appendChild(nb); suyos(); add('aria', C.perfil.name + ' · ejemplo', C.perfil.avatar); if (pj.list.length) row.appendChild(nb); }   // web: primero lo suyo (o «Crear»), Aria después
+    else { add('aria', C.perfil.name, C.perfil.avatar); suyos(); row.appendChild(nb); }
     t.appendChild(row); return t;
   }
   function viewAria() { const P = C.perfil; const v = el('div', 'pjview two'); const col = el('div', 'pjimgcol'); const im = el('img', 'pjbig'); im.src = P.ficha; im.onclick = () => lightbox(P.ficha, 'Ficha 360 · ' + P.name); col.appendChild(im); v.appendChild(col); return v; }
@@ -689,7 +697,12 @@
     host.appendChild(nav); host.scrollTop = keep; // elegir una tarjeta no mueve la vista
   }
   function startWiz() {
-    const dr = loadDraft(); pj.wiz = null; renderProfile(); const h = $('#profcard .pjbody'); h.innerHTML = '';
+    if (WEBM) { pj.wiz = null; pj.sel = 'nuevo'; window.pjScrollTop = true; renderProfile(); renderSide(); return; }   // en la web es un estado más del perfil (se mantiene al repintar y deja vacío el panel de la izquierda)
+    pj.wiz = null; renderProfile(); const h = $('#profcard .pjbody'); h.innerHTML = ''; inicio(h);
+    document.querySelectorAll('#profcard .pjc').forEach(x => x.classList.toggle('on', x.classList.contains('new'))); devSection();
+  }
+  function inicio(h) {   // la pantalla «Crear un personaje nuevo», con sus tres caminos
+    const dr = loadDraft();
     const box = el('div', 'pjstart'); box.appendChild(el('h3', '', 'Crear un personaje nuevo')); box.appendChild(el('p', '', 'Si ya tienes tu personaje del curso «De 0 a 100 para crear tu Influencer IA», súbelo y empieza a crear. Si no, pronto podrás crearlo aquí desde cero.'));
     const r = el('div', 'pjrow');
     const f = el('button', 'pjbigopt', '<span>⚡</span><b>Desde tus favoritas</b><small>Sueltas fotos de personas que te gusten y la IA rellena los rasgos. Solo te pregunta rol, nombre y edad.</small>'); f.onclick = () => { newWiz('fotos'); renderProfile(); renderSide(); };
@@ -698,7 +711,7 @@
     if (window.devGate) { devGate(f, 'Crear personaje · Desde tus favoritas', () => { newWiz('fotos'); renderProfile(); renderSide(); }); devGate(a, 'Crear personaje · Empezar desde cero', () => { newWiz('cero'); renderProfile(); renderSide(); }); }
     r.appendChild(b); r.appendChild(a); r.appendChild(f); box.appendChild(r);
     if (dr) { const c = el('button', 'btn w', `↺ Seguir con el borrador${dr.d.nombre ? ' de ' + dr.d.nombre : ''}`); c.onclick = () => { pj.wiz = dr; renderProfile(); renderSide(); }; box.appendChild(c); }
-    h.appendChild(box); document.querySelectorAll('#profcard .pjc').forEach(x => x.classList.toggle('on', x.classList.contains('new'))); devSection();
+    h.appendChild(box);
   }
   function updSide() { if (state.tab === 'perfil' && pj.wiz) renderSide(); }
 
@@ -717,8 +730,8 @@
     bd.appendChild(p ? viewPersona(p) : viewAria()); if (p && Object.keys(pj.jobs).length) startTick(); }
   window.renderProfile = async function () {
     const host = $('#profcard'); const keep = host.querySelector('.pjbody') && host.querySelector('.pjbody').scrollTop;
-    host.innerHTML = ''; const wrap = el('div', 'pj'); wrap.appendChild(top()); if (!pj.wiz) wrap.appendChild(tabsBar()); const bd = el('div', 'pjbody'); wrap.appendChild(bd); host.appendChild(wrap);
-    if (pj.wiz) paintWiz(); else tabBody(bd);
+    host.innerHTML = ''; const wrap = el('div', 'pj'); wrap.appendChild(top()); const nuevo = WEBM && pj.sel === 'nuevo' && !pj.wiz; if (!pj.wiz && !nuevo) wrap.appendChild(tabsBar()); const bd = el('div', 'pjbody'); wrap.appendChild(bd); host.appendChild(wrap);
+    if (pj.wiz) paintWiz(); else if (nuevo) { inicio(bd); devSection(); } else tabBody(bd);
     if (window.pjScrollTop) { window.pjScrollTop = false; bd.scrollTop = 0; host.scrollTop = 0; } else if (keep) bd.scrollTop = keep; // al abrir un creador se empieza arriba
     devSection();
   };
