@@ -141,6 +141,11 @@ def main():
                 if n % 100 == 0 or n == len(faltan):
                     json.dump(hecho, open(APUNTE, 'w', encoding='utf-8'))
                     print(f'  {n}/{len(faltan)} · errores {len(errores)}', flush=True)
+        # un almacén no se puede listar: el servidor sabe qué caras de casting hay por este índice
+        od = os.path.join(SRC, 'assets', 'personajes', '_opciones', 'aria')
+        idx = json.dumps(sorted(x[:-4] for x in os.listdir(od) if x.endswith('.jpg'))).encode()
+        st, out = pide('POST', '/storage/v1/object/assets/personajes/_opciones/aria/index.json', idx, {'Content-Type': 'application/json', 'x-upsert': 'true', 'cache-control': 'max-age=300'}, key)
+        if st != 200: errores.append(('personajes/_opciones/aria/index.json', f'{st} {out[:120]!r}'))
         for ruta, err in errores[:10]: print('  ERROR', ruta, err)
         print('imágenes: LISTO' if not errores else f'imágenes: {len(errores)} con error (vuelve a lanzarlo para reintentar)')
 

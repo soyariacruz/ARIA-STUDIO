@@ -20,6 +20,11 @@ b = '</script>\n' + '\n'.join(f'<script src="{m}"></script>' for m in MODS)
 assert s.count(a) == 1 and s.count(b) == 1, (s.count(a), s.count(b))   # si cambia cómo carga la app en local, hay que revisar esto
 i, j = s.index(a), s.index(b)
 app = s[i + len(a):j]
+# textos que solo son verdad en local
+LOCAL_A_WEB = [('Las claves se guardan en tu ordenador y no salen de él.', 'Las claves se guardan en tu cuenta de ARIA STUDIO y solo se usan para tus generaciones.')]
+for viejo, nuevo in LOCAL_A_WEB:
+    assert app.count(viejo) == 1, viejo
+    app = app.replace(viejo, nuevo)
 html = s[:i] + s[j + len(b):]
 assert '<script src="cuenta.js"></script>' in html and '<script src="catalog.js">' not in html
 

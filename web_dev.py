@@ -8,7 +8,9 @@ import os, sys, mimetypes, http.client, urllib.parse
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 
 PORT = int(sys.argv[1]) if len(sys.argv) > 1 else 3000
-PUENTE = ('127.0.0.1', 8767)
+SERVIDOR = 'servidor' in sys.argv   # `python3 web_dev.py 3000 servidor`: detrás no está el puente local sino el de varias cuentas (:8770), como en la web publicada
+PUENTE = ('127.0.0.1', 8770 if SERVIDOR else 8767)
+DEV_UID = next((a[4:] for a in sys.argv if a.startswith('dev=')), '')   # `dev=<uuid>`: pruebas sin login contra un puente arrancado con ARIA_DEV=1 (solo en este ordenador)
 SIN_API = 'sin-api' in sys.argv   # `python3 web_dev.py 3000 sin-api`: /api responde 404, para ver la web como se ve publicada
 PUBLIC = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'public')
 HOSTS = (f'localhost:{PORT}', f'127.0.0.1:{PORT}')
@@ -44,7 +46,8 @@ class H(BaseHTTPRequestHandler):
         body = self.rfile.read(n) if n else None
         hd = {k: v for k, v in self.headers.items() if k.lower() not in SALTO and k.lower() not in ('host', 'origin', 'referer')}
         hd['Host'] = f'{PUENTE[0]}:{PUENTE[1]}'
-        if origin: hd['Origin'] = f'http://{PUENTE[0]}:{PUENTE[1]}'
+        if DEV_UID: hd['X-Dev-Uid'] = DEV_UID
+        if origin: hd['Origin'] = origin if SERVIDOR else f'http://{PUENTE[0]}:{PUENTE[1]}'   # el puente local solo acepta su propio origen; el de varias cuentas, los de su lista
         c = http.client.HTTPConnection(*PUENTE, timeout=600)
         try:
             c.request(self.command, self.path, body=body, headers=hd)
