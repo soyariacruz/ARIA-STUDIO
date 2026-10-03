@@ -701,11 +701,13 @@ def _cat_save(head, C):   # escritura atómica del catálogo (temporal + cambio 
 def _safe_item(x):   # el nombre del elemento acaba en el nombre del archivo: nunca puede salirse de su carpeta
     return re.sub(r'[^A-Za-z0-9_.@:-]', '-', str(x or 'img')).strip('.')[:90] or 'img'
 _ASK_ESTILO = {   # leer un peinado o una expresión de una foto cualquiera (dos líneas: nombre en español + descripción en inglés)
-    'escena': ('Describe this photo so an AI image generator can recreate THE SAME SCENE with a DIFFERENT person. Answer with EXACTLY three lines and nothing else. '
+    'escena': ('Describe this photo so an AI image generator can recreate THE SAME SCENE with a DIFFERENT person. Answer with EXACTLY four lines and nothing else. '
                'Line 1: a short title in Spanish, 2-5 words. '
                'Line 2: one English paragraph, 60-110 words: the place and background, time of day and lighting, camera distance, angle and framing, what she is doing and her exact pose, her expression and mood, props, and the photo style (phone snapshot, studio, film grain...). Start with the framing. Use "she" for the person. '
                'NEVER describe who the person is: no face, no eye color, no hair color or hairstyle, no skin tone, no age, no ethnicity, no body shape, no glasses, no earrings, no jewelry. '
-               'Line 3: one English phrase, 8-30 words, with ONLY the clothing and shoes she wears (colors, fabrics, fit).'),
+               'If the image is not a real photograph of a real person (a toy, vinyl collectible, doll, figurine, plush, cartoon, 3D render, illustration), describe in Line 2 that medium too: materials, finish, proportions and the look of the whole image. '
+               'Line 3: one English phrase, 8-30 words, with ONLY the clothing and shoes she wears (colors, fabrics, fit). '
+               'Line 4: the single word REAL if the main figure is a real photographed human; otherwise 3-10 English words naming exactly what kind of figure it is (e.g. "vinyl collectible toy figure with an oversized head", "3D cartoon character", "anime illustration").'),
     'hair': ('Look ONLY at the HAIRSTYLE of the person in this image (ignore the face, the clothes and the background). Answer with EXACTLY two lines and nothing else. '
              'Line 1: a short hairstyle name in Spanish, 2-5 words, like a salon catalog (e.g. "Trenza Francesa Lateral", "Moño Bajo Despeinado"). '
              'Line 2: one precise English sentence, 15-35 words, describing only the hairstyle so an AI image generator can reproduce it: length, cut, parting, bangs, texture and how it is tied or braided. Do not mention the hair color.'),
