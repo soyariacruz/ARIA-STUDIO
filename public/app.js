@@ -1380,7 +1380,10 @@ function hydrateLive() { // lo ya generado se recupera (it.live) pero NO se reve
     for (const [id, f] of Object.entries(j.files)) { const it = map.get(id); if (it) { it.live = f; n++; } }
     if (n) { log(`<span class="g">· ${n} imagen(es) generadas antes por la API recuperadas de assets/live/ · se enseñan sin gastar al pulsar Generar</span>`); if (state.ready) { renderRail(); renderSide(); } }
     buildVideoLib(j); buildCreations(j);
-    try { const u = JSON.parse(localStorage.getItem('am_crear_last') || 'null'), cu = C.crear.find(x => x.custom); if (u && cu && !(cu._liveBy && cu._liveBy[u.sig]) && (j.all || []).includes(u.src)) { cu._liveBy = cu._liveBy || {}; cu._liveBy[u.sig] = u.src; cu.live = cu.live || u.src; state.done.add(cu.id); if (state.ready && state.tab === 'crear') paint(cur(), true); } } catch (e) {}
+    if (!hydrateLive._ya) { hydrateLive._ya = true;   // solo al abrir la página: en grande, tu última creación (la de esta combinación si se sabe cuál fue; si no, la más reciente). Al cambiar la combinación vuelve el lienzo
+      try { const cu = C.crear.find(x => x.custom); let u = JSON.parse(localStorage.getItem('am_crear_last') || 'null'); const sg = compSig();
+        const src = (u && u.sig === sg && (j.all || []).includes(u.src)) ? u.src : (cu && j.files && j.files[cu.id]);
+        if (cu && src && !(cu._liveBy && cu._liveBy[sg])) { cu._liveBy = cu._liveBy || {}; cu._liveBy[sg] = src; state.done.add(cu.id); if (state.ready && state.tab === 'crear') paint(cur(), true); } } catch (e) {} }
     if (state.ready) renderSide(); const nv = Object.keys(j.videos || {}).length; if (nv) log(`<span class="g">· ${nv} vídeo(s) generados antes recuperados de assets/video/</span>`);
   }).catch(() => {});
 }
