@@ -1,5 +1,8 @@
-# ARIA STUDIO · el servidor (Render): el mismo puente de la app local, en modo de varias cuentas.
-# La web (carpeta public/) la publica Vercel; el login, los miembros, el catálogo y la biblioteca están en Supabase.
+# ARIA STUDIO - servidor (Render): el mismo puente de la app local, en modo de varias cuentas.
+# La web (public/) la publica Vercel; login, miembros, catalogo y biblioteca estan en Supabase.
+# Variables: ARIA_ORIGENES = webs que pueden hablar con el servidor; ARIA_FETCH_HOSTS = arrastrar imagenes desde otras webs;
+# ARIA_CUOTA_GB = tope de espacio por cuenta; ARIA_SECRETO = cifra las claves de API de las cuentas (lo genera Render);
+# ARIA_ADMIN = llave de la copia de seguridad; SUPABASE_SECRET = para leer el catalogo privado (se pega a mano).
 services:
   - type: web
     name: aria-studio
@@ -10,29 +13,28 @@ services:
     buildCommand: pip install -r requirements.txt
     startCommand: python3 puente.py
     healthCheckPath: /salud
-    autoDeploy: true
-    disk:                      # lo que crean las cuentas (Render hace una copia diaria; además, copia.py al NAS)
+    disk:
       name: datos
       mountPath: /datos
       sizeGB: 10
     envVars:
       - key: PYTHON_VERSION
-        value: 3.13.1
+        value: "3.13.1"
       - key: ARIA_SERVIDOR
         value: "1"
       - key: ARIA_HOST
-        value: 0.0.0.0
+        value: "0.0.0.0"
       - key: ARIA_DATOS
         value: /datos
-      - key: ARIA_ORIGENES     # las webs que pueden hablar con este servidor
+      - key: ARIA_ORIGENES
         value: https://aria-studio-eta.vercel.app
-      - key: ARIA_FETCH_HOSTS  # arrastrar imágenes desde otras webs: cualquier web pública (nunca direcciones internas)
+      - key: ARIA_FETCH_HOSTS
         value: "*"
-      - key: ARIA_CUOTA_GB     # tope de espacio por cuenta
+      - key: ARIA_CUOTA_GB
         value: "3"
-      - key: ARIA_SECRETO      # cifra las claves de API de las cuentas; lo genera Render y no sale de aquí
+      - key: ARIA_SECRETO
         generateValue: true
-      - key: ARIA_ADMIN        # llave de la copia de seguridad
+      - key: ARIA_ADMIN
         generateValue: true
-      - key: SUPABASE_SECRET   # para leer el catálogo privado; se pega a mano al crear el servicio
+      - key: SUPABASE_SECRET
         sync: false
