@@ -1,0 +1,8 @@
+{
+  "rewrites": [
+    {
+      "source": "/assets/:path*",
+      "destination": "https://uhscbgidrloskdjbevkn.supabase.co/storage/v1/object/public/assets/:path*"
+    }
+  ]
+}
