@@ -478,7 +478,10 @@ def save_inputs(body):   # capturas e imágenes de internet (llegan como dataURL
         meta = body['meta']
         for i, im in enumerate(body.get('images') or []):
             du = im.get('data') if isinstance(im, dict) else None
-            if not du or ',' not in du: continue
+            if not du or ',' not in du:
+                p = str(im.get('path') or '').split('?')[0] if isinstance(im, dict) else ''
+                if i == 0 and p.startswith('assets/refs/'): meta['canvasRef'] = p   # se recrea desde una imagen ya guardada: «Recrear» la vuelve a poner como imagen de partida
+                continue
             head, b64 = du.split(',', 1); raw, ct = img_norm(base64.b64decode(b64), head.split(':')[1].split(';')[0])
             ext = 'png' if ct == 'image/png' else 'webp' if ct == 'image/webp' else 'jpg'
             rel = f"assets/refs/{hashlib.sha1(raw).hexdigest()[:16]}.{ext}"; full = os.path.join(refs_dir(), os.path.basename(rel))
