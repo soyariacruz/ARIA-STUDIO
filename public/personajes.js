@@ -547,15 +547,27 @@
     const add = (id, name, img) => { const c = el('button', 'pjc' + (!pj.wiz && pj.sel === id ? ' on' : ''), `<span class="pjav">${img ? `<img src="${img}" alt="">` : `<i>${(name || '?')[0]}</i>`}</span><small>${name}</small>`); c.onclick = () => { pj.wiz = null; if (window.FB) FB.open = false; if (window.F3) F3.open = false; saveDraft(); pj.sel = id; if (window.setChar && window.CH && CH().id !== id && (id === 'aria' ? !(WEBM && pj.list.some(p => p.ficha360)) : pj.list.some(p => p.id === id && p.ficha360))) setChar(id, true);   // el principal va a la par del Perfil (Aria no, si el miembro tiene personaje propio)
       renderProfile(); renderSide(); };
       if (id !== 'aria') { c.draggable = true; c.title = 'Arrástralo para cambiar el orden'; c.ondragstart = e => { pj.dragId = id; e.dataTransfer.effectAllowed = 'move'; try { e.dataTransfer.setData('text/plain', id); } catch (x) {} setTimeout(() => c.classList.add('drag'), 0); }; c.ondragend = () => { pj.dragId = null; row.querySelectorAll('.pjc').forEach(x => x.classList.remove('drag', 'dropL', 'dropR')); }; }
-      c.ondragover = e => { if (!pj.dragId || pj.dragId === id) return; e.preventDefault(); const r = c.getBoundingClientRect(); const left = id === 'aria' ? WEBM : e.clientX < r.left + r.width / 2; c.classList.toggle('dropL', left); c.classList.toggle('dropR', !left); };
-      c.ondragleave = () => c.classList.remove('dropL', 'dropR');
-      c.ondrop = e => { e.preventDefault(); const from = pj.dragId; const left = c.classList.contains('dropL'); if (!from || from === id) return; const L = pj.list.slice(); const [m] = L.splice(L.findIndex(p => p.id === from), 1); const at = id === 'aria' ? (WEBM ? L.length : 0) : L.findIndex(p => p.id === id) + (left ? 0 : 1); L.splice(at, 0, m); L.forEach((p, i) => { p.orden = i; }); pj.list = L; pj.dragId = null; syncChars(); renderProfile();
-        fetch('/api/personajes_orden', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids: L.map(p => p.id) }) }).catch(() => toast('No se pudo guardar el orden')); };
+      c.dataset.pid = id;
       row.appendChild(c); };
     const nb = el('button', 'pjc new' + (pj.wiz || (WEBM && pj.sel === 'nuevo') ? ' on' : ''), `<span class="pjav"><i>＋</i></span><small>Crear personaje</small>`); nb.onclick = () => startWiz();
     const suyos = () => pj.list.forEach(p => add(p.id, p.nombre, p.avatar || p.retrato || p.foto));
     if (WEBM) { if (!pj.list.length) row.appendChild(nb); suyos(); add('aria', C.perfil.name, C.perfil.avatar); if (pj.list.length) row.appendChild(nb); }   // web: primero lo suyo (o «Crear»), Aria después
     else { add('aria', C.perfil.name, C.perfil.avatar); suyos(); row.appendChild(nb); }
+    { // reordenar arrastrando: UNA sola barra por hueco, en el centro entre dos personajes (dé igual a cuál de los dos se acerque el cursor)
+      const ins = el('div', 'pjins'); row.appendChild(ins); let slot = -1; const suyosEl = () => [...row.querySelectorAll('.pjc[draggable=true]')];
+      const hueco = e => { const its = suyosEl(); if (its.length < 2) return -1; const R = row.getBoundingClientRect(); const rc = its.map(x => x.getBoundingClientRect());
+        let k = 0, bd = 1e9; rc.forEach((r, i) => { const d = Math.hypot(e.clientX - (r.left + r.width / 2), e.clientY - (r.top + r.height / 2)); if (d < bd) { bd = d; k = i; } });   // el personaje más cercano al cursor
+        const antes = e.clientX < rc[k].left + rc[k].width / 2; const j = antes ? k : k + 1; const from = its.findIndex(x => x.dataset.pid === pj.dragId);
+        if (j === from || j === from + 1) { ins.style.display = 'none'; return -1; }   // se quedaría donde está
+        const a = rc[j - 1], b = rc[j]; const gap = parseFloat(getComputedStyle(row).columnGap) || 12; const x = (a && b && Math.abs(a.top - b.top) < 8) ? (a.right + b.left) / 2 : antes ? rc[k].left - gap / 2 : rc[k].right + gap / 2;
+        const av = (its[k].querySelector('.pjav') || its[k]).getBoundingClientRect();
+        Object.assign(ins.style, { display: 'block', left: Math.round(x - R.left + row.scrollLeft - 2) + 'px', top: Math.round(av.top - R.top + row.scrollTop) + 'px', height: Math.round(av.height) + 'px' }); return j; };
+      row.ondragover = e => { if (!pj.dragId) return; e.preventDefault(); slot = hueco(e); };
+      row.ondragleave = e => { if (!row.contains(e.relatedTarget)) { ins.style.display = 'none'; slot = -1; } };
+      row.addEventListener('dragend', () => { ins.style.display = 'none'; slot = -1; });
+      row.ondrop = e => { e.preventDefault(); ins.style.display = 'none'; const from = pj.dragId; pj.dragId = null; const j = slot; slot = -1; if (!from || j < 0) return;
+        const fi = suyosEl().map(x => x.dataset.pid).indexOf(from); const L = pj.list.slice(); const [m] = L.splice(L.findIndex(p => p.id === from), 1); L.splice(j > fi ? j - 1 : j, 0, m); L.forEach((p, i) => { p.orden = i; }); pj.list = L; syncChars(); renderProfile();
+        fetch('/api/personajes_orden', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids: L.map(p => p.id) }) }).catch(() => toast('No se pudo guardar el orden')); }; }
     t.appendChild(row); return t;
   }
   function viewAria() { const P = C.perfil; const v = el('div', 'pjview two'); const col = el('div', 'pjimgcol'); const im = el('img', 'pjbig'); im.src = P.ficha; im.onclick = () => lightbox(P.ficha, 'Ficha 360 · ' + P.name); col.appendChild(im); v.appendChild(col); return v; }

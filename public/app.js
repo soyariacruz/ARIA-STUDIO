@@ -565,7 +565,7 @@ function charSel(tab) { // selector de personaje. En Crear imagen: una burbuja p
   if (multi) { ch = el('div', 'charsel on multi crear'); const row = el('div', 'chb'); const f = cfocusId();
     allChars().forEach((c, i) => { const b = el('span', 'bub' + (c.id === f ? ' on' : ''), `<img src="${c.avatar}" alt="">${(i || nextMain()) ? '<i class="bx" title="Quitar de la imagen">×</i>' : ''}`); b.title = c.name + (c.id === f ? ' · estás eligiendo su ropa, su peinado, su expresión y sus complementos' : ' · clic para elegir lo suyo'); b.onclick = e => { e.stopPropagation(); if (e.target.classList.contains('bx')) { if (i) removeExtra(c.id); else removeMain(); return; } state.cfocus = c.id; renderSide(); }; row.appendChild(b); });
     ch.appendChild(row); const plus = el('span', 'bub add', '＋'); plus.title = 'Elegir quién sale en la imagen'; ch.appendChild(plus); }
-  else { ch = el('div', 'charsel' + (on ? ' on' : '') + (crear ? ' crear' : '')); ch.innerHTML = `<img src="${A.avatar}" alt=""><div><small>Personaje</small><b>${esc(A.name)}</b><span class="status">${tab === 'video' ? (on ? 'Su ficha 360 va como referencia' : 'Sin su ficha 360 (clic para volver a ponerla)') : 'Su ficha 360 va siempre como referencia'}</span></div>${tab === 'video' ? `<span class="ck${on ? ' on' : ''}" title="${on ? 'Quitar' : 'Poner'}">✓</span><span class="caret" title="Cambiar de personaje">▾</span>` : '<span class="bub add" title="Elegir quién sale en la imagen">＋</span>'}`;
+  else { ch = el('div', 'charsel' + (on ? ' on' : '') + (crear ? ' crear' : '')); ch.innerHTML = `<img src="${A.avatar}" alt=""><div><b>${esc(A.name)}</b><span class="status">${tab === 'video' ? (on ? 'Su ficha 360 va como referencia' : 'Sin su ficha 360 (clic para volver a ponerla)') : 'Su ficha 360 va siempre como referencia'}</span></div>${tab === 'video' ? `<span class="ck${on ? ' on' : ''}" title="${on ? 'Quitar' : 'Poner'}">✓</span><span class="caret" title="Cambiar de personaje">▾</span>` : '<span class="bub add" title="Elegir quién sale en la imagen">＋</span>'}`;
     if (tab === 'video') ch.querySelector('.ck').onclick = e => { e.stopPropagation(); if (on) { state.vchar = false; const k = state.vpool.findIndex(r => r.src === A.ficha); if (k >= 0) state.vpool.splice(k, 1); vbadge(); renderSide(); } else { state.vchar = true; poolAdd({ id: 'ficha360', kind: 'image', name: A.name, src: A.ficha, thumb: A.avatar }); } }; }
   ch.appendChild(dd); ch.onclick = e => { if (e.target.closest('.chardd')) return; show(crear ? 'multi' : 'switch'); };
   if (crear && state.charOpen === tab) setTimeout(() => { if (state.charOpen === tab && ch.isConnected) show('multi', true); }, 0);   // tras marcar o desmarcar a alguien el desplegable sigue abierto
@@ -608,6 +608,7 @@ function pplCache(key, val) { // personas ya detectadas en cada imagen (cajas y 
   if (val === undefined) return Array.isArray(m[key]) ? m[key] : null;
   delete m[key]; m[key] = val.map(p => ({ box: p.box, desc: p.desc, es: p.es || '' })); const ks = Object.keys(m); while (ks.length > 80) delete m[ks.shift()];
   try { localStorage.setItem('am_ppl', JSON.stringify(m)); } catch (e) {} return val; }
+function pplHuella(d) { let h = 5381; const n = d.length; const st = Math.max(1, Math.floor(n / 4000)); for (let i = 0; i < n; i += st) h = ((h << 5) + h + d.charCodeAt(i)) | 0; return 'foto:' + n + ':' + (h >>> 0).toString(36); }   // huella de una foto arrastrada (no tiene ruta)
 function pplGrande(L) { // fuera las personas diminutas del fondo (las asignadas o marcadas a mano se quedan)
   const ar = p => (p.box[2] - p.box[0]) * (p.box[3] - p.box[1]); const mx = Math.max(0, ...L.map(ar)); return L.filter(p => p.char || p.manual || (ar(p) >= 0.012 && ar(p) >= mx * 0.06)); }
 function pplLugar(x, y) { // frase de reserva para una persona marcada a mano: dónde está
@@ -615,44 +616,50 @@ function pplLugar(x, y) { // frase de reserva para una persona marcada a mano: d
   const v = y < .33 ? ['in the upper part of the image', 'en la parte de arriba'] : y < .66 ? ['at mid height', 'a media altura'] : ['in the lower part of the image', 'en la parte de abajo'];
   return { desc: `the person ${h[0]}, ${v[0]}`, es: `la persona ${h[1]}, ${v[1]}` }; }
 async function openPeople(bib) {
-  let m0 = $('#pplm'); if (m0) m0.remove(); m0 = el('div', 'fxm'); m0.id = 'pplm'; document.body.appendChild(m0); m0.onclick = e => { if (e.target === m0) m0.remove(); };
-  const box = el('div', 'pplbox'); m0.appendChild(box); const key = bib.image.startsWith('data:') ? '' : bib.image.split('?')[0];
+  let m0 = $('#pplm'); if (m0) m0.remove(); m0 = el('div', 'fxm'); m0.id = 'pplm'; document.body.appendChild(m0); m0.onclick = e => { if (e.target === m0 && !m0._drag) m0.remove(); };
+  const box = el('div', 'pplbox'); m0.appendChild(box); const key = bib.image.startsWith('data:') ? pplHuella(bib.image) : bib.image.split('?')[0];
   const imgBody = () => bib.image.startsWith('data:') ? { data: bib.image } : { path: bib.image.split('?')[0] };
   const cands = () => charList().filter(c => c.ok);
   const pal = t => String(t || '').toLowerCase().replace(/[^a-z ]/g, ' ').split(/\s+/).filter(w => w.length > 2);
   const hereda = (N, V) => { V.filter(o => o.char).forEach(o => { const a = pal(o.desc); let best = null, bs = 0; N.forEach(p => { if (p.char) return; const b = pal(p.desc); const sc = a.filter(w => b.includes(w)).length / Math.max(1, Math.min(a.length, b.length)); if (sc > bs) { bs = sc; best = p; } }); if (best && bs >= 0.5) best.char = o.char; }); return N; };   // las personas vuelven a tener el personaje que se les dio (se emparejan por su frase)
   let P = (bib.people || []).map(p => Object.assign({}, p)); let viejo = []; if (P.some(p => !p.box)) { viejo = P; P = []; }   // un reparto sin cajas viene de una creación antigua
   const pon = L => { P = pplGrande(hereda(L.map(p => ({ box: p.box, desc: p.desc, es: p.es || '', char: null })), viejo)); if (!viejo.length && P.length === 1 && !P[0].char) P[0].char = CH().id; viejo = []; };
-  if (!P.length) { const c = pplCache(key); if (c && c.length) pon(c); }   // esta foto ya se leyó: no se vuelve a leer
+  if (!P.length) { const c = bib._ppl || pplCache(key); if (c && c.length) pon(c); }   // esta foto ya se leyó: no se vuelve a leer
   let busy = !P.length ? performance.now() : 0; let err = ''; let pick = false;
   const libre = () => allChars().map(c => c.id).find(id => !P.some(p => p.char === id)) || null;
   let cs = libre() || CH().id;   // el personaje que se está colocando
   const auto = () => { const free = P.filter(p => !p.char); const act = allChars().map(c => c.id); const pool = (act.length > 1 ? act : []).filter(id => !P.some(p => p.char === id)); if (free.length === 1 && pool.length === 1) free[0].char = pool[0]; };   // con dos personas y dos personajes, al asignar una la otra se asigna sola
   const asigna = i => { const p = P[i]; if (p.char === cs) p.char = null; else { P.forEach(q => { if (q.char === cs) q.char = null; }); p.char = cs; auto(); const nx = libre(); if (nx) cs = nx; } draw(); };
-  const marca = async (x, y) => { pick = false; const hit = P.findIndex(p => x >= p.box[0] && x <= p.box[2] && y >= p.box[1] && y <= p.box[3]); if (hit >= 0) { if (P[hit].char === cs) draw(); else asigna(hit); return; }   // ya estaba detectada
-    const cl = v => Math.round(Math.max(0, Math.min(1, v)) * 1e4) / 1e4; const ph = pplLugar(x, y); const np = { box: [cl(x - .07), cl(y - .12), cl(x + .07), cl(y + .22)], desc: ph.desc, es: ph.es, manual: true, char: null, _lee: true };
+  const marca = async (x, y, caja) => { pick = false; const hit = caja ? -1 : P.findIndex(p => x >= p.box[0] && x <= p.box[2] && y >= p.box[1] && y <= p.box[3]); if (hit >= 0) { if (P[hit].char === cs) draw(); else asigna(hit); return; }   // ya estaba detectada
+    const cl = v => Math.round(Math.max(0, Math.min(1, v)) * 1e4) / 1e4; const ph = pplLugar(x, y); const np = { box: caja ? caja.map(cl) : [cl(x - .07), cl(y - .12), cl(x + .07), cl(y + .22)], desc: ph.desc, es: ph.es, manual: true, char: null, _lee: true };
     P.push(np); asigna(P.length - 1);
     let r = null; try { r = await fetch('/api/personas_img', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ image: imgBody(), punto: [cl(x), cl(y)] }) }).then(q => q.json()); } catch (e) {}
     const q = r && r.ok && (r.person || (r.people || []).find(p => x >= p.box[0] && x <= p.box[2] && y >= p.box[1] && y <= p.box[3]));   // la IA describe a esa persona; si no puede, vale la frase de dónde está
-    delete np._lee; if (q && q.desc) { np.box = q.box; np.desc = q.desc; np.es = q.es || np.es; } if (m0.isConnected) draw(); };
+    delete np._lee; if (q && q.desc) { if (!caja) np.box = q.box; np.desc = q.desc; np.es = q.es || np.es; } if (m0.isConnected) draw(); };
   function draw() { box.innerHTML = '';
     const Lf = el('div', 'pplimg'); const wrap = el('div', 'pplwrap' + (pick ? ' pick' : '')); const im = el('img'); im.src = bib.image; wrap.appendChild(im);
     P.forEach((p, i) => { const b = el('div', 'pplbx' + (p.char === cs ? ' on' : ''), `<i>${i + 1}</i>${p.char ? `<img src="${charInfo(p.char).avatar}" alt="">` : ''}`); const [x0, y0, x1, y1] = p.box; Object.assign(b.style, { left: x0 * 100 + '%', top: y0 * 100 + '%', width: (x1 - x0) * 100 + '%', height: (y1 - y0) * 100 + '%' }); b.style.setProperty('--c', PCOL[i % 6]); b.title = p.es || p.desc; b.onclick = e => { e.stopPropagation(); asigna(i); }; wrap.appendChild(b); });
-    if (pick) { wrap.appendChild(el('div', 'pplhint', 'Haz clic sobre la persona')); wrap.onclick = e => { const r = im.getBoundingClientRect(); const x = (e.clientX - r.left) / r.width, y = (e.clientY - r.top) / r.height; if (x < 0 || x > 1 || y < 0 || y > 1) return; marca(x, y); }; }
-    if (busy) wrap.appendChild(el('div', 'pplbusy', `<i class="spin"></i><b>Buscando a las personas de la imagen</b><small>unos segundos</small>`)); Lf.appendChild(wrap); box.appendChild(Lf);
+    if (pick) { wrap.appendChild(el('div', 'pplhint', 'Haz clic sobre la persona o dibuja su recuadro arrastrando'));
+      const pos = e => { const r = im.getBoundingClientRect(); return [Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)), Math.max(0, Math.min(1, (e.clientY - r.top) / r.height))]; };
+      wrap.onmousedown = e => { if (e.button) return; e.preventDefault(); const s0 = pos(e); const rb = el('div', 'pplrb'); wrap.appendChild(rb); m0._drag = true;
+        const mv = ev => { const p = pos(ev); Object.assign(rb.style, { left: Math.min(s0[0], p[0]) * 100 + '%', top: Math.min(s0[1], p[1]) * 100 + '%', width: Math.abs(p[0] - s0[0]) * 100 + '%', height: Math.abs(p[1] - s0[1]) * 100 + '%' }); };
+        const up = ev => { document.removeEventListener('mousemove', mv); document.removeEventListener('mouseup', up); setTimeout(() => { m0._drag = false; }, 60); const p = pos(ev);
+          if (Math.abs(p[0] - s0[0]) > 0.03 && Math.abs(p[1] - s0[1]) > 0.03) marca((s0[0] + p[0]) / 2, (s0[1] + p[1]) / 2, [Math.min(s0[0], p[0]), Math.min(s0[1], p[1]), Math.max(s0[0], p[0]), Math.max(s0[1], p[1])]); else marca(p[0], p[1]); };   // recuadro dibujado o un simple clic
+        document.addEventListener('mousemove', mv); document.addEventListener('mouseup', up); }; }
+    if (busy) wrap.appendChild(el('div', 'pplbusy', `<b>Preparando la imagen</b><small>buscando a las personas · unos segundos</small><div class="pplbar"><i style="animation-delay:-${((performance.now() - busy) / 1000).toFixed(1)}s"></i></div>`)); Lf.appendChild(wrap); box.appendChild(Lf);
     const Rg = el('div', 'pplside'); Rg.appendChild(el('h3', '', '¿Quién es quién?')); Rg.appendChild(el('p', '', 'Elige un personaje y pulsa a quién sustituye, en la lista o en la imagen. Las personas que dejes «sin cambiar» se quedan como están.'));
     if (err) Rg.appendChild(el('div', 'claveserr', esc(err)));
     Rg.appendChild(el('small', 'pjk', 'Tus personajes')); const g = el('div', 'pplchars');
     cands().forEach(c => { const n = P.findIndex(p => p.char === c.id); const b = el('button', 'pplch' + (cs === c.id ? ' on' : ''), `<img src="${c.avatar}" alt="">${n >= 0 ? `<i style="background:${PCOL[n % 6]}">${n + 1}</i>` : ''}<b>${esc((c.name || '').split(' ')[0])}</b>`); b.title = c.name + (n >= 0 ? ' · sustituye a la persona ' + (n + 1) : ' · sin colocar'); b.onclick = () => { cs = c.id; draw(); }; g.appendChild(b); }); Rg.appendChild(g);
     if (!busy) { const cn0 = cands().find(c => c.id === cs); Rg.appendChild(el('small', 'pjk', `${esc(cn0 ? (cn0.name || '').split(' ')[0] : 'El personaje')} sustituye a`));
       P.forEach((p, i) => { const c = p.char && charInfo(p.char); const row = el('button', 'pplrow' + (p.char === cs ? ' on' : ''), `<i style="background:${PCOL[i % 6]}">${i + 1}</i><span>${p._lee ? 'Leyendo a esa persona…' : esc(p.es || p.desc)}</span>${c ? `<img src="${c.avatar}" alt="" title="${esc(c.name)}"><u title="Dejar sin cambiar">×</u>` : '<em>sin cambiar</em>'}`); row.onclick = e => { if (e.target.tagName === 'U') { p.char = null; draw(); return; } asigna(i); }; Rg.appendChild(row); });
-      const ot = el('button', 'pplrow add' + (pick ? ' on' : ''), `<i>＋</i><span>${pick ? 'Haz clic en la imagen sobre esa persona…' : 'Otra persona: márcala en la imagen'}</span>`); ot.title = 'Si la persona que quieres sustituir no está en la lista, márcala tú con un clic'; ot.onclick = () => { pick = !pick; draw(); }; Rg.appendChild(ot); }
+      const ot = el('button', 'pplrow add' + (pick ? ' on' : ''), `<i>＋</i><span>${pick ? 'Haz clic sobre esa persona o dibuja su recuadro…' : 'Otra persona: márcala en la imagen'}</span>`); ot.title = 'Si la persona que quieres sustituir no está en la lista, márcala tú con un clic'; ot.onclick = () => { pick = !pick; draw(); }; Rg.appendChild(ot); }
     const a = el('div', 'pjacts'); const ok = el('button', 'btn acc big', '✓ Usar este reparto'); ok.disabled = !!busy || !P.some(p => p.char);
     ok.onclick = () => { bib.people = P; const ids = P.filter(p => p.char).map(p => p.char); const main = ids.includes(CH().id) ? CH().id : ids[0]; extraChars(); state.extras = ids.filter(id => id !== main); saveExtras(); if (main !== CH().id) setChar(main, true); state.cfocus = main; m0.remove(); badge(); renderSide(); const it = cur(); if (it) window.paint(it, true); toast(ids.length > 1 ? `${ids.length} personajes repartidos en la imagen` : 'Reparto guardado'); };
     const cn = el('button', 'btn', 'Cancelar'); cn.onclick = () => m0.remove(); a.appendChild(ok); a.appendChild(cn); Rg.appendChild(a); box.appendChild(Rg); }
   draw(); if (!busy) return;
   let r; try { r = await fetch('/api/personas_img', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ image: imgBody() }) }).then(x => x.json()); } catch (e) { r = { error: String(e) }; }
-  busy = 0; if (r && r.ok && r.people.length) { pplCache(key, r.people); pon(r.people); cs = libre() || CH().id; } else err = r && r.ok ? 'No he encontrado personas en esta imagen: márcalas tú con «Otra persona».' : 'No se ha podido leer la imagen: ' + (r ? r.error : 'sin respuesta');
+  busy = 0; if (r && r.ok && r.people.length) { bib._ppl = r.people; pplCache(key, r.people); pon(r.people); cs = libre() || CH().id; } else err = r && r.ok ? 'No he encontrado personas en esta imagen: márcalas tú con «Otra persona».' : 'No se ha podido leer la imagen: ' + (r ? r.error : 'sin respuesta');
   if (m0.isConnected) draw();
 }
 function vTray() { // Crear vídeo: Prenda · Movie look · Cartoon → van al pool de referencias (id 'tab:id', como addToVideo)
@@ -1158,10 +1165,13 @@ const CHECK_SVG = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" s
 const pathGet = (o, k) => k.split('.').reduce((a, x) => (a || {})[x], o);
 async function postJ(url, body) { let r; try { r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).then(x => x.json()); } catch (e) { r = { error: String(e) }; } if (!r || !r.ok) { toast('No se pudo: ' + (r ? r.error : 'sin respuesta')); return null; } return r; }
 const editing = () => document.activeElement && document.activeElement.classList.contains('edin');
+function igNum(t) { const m = String(t || '').trim().replace(/\s/g, '').match(/^([\d.,]+)([KMB])?$/i); if (!m) return null; const u = (m[2] || '').toUpperCase(); let n = m[1]; if (!u && /^\d{1,3}([.,]\d{3})+$/.test(n)) n = n.replace(/[.,]/g, ''); else n = n.replace(',', '.'); const v = parseFloat(n); return isNaN(v) ? null : Math.round(v * (u === 'K' ? 1e3 : u === 'M' ? 1e6 : u === 'B' ? 1e9 : 1)); }   // «11.6K» → 11600
 async function igSync(owner, url, avisar) { // seguidores y publicaciones de su Instagram, leídos de la página pública del perfil
   let r; try { r = await fetch('/api/ig', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url }) }).then(x => x.json()); } catch (e) { r = { error: 'sin respuesta' }; }
   if (!r || !r.ok) { if (avisar) toast((r && r.error) || 'No se ha podido leer Instagram'); return; }
-  await profSave({ 'ig.followers': r.followers, 'ig.posts': r.posts }, owner); toast(`Instagram: ${r.followers} seguidores · ${r.posts} publicaciones`);
+  const mia = String((((owner ? (window.pjPerfil ? pjPerfil() : {}) : C.perfil) || {}).ig || {}).followers || '').trim(); const a = igNum(mia), b = igNum(r.followers); const u = /[KMB]$/i.test(r.followers) && !/[.,]/.test(r.followers) ? b / parseFloat(r.followers) : 0;
+  const fo = (u && a != null && a !== b && Math.round(a / u) * u === b) ? mia : r.followers;   // la tuya es la misma cifra, con más detalle
+  await profSave({ 'ig.followers': fo, 'ig.posts': r.posts }, owner); toast(fo !== r.followers ? `Instagram solo da la cifra redondeada (${r.followers}): se queda la tuya, ${fo} · ${r.posts} publicaciones` : `Instagram: ${r.followers} seguidores · ${r.posts} publicaciones`);
 }
 function profEdit(node, key, opts = {}) {
   if (WEBM() && !opts.owner) return;   // la ficha de Aria es fija para los miembros
