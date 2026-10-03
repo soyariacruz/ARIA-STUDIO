@@ -6,7 +6,7 @@
 (function () {
   const CUR = 'assets/personajes/_opciones/curso/';
   const pj = { list: [], sel: 'aria', wiz: null, jobs: {} };
-  const WEBM = !!(window.CUENTA && CUENTA.web);   // versión web: cada cuenta empieza por SU personaje; Aria queda como personaje de ejemplo (en local, Aria es el personaje de Max y va primero)
+  const WEBM = !!(window.CUENTA && CUENTA.web && !CUENTA.ariaMia);   // miembro de la web: empieza por SU personaje y Aria es un personaje fijo (se ve y se usa, no se edita). En local y en la cuenta de Max en la web, Aria es su personaje y va primero
   window.PJ = pj;
 
   // ---------------------------------------------------------------- opciones (es = etiqueta, en = frase del prompt)
@@ -103,12 +103,13 @@
   }
 
   // ---------------------------------------------------------------- datos
-  async function load() { try { const r = await fetch('/api/personajes').then(x => x.json()); pj.list = r.items || []; pj.tarj = new Set(r.tarjetas || []); } catch (e) { pj.list = []; pj.tarj = new Set(); } webIni(); syncChars(); webChar(); recuperar(); }
+  async function load() { try { const r = await fetch('/api/personajes').then(x => x.json()); pj.list = r.items || []; pj.tarj = new Set(r.tarjetas || []); } catch (e) { pj.list = []; pj.tarj = new Set(); } webIni(); syncChars(); recuperar(); }
   function webIni() {   // web, al abrir: el perfil enseña su primer personaje; si no tiene ninguno, «Crear personaje» (nunca el de Aria como si fuera suyo)
     if (!WEBM || pj.webIni) return; pj.webIni = true; if (!pj.wiz) pj.sel = pj.list.length ? pj.list[0].id : 'nuevo'; }
-  function webChar() {   // web: en Crear imagen el personaje principal es el suyo (el primero que tenga ficha), salvo que ya haya elegido otro
-    if (!WEBM || !window.setChar) return; let saved = null; try { saved = localStorage.getItem('am_charsel'); } catch (e) {}
-    const p0 = pj.list.find(p => p.ficha360); if (p0 && (!saved || (saved !== 'aria' && !pj.list.some(p => p.id === saved)))) setChar(p0.id, true); }
+  function webChar() {   // miembro: en Crear imagen el personaje principal es SIEMPRE uno suyo (el primero con ficha, o el que elija entre los suyos); Aria solo se añade como segunda persona. Sin personaje propio todavía, se crea con Aria
+    if (!WEBM || !window.setChar) return; const p0 = pj.list.find(p => p.ficha360); if (!p0) return;
+    let ch = state.char; if (ch === undefined) { try { ch = localStorage.getItem('am_charsel') || 'aria'; } catch (e) { ch = 'aria'; } }
+    if (ch === 'aria' || !pj.list.some(p => p.id === ch)) setChar(p0.id, true); }
   async function recuperar() { // trabajos de personajes que se lanzaron antes de recargar: si ya están, se recogen; si no, se siguen esperando
     let r; try { r = await fetch('/api/pendientes').then(x => x.json()); } catch (e) { return; }
     for (const j of (r.jobs || [])) { const pid = j.meta.personaje, kind = j.meta.pjKind; if (!pid || !kind || !pj.list.some(p => p.id === pid) || pj.jobs[pid + ':' + kind]) continue;
@@ -118,7 +119,7 @@
   }
   const ARIA = 'assets/personajes/_opciones/aria/';
   const vis = (key, id, code) => (pj.tarj && pj.tarj.has(key + '_' + id)) ? `<img src="${ARIA}${key}_${id}.jpg" alt="" loading="lazy">` : visual(code);
-  function syncChars() { C.chars = [C.chars && C.chars[0] || { id: 'aria', name: C.perfil.name, avatar: C.perfil.avatar, ficha: C.perfil.ficha }].concat(pj.list.map(p => ({ id: p.id, name: p.nombre, avatar: p.avatar || p.retrato || p.foto || '', ficha: p.ficha360 || '' }))); if (window.charsReady) charsReady(); if (WEBM && window.buildNav) { try { buildNav(); } catch (e) {} } }   // en la web, el círculo de «Perfil» del menú es el de su personaje
+  function syncChars() { C.chars = [C.chars && C.chars[0] || { id: 'aria', name: C.perfil.name, avatar: C.perfil.avatar, ficha: C.perfil.ficha }].concat(pj.list.map(p => ({ id: p.id, name: p.nombre, avatar: p.avatar || p.retrato || p.foto || '', ficha: p.ficha360 || '' }))); webChar(); if (window.charsReady) charsReady(); if (WEBM && window.buildNav) { try { buildNav(); } catch (e) {} } }   // en la web, el círculo de «Perfil» del menú es el de su personaje
   const cur = () => pj.list.find(p => p.id === pj.sel) || null;
   const pron = g => g === 'masc' ? ['He', 'His'] : g === 'fem' ? ['She', 'Her'] : ['They', 'Their'];
   const list = (a) => a.length < 2 ? (a[0] || '') : a.slice(0, -1).join(', ') + ' and ' + a[a.length - 1];
@@ -552,7 +553,7 @@
       row.appendChild(c); };
     const nb = el('button', 'pjc new' + (pj.wiz || (WEBM && pj.sel === 'nuevo') ? ' on' : ''), `<span class="pjav"><i>＋</i></span><small>Crear personaje</small>`); nb.onclick = () => startWiz();
     const suyos = () => pj.list.forEach(p => add(p.id, p.nombre, p.avatar || p.retrato || p.foto));
-    if (WEBM) { if (!pj.list.length) row.appendChild(nb); suyos(); add('aria', C.perfil.name + ' · ejemplo', C.perfil.avatar); if (pj.list.length) row.appendChild(nb); }   // web: primero lo suyo (o «Crear»), Aria después
+    if (WEBM) { if (!pj.list.length) row.appendChild(nb); suyos(); add('aria', C.perfil.name, C.perfil.avatar); if (pj.list.length) row.appendChild(nb); }   // web: primero lo suyo (o «Crear»), Aria después
     else { add('aria', C.perfil.name, C.perfil.avatar); suyos(); row.appendChild(nb); }
     t.appendChild(row); return t;
   }
@@ -680,8 +681,8 @@
     if ($('#pjcel')) return; const m0 = el('div', 'fxm'); m0.id = 'pjcel'; document.body.appendChild(m0); const short = esc((p.nombre || '').split(' ')[0]);
     const done = async go => { m0.remove(); const q = pj.list.find(x => x.id === p.id); if (q && !q.celebrado) { q.celebrado = true; await persist_(q); } if (go === 'crear') { if (window.setChar) setChar(p.id); setTab('crear'); return; } if (go === 'acc') pj.tabBy[p.id] = 'complementos'; renderProfile(); renderSide(); };
     m0.onclick = e => { if (e.target === m0) done(); };
-    const b = el('div', 'pjcelbox', `<div class="pjcelemo">🎉</div><h3>¡Enhorabuena! ${esc(p.nombre)} ya está en ARIA STUDIO</h3><img src="${p.combo || p.ficha360}" alt=""><p>${p.combo ? 'Ya tiene su ficha principal, su cara de cerca y su cuerpo completo.' : 'Ya tiene su ficha 360 y sus datos.'} Ya puedes <b>crear imágenes con ${short}</b>: elige ropa, un peinado, una expresión o una foto de la Fototeca. Sus <b>complementos</b> (gafas, pendientes, su móvil…) los puedes repasar cuando quieras.</p>`);
-    const a = el('div', 'pjacts'); const g = el('button', 'btn acc big', '✨ Crear una imagen con ' + short); g.onclick = () => done('crear'); const c0 = el('button', 'btn', '👓 Sus complementos'); c0.onclick = () => done('acc'); const c = el('button', 'btn', 'Ver su ficha'); c.onclick = () => done(); a.appendChild(g); a.appendChild(c0); a.appendChild(c); b.appendChild(a); m0.appendChild(b);
+    const b = el('div', 'pjcelbox', `<div class="pjcelemo">🎉</div><h3>¡Enhorabuena! ${esc(p.nombre)} ya está en ARIA STUDIO</h3><img src="${p.combo || p.ficha360}" alt="">`);
+    const a = el('div', 'pjacts'); const g = el('button', 'btn acc big', '✨ Crear una imagen'); g.onclick = () => done('crear'); const c = el('button', 'btn big', 'Cerrar'); c.onclick = () => done(); a.appendChild(g); a.appendChild(c); b.appendChild(a); m0.appendChild(b);
   }
   function paintWiz() {
     const host = $('#profcard .pjbody'); if (!host || !pj.wiz) return; const keep = host.scrollTop; const w = pj.wiz, d = w.d; host.innerHTML = ''; const S = stepsOf(w);
@@ -731,6 +732,7 @@
   window.renderProfile = async function () {
     const host = $('#profcard'); const keep = host.querySelector('.pjbody') && host.querySelector('.pjbody').scrollTop;
     host.innerHTML = ''; const wrap = el('div', 'pj'); wrap.appendChild(top()); const nuevo = WEBM && pj.sel === 'nuevo' && !pj.wiz; if (!pj.wiz && !nuevo) wrap.appendChild(tabsBar()); const bd = el('div', 'pjbody'); wrap.appendChild(bd); host.appendChild(wrap);
+    bd.classList.toggle('solover', WEBM && pj.sel === 'aria' && !pj.wiz);   // Aria es fija para los miembros: su perfil se ve entero, sin botones de cambiar
     if (pj.wiz) paintWiz(); else if (nuevo) { inicio(bd); devSection(); } else tabBody(bd);
     if (window.pjScrollTop) { window.pjScrollTop = false; bd.scrollTop = 0; host.scrollTop = 0; } else if (keep) bd.scrollTop = keep; // al abrir un creador se empieza arriba
     devSection();

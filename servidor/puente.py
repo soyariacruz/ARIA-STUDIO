@@ -39,6 +39,9 @@ KINDS = ('vestidor', 'hair', 'expr')   # las bibliotecas a las que una cuenta pu
 _UUID = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
 _ctx = threading.local()   # la cuenta del hilo: la pone cada petición (y, a mano, cada hilo de fondo)
 def uid(): return getattr(_ctx, 'uid', None)   # en local siempre None
+DUENOS = tuple(e.strip().lower() for e in (os.environ.get('ARIA_DUENOS') or 'mix1994max@gmail.com').split(',') if e.strip())   # cuentas que pueden cambiar a Aria Cruz (en la web, la de Max)
+def aria_fija(): return SERVIDOR and (getattr(_ctx, 'email', '') or '').lower() not in DUENOS   # para el resto de cuentas Aria es un personaje fijo: se ve y se usa, no se edita
+FIJA = 'Aria Cruz es un personaje fijo: su ficha no se puede cambiar. Crea o edita tu propio personaje.'
 class como:   # «with como(uid): …» → lo de dentro corre como esa cuenta
     def __init__(self, u, email='', interno=False): self.n = (u, email, interno)
     def __enter__(self): self.a = (getattr(_ctx, 'uid', None), getattr(_ctx, 'email', ''), getattr(_ctx, 'interno', False)); _ctx.uid, _ctx.email, _ctx.interno = self.n; _ctx.comun = None
@@ -598,6 +601,7 @@ def _nf_autosave(j):   # «Nueva ficha»: al terminar se guarda sola en Fichas c
     nf = (j.get('meta') or {}).get('nf') or {}; rel = j.get('file')
     if not rel: return None
     owner = nf.get('owner')
+    if not owner and aria_fija(): return None   # una ficha de Aria hecha por otra cuenta se queda en sus creaciones: no entra en la ficha de Aria
     if owner:   # ficha nueva de otro personaje: a su carpeta y a su personaje.json
         if not _pid_ok(owner) or '\\' in owner: return None
         d = os.path.join(pers_dir(), owner); pf = os.path.join(d, 'personaje.json')   # siempre dentro de la casa de la cuenta del trabajo
@@ -646,7 +650,7 @@ def _capa():   # la capa de la cuenta sobre el catálogo común (su casa/capa.js
     return c if isinstance(c, dict) else {}
 def _fusion(S, capa):   # lo que ve la cuenta = copia entera del común + su capa encima
     C = json.loads(S['txt'])
-    if isinstance(capa.get('perfil'), dict): C['perfil'] = capa['perfil']
+    if isinstance(capa.get('perfil'), dict) and not aria_fija(): C['perfil'] = capa['perfil']
     oc = capa.get('ocultos') or {}; fav = set(capa.get('fav') or []); padre = capa.get('padre') or {}
     for k in KINDS:
         fuera = set(oc.get(k) or []); L = [x for x in C.get(k) or [] if x.get('id') not in fuera]
@@ -667,7 +671,7 @@ def _cat_load():   # (cabecera, catálogo): en local, catalog.js de siempre; en 
     return 'window.CATALOG = ', _fusion(S, _capa())
 def _capa_save(C):   # modo servidor: el catálogo común NO se escribe nunca; se calcula y se guarda la capa de la cuenta
     S = getattr(_ctx, 'comun', None) or _comun(); vieja = _capa(); capa = {'v': 1}
-    if 'perfil' in vieja or C.get('perfil') != S['perfil']: capa['perfil'] = C.get('perfil') or {}   # el perfil entero, desde el primer cambio
+    if not aria_fija() and ('perfil' in vieja or C.get('perfil') != S['perfil']): capa['perfil'] = C.get('perfil') or {}   # el perfil entero, desde el primer cambio
     oc = {}
     for k in KINDS:
         L = [x for x in C.get(k) or [] if isinstance(x, dict)]; ids = S['ids'][k]; hay = {x.get('id') for x in L}
@@ -959,7 +963,7 @@ class H(SimpleHTTPRequestHandler):
             A = _apis_estado(); w = A[0]
             return self._json(200, {'ok': True, 'apis': A, 'ws': w['on'], 'ws_fin': w['fin'], 'saldo': w['saldo']})
         if u.path == '/api/ping':
-            return self._json(200, {'ok': True, **({'espacio': {'usado': espacio(), 'tope': CUOTA}} if SERVIDOR else {}), 'model': MODEL, 'default': 'mstudio', 'models': model_list(), 'unavailable': unavailable(), 'ws': bool(load_ws()), 'aspects': ASPECTS, 'key': _hf_listo(), 'ark': bool(load_ark()[0]), 'ark_usd': ARK_USD, 'interno': bool(getattr(_ctx, 'interno', False)) if SERVIDOR else os.path.isfile(os.path.expanduser('~/.claude/notion.env')), **({'servidor': True} if SERVIDOR else {})})   # interno = el ordenador de Max: enseña «Workflows» (en la web alojada, solo las cuentas autorizadas)
+            return self._json(200, {'ok': True, **({'espacio': {'usado': espacio(), 'tope': CUOTA}, 'aria_mia': not aria_fija()} if SERVIDOR else {}), 'model': MODEL, 'default': 'mstudio', 'models': model_list(), 'unavailable': unavailable(), 'ws': bool(load_ws()), 'aspects': ASPECTS, 'key': _hf_listo(), 'ark': bool(load_ark()[0]), 'ark_usd': ARK_USD, 'interno': bool(getattr(_ctx, 'interno', False)) if SERVIDOR else os.path.isfile(os.path.expanduser('~/.claude/notion.env')), **({'servidor': True} if SERVIDOR else {})})   # interno = el ordenador de Max: enseña «Workflows» (en la web alojada, solo las cuentas autorizadas)
         if u.path == '/api/live':   # lo ya generado por la API (assets/live/<item>_<rid>.ext) → la app lo enseña sin volver a generar
             files = {}; allf = []; ld, vd = live_dir(), video_dir()
             for fn in sorted(os.listdir(ld), key=lambda f: os.path.getmtime(os.path.join(ld, f))):
@@ -1070,6 +1074,7 @@ class H(SimpleHTTPRequestHandler):
         return self._estatico() if SERVIDOR else super().do_GET()
     def _post(self):
         if self.path in ('/api/video', '/api/generar', '/api/personaje') and lleno(): return self._json(413, {'error': LLENO, 'lleno': True})
+        if self.path in ('/api/perfil', '/api/ficha_panel', '/api/fichas360', '/api/fichas_outfit') and aria_fija(): return self._json(403, {'error': FIJA, 'fija': True})   # todo esto escribe en la ficha de Aria
         if self.path == '/api/video': return self.do_video()
         if SERVIDOR and self.path == '/api/sesion':   # deja la sesión en una cookie HttpOnly para que las imágenes de la cuenta se puedan pedir con <img>; {salir:true} la borra
             n = int(self.headers.get('Content-Length') or 0); body = json.loads(self.rfile.read(n) or b'{}'); a = self.headers.get('Authorization') or ''; tok = a[7:].strip() if a[:7].lower() == 'bearer ' else ''
@@ -1399,6 +1404,7 @@ class H(SimpleHTTPRequestHandler):
             plog(f'perfil {act} · ' + ', '.join(changed)); return self._json(200, {'ok': True, 'changed': changed, 'perfil': {k: P.get(k) for k in ('name', 'handle', 'tagline', 'bio', 'basePrompt', 'datos', 'avatar', 'avatarSrc', 'avatarCrop', 'ig')}})
         if self.path == '/api/ficha_combo':   # ficha principal combinada: 2x2 de la cara + cuerpo entero de frente + cuerpo entero de perfil (del cuello a los pies), 4267x2400 (16:9)
             n = int(self.headers.get('Content-Length') or 0); body = json.loads(self.rfile.read(n) or b'{}'); act = body.get('action') or 'ensure'
+            if act not in ('ensure', 'preview') and aria_fija(): return self._json(403, {'error': FIJA, 'fija': True})
             import re as _re
             from PIL import Image, ImageStat
             CW, CH, GAP, BW, SW = 1600, 2400, 16, 1317, 1318; TW = CW + GAP + BW + GAP + SW; BG = (200, 198, 196); dd = perfil_dir('combo')
@@ -1558,6 +1564,7 @@ class H(SimpleHTTPRequestHandler):
             except Exception as e: return self._json(400, {'error': str(e)})
         if self.path == '/api/complementos':   # complementos de un personaje: {owner:'aria'|id, list:[{id,nombre,tipo,regla,desc,img}], files:{id: dataURL}}
             n = int(self.headers.get('Content-Length') or 0); body = json.loads(self.rfile.read(n) or b'{}'); owner = body.get('owner') or 'aria'; L = body.get('list') or []
+            if owner == 'aria' and aria_fija(): return self._json(403, {'error': FIJA, 'fija': True})
             if body.get('tipos') is not None and not L:   # solo actualizar los tipos propios
                 with _cerrojo():
                     head, C = _cat_load(); C['perfil']['accTipos'] = body['tipos']

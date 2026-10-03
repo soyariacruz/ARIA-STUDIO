@@ -6,12 +6,13 @@
 (function () {
   const LOCAL = /^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname);
   const WEB = !LOCAL || location.port === '3000';
-  const CU = window.CUENTA = { web: WEB, user: null, sb: null, interno: false };
+  const CU = window.CUENTA = { web: WEB, user: null, sb: null, interno: false, ariaMia: false };
   if (!WEB) return;
 
   // Las dos son públicas por diseño (van en el navegador). Lo que protege los datos son las reglas de Supabase.
   const SB_URL = 'https://uhscbgidrloskdjbevkn.supabase.co';
   const SB_KEY = 'sb_publishable_GSO5Vqhr7Dg93egtKk_I2w_E_uScoNG';
+  const DUENOS = ['mix1994max@gmail.com'];   // la cuenta de Max: para ella Aria Cruz es SU personaje (va primero y se puede editar). Para las demás, Aria es un personaje fijo
   const APP = ['app.js', 'feedback.js', 'personajes.js', 'complementos.js', 'fichas.js', 'fichas360.js'];   // en este orden, después del catálogo
   const root = document.documentElement;
   try { if (localStorage.getItem('am_theme') !== 'light') root.classList.add('dark'); } catch (e) { root.classList.add('dark'); }
@@ -180,6 +181,7 @@ html.sinapi #livedot,html.sinapi .meter{display:none!important}
     }
     if (!m) return cara(`La cuenta ${u.email} todavía no tiene acceso. ARIA STUDIO está abierto solo a miembros de la comunidad.`, { salir: true });
     CU.interno = !!m.interno;
+    CU.ariaMia = DUENOS.includes((u.email || '').toLowerCase());   // solo para pintar: quien manda es el servidor (ARIA_DUENOS)
     // Lo que la app recuerda en el navegador (la combinación a medias, el personaje elegido, el modelo…) es de UNA cuenta:
     // si en este navegador entra otra, empieza limpia (antes heredaba lo último de la anterior).
     try {
