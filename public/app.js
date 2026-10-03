@@ -973,7 +973,9 @@ function recSettings(meta) { // «Recrear» también carga el modelo, la calidad
   return out.length ? ' · ' + out.join(' · ') : '';
 }
 function recComp(meta) { // lo que carga «Recrear»: los componentes + la captura o imagen de internet original si se guardó
-  const r = Object.assign({}, resolveComp(meta || {})); if (!r.biblio && meta && meta.canvasRef) r.biblio = { id: (meta.compIds && meta.compIds.biblio) || 'drop-' + Date.now(), name: (meta.comp && meta.comp[COMP.biblio]) || 'Tu foto', image: meta.canvasRef, thumb: meta.canvasRef, prompt: '', drop: true, tags: 'Tu foto' }; return r; }
+  const r = Object.assign({}, resolveComp(meta || {})); const p0 = ((meta && meta.refPaths) || [])[0] || '';
+  const lienzo = meta && (meta.canvasRef || (p0.startsWith('assets/refs/') ? p0 : ''));   // la imagen de partida: la que guardó el servidor o, si no, la primera referencia cuando era una imagen subida
+  if (!r.biblio && lienzo) r.biblio = { id: (meta.compIds && meta.compIds.biblio) || 'drop-' + Date.now(), name: (meta.comp && meta.comp[COMP.biblio]) || 'Tu foto', image: lienzo, thumb: lienzo, prompt: '', drop: true, tags: 'Tu foto' }; return r; }
 const BG_AR = {}; function bgAr(src) { // proporción de la imagen de partida (se calcula una vez)
   const set = () => { if (state.tab === 'crear' && jobBg(cur()) === src && arOverride !== BG_AR[src]) { arOverride = BG_AR[src]; sizeMirror(); } };
   if (BG_AR[src]) return set(); const im = new Image(); im.onload = () => { BG_AR[src] = im.naturalWidth / im.naturalHeight; set(); }; im.src = src; }
