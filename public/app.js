@@ -1401,7 +1401,8 @@ function hydrateLive() { // lo ya generado se recupera (it.live) pero NO se reve
     for (const [id, f] of Object.entries(j.files)) { const it = map.get(id); if (it) { it.live = f; n++; } }
     if (n) { log(`<span class="g">· ${n} imagen(es) generadas antes por la API recuperadas de assets/live/ · se enseñan sin gastar al pulsar Generar</span>`); if (state.ready) { renderRail(); renderSide(); } }
     buildVideoLib(j); buildCreations(j); if (state.ready && (state.tab === 'crear' || state.tab === 'creaciones')) renderChips();
-    if (!hydrateLive._ya) { hydrateLive._ya = true;   // solo al abrir la página: en grande, tu última creación (la de esta combinación si se sabe cuál fue; si no, la más reciente). Al cambiar la combinación vuelve el lienzo
+    if (!hydrateLive._ya) { jobsRecuperar();
+    } if (!hydrateLive._ya) { hydrateLive._ya = true;   // solo al abrir la página: en grande, tu última creación (la de esta combinación si se sabe cuál fue; si no, la más reciente). Al cambiar la combinación vuelve el lienzo
       try { const cu = C.crear.find(x => x.custom); let u = JSON.parse(localStorage.getItem('am_crear_last') || 'null'); const sg = compSig();
         const src = (u && u.sig === sg && (j.all || []).includes(u.src)) ? u.src : (cu && j.files && j.files[cu.id]);
         if (cu && src && !(cu._liveBy && cu._liveBy[sg])) { cu._liveBy = cu._liveBy || {}; cu._liveBy[sg] = src; state.done.add(cu.id); if (state.ready && state.tab === 'crear') paint(cur(), true); } } catch (e) {} }
@@ -1517,8 +1518,9 @@ function livePlanRaw(tab, it) { // qué mandar a la API según la pestaña · im
     const R = crearRefs(); const n = key => { const i = R.findIndex(r => r.key === key); return i + 1; }; const I = key => 'image ' + n(key);
     const NOTME = (k, what) => ch.aria ? '' : `; the person shown in ${I(k)} is only ${what}: never copy her face, hair color, glasses or earrings`; // las bibliotecas enseñan a Aria: de ahí solo se copia la prenda, el peinado o el gesto
     const dbl = sinLienzo(bib);   // imagen nueva desde el prompt (sin la foto de la escena)
+    const sinRefs = t => t.replace(/@?image[_ ]?\d+\s+as\s+(an?\s+)?(exact\s+)?(\w+\s+)?reference:?\s*/gi, '').replace(/\(?@image[_ ]?\d+\)?/gi, '').replace(/\s{2,}/g, ' ').replace(/\.\.+/g, '.');   // el prompt original nombraba sus propias imágenes de referencia
     let base;
-    if (bib && dbl) base = `Create a new photograph. The woman is the woman of ${I('ficha')} (her 360 character sheet): ${window.accIdent ? accIdent(I) : 'same face, green eyes, thin round metal glasses, silver hoop earrings'}. Scene: ${sceneTxt(bib)}`;
+    if (bib && dbl) base = `Create a new photograph. The woman is the woman of ${I('ficha')} (her 360 character sheet): ${window.accIdent ? accIdent(I) : 'same face, green eyes, thin round metal glasses, silver hoop earrings'}. Scene: ${sinRefs(sceneTxt(bib))}`;
     else if (bib) base = `Edit ${I('canvas')}. Keep its scene, background, camera framing, pose, lighting and composition exactly as they are. The woman must be the woman of ${I('ficha')} (her 360 character sheet): ${window.accIdent ? accIdent(I) : 'same face, green eyes, thin round metal glasses, silver hoop earrings'}${(extras || !(bib.neutro || bib.prompt)) ? '' : '. Scene, for reference: ' + sceneTxt(bib)}`;
     else base = `Portrait of the woman in ${I('canvas')}, whose face must match ${I('ficha')} (her 360 character sheet), natural pose, plain white studio backdrop, soft even lighting`;
     if (n('vestidor')) parts.push(`REPLACE her clothing completely: she wears EXACTLY the outfit and shoes of ${I('vestidor')} (${v.name}), every piece, same colors and fabrics; nothing of the original clothing remains${NOTME('vestidor', 'a mannequin for the outfit')}`);
@@ -1586,6 +1588,11 @@ function jobFor(it) { for (const j of JOBS.values()) if (j.it === it && !j.end) 
 function activeJobs() { return [...JOBS.values()].filter(j => !j.end); }
 function updateQueueOverlay(j) { const sec = Math.round((performance.now() - j.t0) / 1000); $('#genTxt').innerHTML = `<b>${j.status === 'in_progress' ? (j.kind === 'video' ? 'Generando vídeo' : 'Generando') : 'En cola'}</b><span>${esc(j.it.name)}</span><small>${esc(j.m.name)}</small>`; $('#genSub').innerHTML = `<b>${sec} s${j.kind === 'video' ? ' · suele tardar 1-4 min' : ''}</b><span>Puedes seguir navegando</span>`; }
 function ensurePoller() { if (!pollT) pollT = setInterval(pollJobs, 4000); }
+// Las generaciones de Crear imagen que están en marcha se apuntan en el navegador: si se recarga la página, vuelven a verse «Generando» y se recogen al terminar
+function jobsGuardar() { try { const corto = x => (typeof x === 'string' && !x.startsWith('data:')) ? x : null; persist('am_jobs', JSON.stringify([...JOBS.values()].filter(j => !j.end && j.tab === 'crear' && j.kind === 'image' && j.it && j.it.custom && !j.persona).map(j => ({ rid: j.rid, t: Date.now() - (performance.now() - j.t0), mk: j.m && j.m.key, usd: j.usd, sig: j.sig, name: j.name, thumb: corto(j.thumb), bg: corto(j.bg) })))); } catch (e) {} }
+function jobsRecuperar() { let L = []; try { L = JSON.parse(localStorage.getItem('am_jobs') || '[]'); } catch (e) {} const it = C.crear.find(x => x.custom); if (!it || !Array.isArray(L)) return; let n = 0;
+  L.forEach(q => { if (!q || !q.rid || JOBS.has(q.rid) || Date.now() - q.t > 3 * 3600e3) return; JOBS.set(q.rid, { rid: q.rid, it, tab: 'crear', m: MODELS.find(x => x.key === q.mk) || curModel(), kind: 'image', t0: performance.now() - (Date.now() - q.t), status: 'in_progress', usd: q.usd, sig: q.sig, name: q.name, thumb: q.thumb, bg: q.bg }); n++; });
+  if (n) { ensurePoller(); pollJobs(); if (state.ready) { renderSide(); const c = cur(); if (c) paint(c, true); } } }
 async function pollJobs() { if (pollJobs.busy) return; pollJobs.busy = true; try { await pollJobs_(); } finally { pollJobs.busy = false; } } // nunca dos rondas a la vez
 async function pollJobs_() {
   for (const job of activeJobs()) {
@@ -1597,6 +1604,7 @@ async function pollJobs_() {
     else if (sec > 900) cancelJob(job, 'sin respuesta en 15 min: cancelada');
     else { job.status = st.status || 'queued'; if (cur() === job.it && state.tab !== 'perfil' && state.tab !== 'creaciones') updateQueueOverlay(job); }
   }
+  jobsGuardar();
   if (!activeJobs().length && pollT) { clearInterval(pollT); pollT = 0; }
 }
 function finishJob(job, st) {
@@ -1628,7 +1636,7 @@ async function liveGenerate(tab, it, plan, label) {
   let r; try { r = await fetch('/api/generar', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ item: it.id + (tab !== 'crear' && !CH().aria ? '@' + CH().id : ''), prompt: plan.prompt, images: plan.images, aspect: plan.aspect, quality: state.quality, model: m.key, meta }) }).then(x => x.json()); } catch (e) { r = { error: String(e) }; }
   if (!r || r.error) { const msg = r ? r.error : 'sin respuesta del servidor'; log(`<span class="pr">      ✕ ${msg}</span>`); it._err = msg; if (cur() === it) { paint(it, true); renderSide(); } toast('No se ha podido generar (mira el motivo sobre la imagen)'); return null; }
   log(`<span class="q">      ← 202 queued</span>   request_id: ${r.request_id} <span class="g">· estimación ${r.usd != null ? '$' + Number(r.usd).toFixed(4) : '—'} · sigue generándose en segundo plano</span>`);
-  const job = { rid: r.request_id, it, tab, m, kind: 'image', t0: performance.now(), status: 'queued', usd: r.usd != null ? Number(r.usd) : m.usd[state.quality], sig: tab === 'crear' ? compSig() : null, name: tab === 'crear' ? 'Creación · ' + compNames() : it.name, thumb: tab === 'crear' ? ((state.comp.biblio && state.comp.biblio.thumb) || (state.comp.vestidor && state.comp.vestidor.card) || (CH().aria ? C.base.thumb : CH().avatar)) : null, bg: tab === 'crear' ? ((state.comp.biblio && state.comp.biblio.image) || userPhoto || (CH().aria ? C.base.photo : CH().foto)) : null }; JOBS.set(job.rid, job);
+  const job = { rid: r.request_id, it, tab, m, kind: 'image', t0: performance.now(), status: 'queued', usd: r.usd != null ? Number(r.usd) : m.usd[state.quality], sig: tab === 'crear' ? compSig() : null, name: tab === 'crear' ? 'Creación · ' + compNames() : it.name, thumb: tab === 'crear' ? ((state.comp.biblio && state.comp.biblio.thumb) || (state.comp.vestidor && state.comp.vestidor.card) || (CH().aria ? C.base.thumb : CH().avatar)) : null, bg: tab === 'crear' ? ((state.comp.biblio && state.comp.biblio.image) || userPhoto || (CH().aria ? C.base.photo : CH().foto)) : null }; JOBS.set(job.rid, job); jobsGuardar();
   if (cur() === it) { paint(it, true); renderSide(); } renderRail(); buildCreations(); ensurePoller(); rail.scrollTop = 0; setTimeout(() => { rail.scrollTop = 0; }, 350); return job;
 }
 
