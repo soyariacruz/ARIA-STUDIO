@@ -22,7 +22,8 @@ SRC = '/Volumes/home/🗄 Work/CLAUDE/Aria Mirror'
 SB = 'https://uhscbgidrloskdjbevkn.supabase.co'
 AQUI = os.path.dirname(os.path.abspath(__file__))
 APUNTE = os.path.join(AQUI, '.subido.json')
-CARPETAS = ['hair', 'expr', 'cartoon', 'movie', 'photo', 'vestidor', 'biblio', 'perfil', 'crear', 'refs', 'conv', 'video']
+CARPETAS = ['hair', 'expr', 'cartoon', 'movie', 'photo', 'vestidor', 'biblio', 'perfil', 'crear', 'refs', 'conv', 'video',
+            os.path.join('personajes', '_opciones')]   # las caras del casting de «Empezar desde cero» (comunes; los personajes de Max no se suben)
 if '--filmoteca' in sys.argv: CARPETAS.append('videoteca')   # sus imágenes pesan 1,1 GB: no caben en el plan gratis de Supabase (1 GB)
 FUERA = {'full', 'generadas'}          # subcarpetas que no se suben
 IMG = ('.jpg', '.jpeg', '.png', '.webp', '.gif')
@@ -81,6 +82,7 @@ def imagenes():
         elif isinstance(v, dict):
             for x in v.values(): walk(x)
     walk(json.load(open(os.path.join(SRC, 'catalog.json'), encoding='utf-8')))
+    refs.add('assets/personajes/_lienzo.jpg')   # el lienzo en blanco del creador de personajes
     for r in sorted(refs):
         ruta = r[len('assets/'):]
         if ruta in ya or (ruta.startswith('videoteca/') and 'videoteca' not in CARPETAS): continue

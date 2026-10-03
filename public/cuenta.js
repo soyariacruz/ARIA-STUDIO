@@ -110,7 +110,24 @@ html.sinapi #livedot,html.sinapi .meter{display:none!important}
 
   // ---------- cargar la app (solo con sesión) ----------
   const tag = (src) => new Promise((ok, ko) => { const s = document.createElement('script'); s.src = src; s.onload = ok; s.onerror = () => ko(new Error('no carga ' + src)); document.body.appendChild(s); });
-  async function catalogo() {   // el catálogo lleva los prompts: vive en un almacén privado y solo lo reciben los miembros
+  // ---------- la sesión viaja al servidor: cabecera en /api y cookie para las imágenes propias (<img> no manda cabeceras) ----------
+  function sesion(session) {
+    CU.token = (session && session.access_token) || '';
+    const seguro = location.protocol === 'https:' ? '; Secure' : '';
+    document.cookie = 'aria_token=' + (CU.token ? encodeURIComponent(CU.token) + '; Max-Age=3600' : '; Max-Age=0') + '; Path=/; SameSite=Lax' + seguro;
+  }
+  const fetch0 = window.fetch.bind(window);
+  window.fetch = (input, init) => {
+    if (CU.token && typeof input === 'string' && input.startsWith('/api/')) {
+      init = Object.assign({}, init); init.headers = new Headers(init.headers || {}); init.headers.set('Authorization', 'Bearer ' + CU.token);
+    }
+    return fetch0(input, init);
+  };
+  async function catalogo() {   // el catálogo lleva los prompts: solo lo reciben los miembros con sesión
+    try {   // con servidor propio: el catálogo común más lo tuyo (tu perfil, tus prendas, tus favoritas)
+      const r = await fetch('/api/catalogo');
+      if (r.ok && /json/.test(r.headers.get('content-type') || '')) { window.CATALOG = await r.json(); if (window.CATALOG && window.CATALOG.biblio) return; }
+    } catch (e) {}
     let txt;
     try { const { data, error } = await CU.sb.storage.from('catalogo').download('catalog.js'); if (error) throw error; txt = await data.text(); }
     catch (e) { if (!LOCAL) throw e; const r = await fetch('/catalog.js'); if (!r.ok) throw e; txt = await r.text(); }   // en desarrollo vale el del puente
@@ -179,8 +196,8 @@ html.sinapi #livedot,html.sinapi .meter{display:none!important}
     };
     // dentro de este aviso no se puede esperar a Supabase (se bloquea): se sale de él con setTimeout
     const paint = (session) => setTimeout(() => { if (session && session.user) entrar(session); else if (!dentro) { fuera(); if (qerr) cara(G('gateMsg').textContent, { entrar: true, error: qerr }); } }, 0);
-    sb.auth.onAuthStateChange((ev, session) => { if (ev === 'SIGNED_OUT') { dentro = null; return fuera(); } paint(session); });
-    sb.auth.getSession().then(({ data }) => paint(data.session)).catch(() => fuera());
+    sb.auth.onAuthStateChange((ev, session) => { sesion(session); if (ev === 'SIGNED_OUT') { dentro = null; return fuera(); } paint(session); });   // también al renovarse la sesión (cada hora)
+    sb.auth.getSession().then(({ data }) => { sesion(data.session); paint(data.session); }).catch(() => fuera());
   };
   document.head.appendChild(lib);
 })();
