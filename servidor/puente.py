@@ -748,10 +748,15 @@ def _ark_ok(k):   # comprueba una clave de BytePlus pidiendo su lista de trabajo
     urllib.request.urlopen(rq, timeout=30).read()
 def _de_quien(k):   # ¿de qué proveedor es esta clave? Se prueba con cada uno; None si ninguno la acepta
     if not re.fullmatch(r'[\x21-\x7e]{16,400}', k): return None
+    duda = False
     for aid, prueba in ((('hf', _hf_ok),) if ':' in k else (('ws', _ws_saldo), ('ark', _ark_ok))):
-        try: prueba(k); return aid
-        except Exception: pass
-    return None
+        for intento in (1, 2):   # «no la acepta» (401/403…) es un no; cualquier otro fallo (red, 5xx, tardanza) se reintenta una vez
+            try: prueba(k); return aid
+            except urllib.error.HTTPError as e:
+                if e.code in (400, 401, 403, 404): break
+                duda = True
+            except Exception: duda = True
+    return 'duda' if duda else None
 def _apis_estado():   # qué APIs hay conectadas (nunca la clave: solo sus 4 últimos caracteres)
     out = []
     for aid, nombre, envn, homef, para in APIS:
@@ -1077,6 +1082,7 @@ class H(SimpleHTTPRequestHandler):
             if 'ws' in body and 'id' not in body: body = {'id': 'ws', 'key': body.get('ws')} if body.get('ws') else {'id': 'ws', 'off': True}
             if body.get('id') == 'auto':   # la pantalla ya no pregunta de quién es la clave
                 body['id'] = _de_quien(str(body.get('key') or '').strip())
+                if body['id'] == 'duda': return self._json(400, {'error': 'el proveedor no ha respondido al comprobar la clave. No es que esté mal: vuelve a pulsar Conectar'})
                 if not body['id']: return self._json(400, {'error': 'no reconozco esa clave. Hoy funcionan las de WaveSpeed, Higgsfield (con la forma ID:SECRET) y BytePlus: revisa que esté copiada entera'})
             api_ = next((a for a in APIS if a[0] == body.get('id')), None)
             if not api_: return self._json(400, {'error': 'API desconocida'})
