@@ -701,6 +701,11 @@ def _cat_save(head, C):   # escritura atómica del catálogo (temporal + cambio 
 def _safe_item(x):   # el nombre del elemento acaba en el nombre del archivo: nunca puede salirse de su carpeta
     return re.sub(r'[^A-Za-z0-9_.@:-]', '-', str(x or 'img')).strip('.')[:90] or 'img'
 _ASK_ESTILO = {   # leer un peinado o una expresión de una foto cualquiera (dos líneas: nombre en español + descripción en inglés)
+    'escena': ('Describe this photo so an AI image generator can recreate THE SAME SCENE with a DIFFERENT person. Answer with EXACTLY three lines and nothing else. '
+               'Line 1: a short title in Spanish, 2-5 words. '
+               'Line 2: one English paragraph, 60-110 words: the place and background, time of day and lighting, camera distance, angle and framing, what she is doing and her exact pose, her expression and mood, props, and the photo style (phone snapshot, studio, film grain...). Start with the framing. Use "she" for the person. '
+               'NEVER describe who the person is: no face, no eye color, no hair color or hairstyle, no skin tone, no age, no ethnicity, no body shape, no glasses, no earrings, no jewelry. '
+               'Line 3: one English phrase, 8-30 words, with ONLY the clothing and shoes she wears (colors, fabrics, fit).'),
     'hair': ('Look ONLY at the HAIRSTYLE of the person in this image (ignore the face, the clothes and the background). Answer with EXACTLY two lines and nothing else. '
              'Line 1: a short hairstyle name in Spanish, 2-5 words, like a salon catalog (e.g. "Trenza Francesa Lateral", "Moño Bajo Despeinado"). '
              'Line 2: one precise English sentence, 15-35 words, describing only the hairstyle so an AI image generator can reproduce it: length, cut, parting, bangs, texture and how it is tied or braided. Do not mention the hair color.'),
@@ -1552,7 +1557,7 @@ class H(SimpleHTTPRequestHandler):
                 ask = _ASK_ESTILO[body.get('modo')] if body.get('modo') in _ASK_ESTILO else ('Look ONLY at the main object in this image' + (' ("' + body['nombre'] + '", type: ' + (body.get('tipo') or 'accessory') + ')' if body.get('nombre') else ' (type: ' + (body.get('tipo') or 'accessory') + ')') + '. Answer with EXACTLY two lines and nothing else. '
                        'Line 1: a short product name in Spanish, 2-5 words, like a shop label (e.g. "Bolso de lona verde", "iPhone 17 Pro naranja"). '
                        'Line 2: a precise English prompt fragment for an AI image generator so it can reproduce the object exactly: one line, 15-35 words, starting with an article (a/an), no full sentences, no people, no background, no brand guesses unless a logo is clearly visible; mention shape, material, color and finish, size and distinctive details.')
-                r = ws('POST', '/api/v3/wavespeed-ai/any-llm/vision', {'prompt': ask, 'images': [url], 'model': 'google/gemini-2.5-flash', 'temperature': 0.2, 'max_tokens': 220, 'priority': 'latency'})
+                r = ws('POST', '/api/v3/wavespeed-ai/any-llm/vision', {'prompt': ask, 'images': [url], 'model': 'google/gemini-2.5-flash', 'temperature': 0.2, 'max_tokens': 480 if body.get('modo') == 'escena' else 220, 'priority': 'latency'})
                 rid = (r.get('data') or {}).get('id'); txt = ''
                 for _ in range(40):
                     time.sleep(1.5); w = ws('GET', f'/api/v3/predictions/{rid}/result').get('data') or {}
@@ -1563,8 +1568,25 @@ class H(SimpleHTTPRequestHandler):
                 if not txt: raise RuntimeError('sin respuesta')
                 extra = []
                 if body.get('modo') in _ASK_ESTILO and len(lines) > 2: txt = lines[1]; extra = lines[2:]   # expresión: línea 3 = prompt en español, línea 4 = categoría
-                plog('describir ok · ' + nombre + ' · ' + txt[:80]); return self._json(200, {'ok': True, 'desc': txt, 'nombre': nombre, 'extra': extra})
+                ref = None
+                if body.get('modo') == 'escena' and isinstance(body.get('image'), dict) and ',' in str(body['image'].get('data') or ''):   # la foto leída se guarda en sus referencias: así «Recrear» puede volver a ponerla aunque no se haya enviado al generador
+                    head, b64 = body['image']['data'].split(',', 1); raw, ct = img_norm(base64.b64decode(b64), head.split(':')[1].split(';')[0])
+                    ref = f"assets/refs/{hashlib.sha1(raw).hexdigest()[:16]}.{'png' if ct == 'image/png' else 'webp' if ct == 'image/webp' else 'jpg'}"; full = os.path.join(refs_dir(), os.path.basename(ref))
+                    if not os.path.exists(full): open(full, 'wb').write(raw)
+                plog('describir ok · ' + nombre + ' · ' + txt[:80]); return self._json(200, {'ok': True, 'desc': txt, 'nombre': nombre, 'extra': extra, 'ref': ref})
             except Exception as e: return self._json(400, {'error': str(e)})
+        if self.path == '/api/ig':   # seguidores y publicaciones de un perfil PÚBLICO de Instagram: lo que su propia página enseña en la vista previa del enlace (sin iniciar sesión)
+            n = int(self.headers.get('Content-Length') or 0); body = json.loads(self.rfile.read(n) or b'{}')
+            m = re.search(r'instagram\.com/([A-Za-z0-9._]{1,30})/?', str(body.get('url') or ''))
+            if not m or m.group(1).lower() in ('p', 'reel', 'reels', 'explore', 'stories', 'accounts', 'tv'): return self._json(400, {'error': 'pon el enlace del perfil: https://www.instagram.com/usuario/'})
+            try:
+                rq = urllib.request.Request(f'https://www.instagram.com/{m.group(1)}/', headers={'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15', 'Accept-Language': 'en-US,en;q=0.9'})
+                html = urllib.request.urlopen(rq, timeout=20).read(2000000).decode('utf-8', 'replace')
+                d = re.search(r'og:description"\s+content="([^"]*)"', html); t = d.group(1) if d else ''
+                fo = re.search(r'([\d.,]+\s?[KMB]?)\s+Followers', t, re.I); po = re.search(r'([\d.,]+\s?[KMB]?)\s+Posts', t, re.I)
+                if not fo: return self._json(404, {'error': 'Instagram no ha dado los datos de ese perfil (¿es privado o no existe?). Puedes escribirlos a mano'})
+                return self._json(200, {'ok': True, 'user': m.group(1), 'followers': fo.group(1).replace(' ', ''), 'posts': po.group(1).replace(' ', '') if po else ''})
+            except Exception as e: return self._json(502, {'error': 'no se ha podido leer Instagram ahora. Puedes escribirlos a mano'})
         if self.path == '/api/complementos':   # complementos de un personaje: {owner:'aria'|id, list:[{id,nombre,tipo,regla,desc,img}], files:{id: dataURL}}
             n = int(self.headers.get('Content-Length') or 0); body = json.loads(self.rfile.read(n) or b'{}'); owner = body.get('owner') or 'aria'; L = body.get('list') or []
             if owner == 'aria' and aria_fija(): return self._json(403, {'error': FIJA, 'fija': True})
