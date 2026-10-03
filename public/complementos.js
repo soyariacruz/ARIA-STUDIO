@@ -30,6 +30,7 @@
   function auto(c) { if (c.regla === 'siempre') return true; if (c.regla === 'nunca') return false; const t = tipoOf(c.tipo); const txt = scene(); const ks = (c.claves || []).concat(c.clave ? String(c.clave).split('|') : []).map(k => k.trim()).filter(Boolean); return !!(t.kw && t.kw.test(txt)) || ks.some(k => new RegExp('\\b' + k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\b', 'i').test(txt)); }
   const isOn = c => { const o = overrides(); return c.id in o ? o[c.id] : auto(c); };
   window.accActive = () => list().filter(isOn);
+  window.accRestore = ids => { state.accOn = {}; if (Array.isArray(ids)) list().forEach(c => { state.accOn[c.id] = ids.includes(c.id); }); };   // «Recrear»: los mismos complementos que llevó esa imagen (si no se guardaron, vuelven a su regla)
   window.accOnFor = owner => list(owner).filter(isOn);   // complementos encendidos de cualquier personaje (para imágenes con varios)
   const asRef = c => !!(c.img && c.modo !== 'prompt'); window.accAsRef = asRef;
   const refTag = (I, c) => { if (!asRef(c)) return ''; const t = I('acc:' + c.id); return /\b0$/.test(t) ? '' : t; }; // si no cupo como referencia (demasiados complementos) va solo descrito
