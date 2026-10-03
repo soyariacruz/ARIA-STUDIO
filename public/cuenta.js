@@ -33,6 +33,9 @@ html.gate #gate{display:flex}
 #gate button:disabled{opacity:.55;cursor:default}
 #gate .gerr{color:#e0566a;font-size:13px}
 #gate [hidden]{display:none!important}
+#console,#btnConsole{display:none!important}
+html.sinapi #livedot,html.sinapi .meter{display:none!important}
+.webnote{font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--mut);border:1px solid var(--line);border-radius:999px;padding:6px 10px;white-space:nowrap}
 .cuentabtn{width:30px;height:30px;border-radius:50%;border:1px solid var(--line);background:var(--panel);color:var(--ink);cursor:pointer;padding:0;overflow:hidden;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:12px;flex:none}
 .cuentabtn:hover,.cuentabtn.on{border-color:var(--acc);box-shadow:0 0 0 2px rgba(232,68,127,.25)}
 .cuentabtn img,.cuentamenu .cav img{width:100%;height:100%;object-fit:cover;display:block}
@@ -114,13 +117,31 @@ html.gate #gate{display:flex}
     const s = document.createElement('script'); s.textContent = txt; document.body.appendChild(s);
     if (!window.CATALOG) throw new Error('catálogo vacío');
   }
+  function sinApi() {   // la web todavía no tiene servidor propio para generar: se ve la biblioteca, sin los avisos del puente local
+    root.classList.add('sinapi');
+    const right = document.querySelector('header .right'); if (!right || document.getElementById('webNote')) return;
+    const n = document.createElement('span'); n.id = 'webNote'; n.className = 'webnote'; n.textContent = 'Biblioteca · generar llega muy pronto';
+    right.prepend(n);
+    // la Filmoteca (vídeos, 9 GB) aún no está subida: en el menú queda como «pronto»
+    const bn = window.buildNav; if (typeof bn !== 'function') return;
+    const pronto = () => document.querySelectorAll('#nav button').forEach((b) => {
+      if (!/Filmoteca/i.test(b.textContent) || b.classList.contains('soon')) return;
+      b.classList.add('soon'); b.insertAdjacentHTML('beforeend', '<i>pronto</i>'); b.title = 'Filmoteca: llega a la web muy pronto';
+      b.onclick = () => { if (window.toast) toast('La Filmoteca llega a la web muy pronto'); };
+    });
+    window.buildNav = function () { bn.apply(this, arguments); pronto(); };
+    pronto();
+  }
   let arrancado = null;
   CU.arrancar = function () {
     if (arrancado) return arrancado;
     // la app se apunta a DOMContentLoaded, que aquí ya ha pasado: se le llama al momento
     const add = document.addEventListener.bind(document);
     document.addEventListener = (t, fn, o) => (t === 'DOMContentLoaded') ? void setTimeout(() => fn.call(document, new Event('DOMContentLoaded')), 0) : add(t, fn, o);
-    arrancado = (async () => { await catalogo(); for (const s of APP) await tag(s); })();
+    arrancado = (async () => {
+      await catalogo(); for (const s of APP) await tag(s);
+      fetch('/api/ping').then((r) => (r.ok ? r.json() : null)).then((j) => { if (!(j && j.ok)) sinApi(); }).catch(sinApi);
+    })();
     arrancado.catch(() => { arrancado = null; });
     return arrancado;
   };

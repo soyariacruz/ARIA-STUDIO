@@ -9,6 +9,7 @@ from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 
 PORT = int(sys.argv[1]) if len(sys.argv) > 1 else 3000
 PUENTE = ('127.0.0.1', 8767)
+SIN_API = 'sin-api' in sys.argv   # `python3 web_dev.py 3000 sin-api`: /api responde 404, para ver la web como se ve publicada
 PUBLIC = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'public')
 HOSTS = (f'localhost:{PORT}', f'127.0.0.1:{PORT}')
 SALTO = {'connection', 'keep-alive', 'proxy-authenticate', 'proxy-authorization', 'te', 'trailers', 'transfer-encoding', 'upgrade'}
@@ -38,6 +39,7 @@ class H(BaseHTTPRequestHandler):
         origin = (self.headers.get('Origin') or '').lower()
         if origin and origin not in tuple('http://' + h for h in HOSTS): return self._err(403, 'origen no permitido')
         if self._public(): return
+        if SIN_API and self.path.startswith('/api/'): return self._err(404, 'The page could not be found')   # como en Vercel mientras no haya funciones
         n = int(self.headers.get('Content-Length') or 0)
         body = self.rfile.read(n) if n else None
         hd = {k: v for k, v in self.headers.items() if k.lower() not in SALTO and k.lower() not in ('host', 'origin', 'referer')}
