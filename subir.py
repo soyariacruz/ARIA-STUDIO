@@ -70,6 +70,23 @@ def imagenes():
                 fp = os.path.join(d, fn)
                 st = os.stat(fp)
                 out.append((os.path.relpath(fp, os.path.join(SRC, 'assets')), fp, st.st_size, int(st.st_mtime)))
+    # y lo que el catálogo nombra fuera de esas carpetas o que no es imagen (las fichas de Aria en live/, el vídeo de su perfil…)
+    ya, refs = {i[0] for i in out}, set()
+
+    def walk(v):
+        if isinstance(v, str):
+            refs.update(p.split('?')[0] for p in v.split('|') if p.startswith('assets/'))
+        elif isinstance(v, list):
+            for x in v: walk(x)
+        elif isinstance(v, dict):
+            for x in v.values(): walk(x)
+    walk(json.load(open(os.path.join(SRC, 'catalog.json'), encoding='utf-8')))
+    for r in sorted(refs):
+        ruta = r[len('assets/'):]
+        if ruta in ya or (ruta.startswith('videoteca/') and 'videoteca' not in CARPETAS): continue
+        fp = os.path.join(SRC, r)
+        if os.path.isfile(fp):
+            st = os.stat(fp); out.append((ruta, fp, st.st_size, int(st.st_mtime)))
     return out
 
 
