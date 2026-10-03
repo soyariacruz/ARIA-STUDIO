@@ -1,6 +1,10 @@
 {
   "rewrites": [
     {
+      "source": "/assets/:carpeta(live|video|personajes|refs|perfil|mio|papelera)/:path*",
+      "destination": "https://aria-studio.onrender.com/assets/:carpeta/:path*"
+    },
+    {
       "source": "/assets/:path*",
       "destination": "https://uhscbgidrloskdjbevkn.supabase.co/storage/v1/object/public/assets/:path*"
     }

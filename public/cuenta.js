@@ -116,10 +116,12 @@ html.sinapi #livedot,html.sinapi .meter{display:none!important}
     const seguro = location.protocol === 'https:' ? '; Secure' : '';
     document.cookie = 'aria_token=' + (CU.token ? encodeURIComponent(CU.token) + '; Max-Age=3600' : '; Max-Age=0') + '; Path=/; SameSite=Lax' + seguro;
   }
+  const SERVIDOR_URL = LOCAL ? '' : 'https://aria-studio.onrender.com';   // el servidor de las cuentas (generar, personajes, creaciones). En desarrollo (localhost:3000) lo pone web_dev.py
   const fetch0 = window.fetch.bind(window);
   window.fetch = (input, init) => {
-    if (CU.token && typeof input === 'string' && input.startsWith('/api/')) {
+    if (CU.token && typeof input === 'string' && input.startsWith('/api/')) {   // /api va directo al servidor (sin tope de tamaño ni de tiempo), con la sesión en la cabecera
       init = Object.assign({}, init); init.headers = new Headers(init.headers || {}); init.headers.set('Authorization', 'Bearer ' + CU.token);
+      input = SERVIDOR_URL + input;
     }
     return fetch0(input, init);
   };
