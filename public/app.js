@@ -79,7 +79,7 @@ function sizeMirror() {
   const W = wrap.clientWidth - 64, H = wrap.clientHeight - 40;
   let w, h; if (W / H > ar) { h = H; w = Math.round(H * ar); } else { w = W; h = Math.round(W / ar); }
   mirror.style.width = w + 'px'; mirror.style.height = h + 'px';
-  { const z = window.ESCALA || 1; mirror.classList.toggle('mini', h < 250 * z || w < 190 * z); }   // encogida: en el «Generando» solo cabe la barra
+  { const z = window.ESCALA || 1; mirror.classList.remove('mini'); mirror.classList.toggle('encogida', h < 250 * z || w < 190 * z); }   // encogida: en el «Generando» solo cabe la barra
 }
 let showSeq = 0;
 function showImage(src, fast) {
