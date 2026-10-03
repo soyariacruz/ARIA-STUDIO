@@ -463,6 +463,19 @@ def _jobs_restore(hours=2):   # al arrancar: vuelven los trabajos lanzados en la
         if vivos: plog(f'{len(vivos)} trabajo(s) recuperados tras reiniciar el puente')
     except Exception as e: plog('jobs_restore ✕ ' + str(e))
 jobs = _Jobs()
+_PPL_F = os.path.join(DATOS or RAIZ, 'personas_cache.json')   # personas ya detectadas en cada imagen: la misma foto no se vuelve a leer (ni a pagar)
+try: _PPL = json.load(open(_PPL_F, encoding='utf-8'))
+except Exception: _PPL = {}
+def _ppl_key(img):   # la Fototeca es la misma para todos; lo demás, de cada cuenta
+    p = str((img or {}).get('path') or '').split('?')[0]
+    if not p.startswith('assets/') or '..' in p: return None
+    return p if p.startswith('assets/biblio/') else (uid() or '') + '|' + p
+def _ppl_save():
+    try:
+        while len(_PPL) > 3000: _PPL.pop(next(iter(_PPL)))
+        with open(_PPL_F + '.tmp', 'w', encoding='utf-8') as fh: json.dump(_PPL, fh, ensure_ascii=False)
+        os.replace(_PPL_F + '.tmp', _PPL_F)
+    except Exception: pass
 def _mio(rid):   # el trabajo, solo si es de quien pregunta (en local todos son del único usuario)
     j = jobs.get(rid) if isinstance(rid, str) else None
     return j if j and j.get('owner') == uid() else None
@@ -1530,11 +1543,16 @@ class H(SimpleHTTPRequestHandler):
         if self.path == '/api/personas_img':   # quién sale en una imagen: una caja y una frase por persona, para repartir personajes («¿Quién es quién?»)
             n = int(self.headers.get('Content-Length') or 0); body = json.loads(self.rfile.read(n) or b'{}')
             try:
-                url = resolve_ws(body['image'] if isinstance(body.get('image'), dict) else {'path': body.get('image')})
-                ask = ('Detect every clearly visible person in this image (maximum 6), ordered from left to right. Answer with ONLY a JSON array and nothing else. '
-                       'Each element is an object with three keys: "box": [x0, y0, x1, y1] as fractions between 0 and 1 of the image width and height, covering the whole visible body of that person; '
+                img = body['image'] if isinstance(body.get('image'), dict) else {'path': body.get('image')}
+                pt = body.get('punto') if isinstance(body.get('punto'), list) and len(body.get('punto')) == 2 and all(isinstance(v, (int, float)) for v in body.get('punto')) else None
+                ck = None if pt else _ppl_key(img)
+                if ck and _PPL.get(ck): plog('personas_img · ya leída'); return self._json(200, {'ok': True, 'people': _PPL[ck], 'cache': True})
+                url = resolve_ws(img)
+                ask = ((f'Look at the person located at the point that is {round(float(pt[0]) * 100)}% of the image width from the left edge and {round(float(pt[1]) * 100)}% of the image height from the top edge: the person whose body covers that point or is closest to it. Answer with ONLY a JSON array with exactly ONE element (that person) and nothing else. ' if pt else
+                        'Detect every clearly visible person in this image (maximum 6), ordered from left to right. Skip tiny far-away people in the background (smaller than about one eighth of the image height). Answer with ONLY a JSON array and nothing else. ') +
+                       ('Each element is an object with three keys: "box": [x0, y0, x1, y1] as fractions between 0 and 1 of the image width and height, covering the whole visible body of that person; '
                        '"desc": a short English phrase that identifies that person unambiguously by position and look, starting with "the", for example "the woman on the left with long blonde hair and a red dress"; '
-                       '"es": that same phrase translated into natural Spanish, for example "la mujer de la izquierda, de pelo largo rubio y vestido rojo".')
+                       '"es": that same phrase translated into natural Spanish, for example "la mujer de la izquierda, de pelo largo rubio y vestido rojo".'))
                 r = ws('POST', '/api/v3/wavespeed-ai/any-llm/vision', {'prompt': ask, 'images': [url], 'model': 'google/gemini-2.5-flash', 'temperature': 0.1, 'max_tokens': 1200, 'priority': 'latency'})
                 rid = (r.get('data') or {}).get('id'); txt = ''
                 for _ in range(50):
@@ -1552,8 +1570,9 @@ class H(SimpleHTTPRequestHandler):
                     if x1 - x0 < 0.03 or y1 - y0 < 0.03: continue
                     people.append({'box': [round(x0, 4), round(y0, 4), round(x1, 4), round(y1, 4)], 'desc': str(q.get('desc') or 'the person').strip()[:160], 'es': str(q.get('es') or '').strip()[:180]})
                 people.sort(key=lambda z: z['box'][0])
+                if ck and people: _PPL[ck] = people; _ppl_save()
             except Exception as e: return self._json(400, {'error': str(e)})
-            plog(f'personas_img ok · {len(people)} persona(s)'); return self._json(200, {'ok': True, 'people': people})
+            plog(f'personas_img ok · {len(people)} persona(s)'); return self._json(200, {'ok': True, 'people': people, 'person': (people[0] if pt and people else None)})
         if self.path == '/api/describir':   # descripción profesional de un objeto para el prompt (lee la foto con Gemini 2.5 Flash por WaveSpeed)
             n = int(self.headers.get('Content-Length') or 0); body = json.loads(self.rfile.read(n) or b'{}')
             try:

@@ -544,7 +544,8 @@
   function top() {
     const t = el('div', 'pjtop'); t.appendChild(el('small', 'pjk', 'Mis personajes'));
     const row = el('div', 'pjcircles');
-    const add = (id, name, img) => { const c = el('button', 'pjc' + (!pj.wiz && pj.sel === id ? ' on' : ''), `<span class="pjav">${img ? `<img src="${img}" alt="">` : `<i>${(name || '?')[0]}</i>`}</span><small>${name}</small>`); c.onclick = () => { pj.wiz = null; if (window.FB) FB.open = false; if (window.F3) F3.open = false; saveDraft(); pj.sel = id; renderProfile(); renderSide(); };
+    const add = (id, name, img) => { const c = el('button', 'pjc' + (!pj.wiz && pj.sel === id ? ' on' : ''), `<span class="pjav">${img ? `<img src="${img}" alt="">` : `<i>${(name || '?')[0]}</i>`}</span><small>${name}</small>`); c.onclick = () => { pj.wiz = null; if (window.FB) FB.open = false; if (window.F3) F3.open = false; saveDraft(); pj.sel = id; if (window.setChar && window.CH && CH().id !== id && (id === 'aria' ? !(WEBM && pj.list.some(p => p.ficha360)) : pj.list.some(p => p.id === id && p.ficha360))) setChar(id, true);   // el principal va a la par del Perfil (Aria no, si el miembro tiene personaje propio)
+      renderProfile(); renderSide(); };
       if (id !== 'aria') { c.draggable = true; c.title = 'Arrástralo para cambiar el orden'; c.ondragstart = e => { pj.dragId = id; e.dataTransfer.effectAllowed = 'move'; try { e.dataTransfer.setData('text/plain', id); } catch (x) {} setTimeout(() => c.classList.add('drag'), 0); }; c.ondragend = () => { pj.dragId = null; row.querySelectorAll('.pjc').forEach(x => x.classList.remove('drag', 'dropL', 'dropR')); }; }
       c.ondragover = e => { if (!pj.dragId || pj.dragId === id) return; e.preventDefault(); const r = c.getBoundingClientRect(); const left = id === 'aria' ? WEBM : e.clientX < r.left + r.width / 2; c.classList.toggle('dropL', left); c.classList.toggle('dropR', !left); };
       c.ondragleave = () => c.classList.remove('dropL', 'dropR');
