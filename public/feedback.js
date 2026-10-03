@@ -48,7 +48,7 @@
   async function enviar() {
     stopMic(); const texto = F.texto.trim(); if (!texto) return; F.enviando = true; paint(); let r;
     try { r = await fetch('/api/feedback', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ texto, tipo: F.tipo, via: F.voz ? '🎙️ Voz' : '⌨️ Escrito', seccion: SECCION, contexto: contexto() }) }).then(x => x.json()); } catch (e) { r = { error: String(e) }; }
-    F.enviando = false; if (r && r.ok) { Object.assign(F, { texto: '', voz: false, tipo: '💬 Comentario', open: false }); toast(r.local ? '¡Gracias! Guardado (Notion no respondió, se sube luego)' : '¡Gracias! Tu comentario ha llegado'); } else toast('No se pudo enviar: ' + (r ? r.error : 'sin respuesta'));
+    F.enviando = false; if (r && r.ok) { Object.assign(F, { texto: '', voz: false, tipo: '💬 Comentario', open: false }); toast(r.local ? '¡Gracias! Guardado ' : '¡Gracias! Tu comentario ha llegado'); } else toast('No se pudo enviar: ' + (r ? r.error : 'sin respuesta'));
     paint();
   }
 })();

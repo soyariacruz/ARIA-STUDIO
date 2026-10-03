@@ -92,7 +92,7 @@
     return [[FX.src, '@Image1 · esta ficha de cuerpo', ''], [P().ficha, '@Image2 · su ficha 360', '']];
   }
   async function genFX(k) {
-    if (!LIVE) { toast('Hace falta el puente'); return; } const body_ = isBody(k); const key = body_ ? seedreamKey() : curModel().key; const m = MODELS.find(x => x.key === key) || curModel(); const usd = m.usd[state.quality];
+    if (!LIVE) { toast('Conecta primero tu API (arriba, «Conecta tu API»)'); return; } const body_ = isBody(k); const key = body_ ? seedreamKey() : curModel().key; const m = MODELS.find(x => x.key === key) || curModel(); const usd = m.usd[state.quality];
     const prompt = fxPrompt(k); const images = fxImages(k);
     FX.sending = true; paintFX();
     const body = { item: 'editor_' + FX.kind + '_' + k, prompt, images, aspect: k === 'entera' ? '3:2' : '2:3', quality: state.quality, model: key, meta: { name: `Editor de ficha · ${FX.kind === 'combo' ? 'Principal' : FX.kind === '360' ? 'Cara' : 'Cuerpo'} · ${k}`, tab: 'perfil', personaje: '_ficha_editor', hidden: true, model: m.name, ep: m.ep, prompt } };
@@ -198,7 +198,7 @@
     return `Edit @Image1, her character reference sheet: on the left a 2x2 grid of her head and upper body (top-left front view with a big joyful toothy smile, top-right left side profile, bottom-left three-quarter view smiling, bottom-right back view), then a full-body FRONT view and a full-body left SIDE PROFILE view, both from the neck down. Keep EXACTLY the same layout, the same six panels, framing and crops, poses, expressions, face, hair, glasses, earrings, body shape and proportions, the gray studio background and the soft light. ONLY change what she wears: in all six panels ${outfit}.${obj} Whatever she wears in @Image1 (a tank top, plain underwear) is only the base: none of it stays visible unless the new outfit shows it. Photoreal, sharp, natural skin texture, no text, no labels, no extra panels.`;
   }
   async function nfGenerate() {
-    if (!LIVE) { toast('Hace falta el puente'); return; } if (!F3.prendas.length && !F3.acc.length && !F3.extras.length) { toast('Elige primero la ropa o algún objeto'); return; }
+    if (!LIVE) { toast('Conecta primero tu API (arriba, «Conecta tu API»)'); return; } if (!F3.prendas.length && !F3.acc.length && !F3.extras.length) { toast('Elige primero la ropa o algún objeto'); return; }
     const R = nfRefs(); const images = R.map(r => r.data ? { data: r.data } : { path: r.path.split('?')[0] });
     const m = nfModelFor(images.length);
     const usd = m.usd[NFQ]; if (!confirm(`¿Generar la ficha nueva con ${m.name} a 2K? (${fmtUsd(usd)})`)) return;

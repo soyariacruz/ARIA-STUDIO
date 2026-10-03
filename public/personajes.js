@@ -528,7 +528,7 @@
     box.appendChild(g); return box;
   }
   async function del(p) {
-    if (!confirm(`¿Borrar a ${p.nombre}? Su carpeta pasa a la papelera de la app.`)) return;
+    if (!confirm(`¿Borrar a ${p.nombre}? Deja de verse y se borra del todo a los 30 días.`)) return;
     const r = await fetch('/api/personaje_borrar', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: p.id }) }).then(x => x.json()).catch(e => ({ error: String(e) }));
     if (!r.ok) { toast('No se pudo borrar: ' + r.error); return; } pj.list = pj.list.filter(x => x.id !== p.id); if (state.char === p.id && window.setChar) setChar('aria', true); syncChars(); pj.sel = 'aria'; renderProfile(); renderSide(); toast(`${p.nombre} está en la papelera`);
   }
@@ -563,7 +563,7 @@
     if (!forced && st === 'lista') { const mk = el('button', 'btn acc', '✨ Crear imagen con ' + esc((p.nombre || '').split(' ')[0])); mk.title = 'Ir a Crear imagen con este personaje elegido'; mk.onclick = () => { if (window.setChar) setChar(p.id); setTab('crear'); }; acts.appendChild(mk); }
     acts.appendChild(ed);
     const dl = el('button', 'btn', '🗑'); dl.title = 'Borrar personaje'; dl.style.color = '#e25555'; dl.onclick = () => del(p); acts.appendChild(dl); hd.appendChild(acts); v.appendChild(hd);
-    if (!LIVE) { v.appendChild(el('div', 'pjapi', `<div class="pjvideo">▶<small>Vídeo de Aria: cómo conectar tus APIs (demo)</small></div><div><h3>Conecta tu API</h3><p>Para crear su imagen hace falta tu clave de WaveSpeed (o de Higgsfield). Pégala en el puente y recarga. En la web pública será lo primero que se hace al entrar.</p></div>`)); return v; }
+    if (!LIVE) { v.appendChild(el('div', 'pjapi', `<div class="pjvideo">▶<small>Vídeo de Aria: cómo conectar tus APIs (demo)</small></div><div><h3>Conecta tu API</h3><p>Para crear su imagen hace falta tu clave de WaveSpeed (o de Higgsfield). Conéctala arriba, en «Conecta tu API».</p></div>`)); return v; }
     if (st !== 'lista' || (pj.forceStage && pj.forceStage[p.id])) v.appendChild(stagesBar(p, st));
     if (st === 'explorar') v.appendChild(panelExplorar(p));
     else if (st === 'vistas') v.appendChild(panelVistas(p));
@@ -662,7 +662,7 @@
       jobs.forEach(jb => g.appendChild(el('div', 'f3card wide gen', `<div class="f3img sm"><img src="${p.combo || p.ficha360}" alt=""><span class="f3busy"><i class="spin"></i>Generando · <i data-t0="${jb.t0}">${Math.round((performance.now() - jb.t0) / 1000)} s</i></span></div><b>${esc(jb.it.name)}</b><small>se guardará aquí sola al terminar</small>`)));
       arr(p.fichas).forEach(f => { const d = el('div', 'f3card wide', `<div class="f3img sm"><img src="${f.thumb || f.img}" alt=""></div><b>${esc(f.nombre)}</b><small>${[f.t, f.modelo, f.size && f.size[0] >= 1500 ? '2K' : ''].filter(Boolean).join(' · ')}</small>`); d.querySelector('.f3img').onclick = () => lightbox(f.img, f.nombre);
         const a = el('div', 'f3acts'); const dl = el('button', 'btn', '⬇'); dl.title = 'Descargar'; dl.onclick = e => { e.stopPropagation(); const x = document.createElement('a'); x.href = f.img; x.download = f.img.split('/').pop(); document.body.appendChild(x); x.click(); x.remove(); }; a.appendChild(dl);
-        const rm = el('button', 'btn', '🗑'); rm.title = 'Borrar'; rm.onclick = async e => { e.stopPropagation(); if (!confirm(`¿Borrar «${f.nombre}»? Va a la papelera de la app.`)) return; const r = await fetch('/api/personaje_fichas', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: p.id, action: 'delete', fid: f.id }) }).then(x => x.json()).catch(x => ({ error: String(x) })); if (r && r.ok) { await load(); renderProfile(); } else toast('No se pudo borrar: ' + (r ? r.error : 'sin respuesta')); }; a.appendChild(rm); d.appendChild(a); g.appendChild(d); });
+        const rm = el('button', 'btn', '🗑'); rm.title = 'Borrar'; rm.onclick = async e => { e.stopPropagation(); if (!confirm(`¿Borrar «${f.nombre}»? Deja de verse y se borra del todo a los 30 días.`)) return; const r = await fetch('/api/personaje_fichas', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: p.id, action: 'delete', fid: f.id }) }).then(x => x.json()).catch(x => ({ error: String(x) })); if (r && r.ok) { await load(); renderProfile(); } else toast('No se pudo borrar: ' + (r ? r.error : 'sin respuesta')); }; a.appendChild(rm); d.appendChild(a); g.appendChild(d); });
       if (!g.children.length) g.appendChild(el('div', 'accempty', 'Todavía no has creado ninguna.')); sec2.appendChild(g); if (jobs.length) startTick(); }
     w.appendChild(sec2);
     if (!p.celebrado) setTimeout(() => celebrar(p), 250);

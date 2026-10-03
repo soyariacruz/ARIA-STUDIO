@@ -19,7 +19,7 @@
     return `Vertical studio photo of the body of the woman of @Image1 (her 360 character sheet, for her skin, hair color and build) with the body of @Image2 (her body reference sheet; the white underwear there is ONLY a body reference, never copy it), framed FROM THE NECK DOWN: the top edge of the image cuts just below her chin, so her face is NOT visible (the face is already shown in her character sheet); from the neck down to the shoes everything is visible, with a little space below the feet. She stands straight facing the camera in a relaxed natural pose, arms slightly away from the body. She wears EXACTLY the complete outfit of ${outfit || 'the reference'} (every piece, same colors, fabrics and details, and its shoes)${ext}.${notes} Plain neutral gray studio background matching @Image1, soft even studio light, photoreal, natural skin texture, no text, no labels.`;
   }
   async function generate(kind) {
-    if (!LIVE) { toast('Hace falta el puente'); return; } const { prendas, extras } = refs();
+    if (!LIVE) { toast('Conecta primero tu API (arriba, «Conecta tu API»)'); return; } const { prendas, extras } = refs();
     if (!prendas.length) { toast('Elige primero la ropa del Vestidor'); return; }
     const images = [{ path: C.perfil.ficha }].concat(kind === 'cuerpo' && C.perfil.cuerpo ? [{ path: C.perfil.cuerpo }] : []).concat(prendas.map(p => ({ path: p.ficha.split('?')[0] }))).concat(extras.map(x => ({ data: x.data })));
     let m = curModel(); if (images.length > m.refs) { const g = MODELS.find(x => x.refs >= images.length && x.prov === 'ws') || MODELS.find(x => x.refs >= images.length); if (g) { m = g; toast(`Van ${images.length} referencias: esta ficha va con ${g.name}`); } }

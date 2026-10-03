@@ -1,0 +1,38 @@
+# ARIA STUDIO · el servidor (Render): el mismo puente de la app local, en modo de varias cuentas.
+# La web (carpeta public/) la publica Vercel; el login, los miembros, el catálogo y la biblioteca están en Supabase.
+services:
+  - type: web
+    name: aria-studio
+    runtime: python
+    region: frankfurt
+    plan: starter
+    rootDir: servidor
+    buildCommand: pip install -r requirements.txt
+    startCommand: python3 puente.py
+    healthCheckPath: /salud
+    autoDeploy: true
+    disk:                      # lo que crean las cuentas (Render hace una copia diaria; además, copia.py al NAS)
+      name: datos
+      mountPath: /datos
+      sizeGB: 10
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.13.1
+      - key: ARIA_SERVIDOR
+        value: "1"
+      - key: ARIA_HOST
+        value: 0.0.0.0
+      - key: ARIA_DATOS
+        value: /datos
+      - key: ARIA_ORIGENES     # las webs que pueden hablar con este servidor
+        value: https://aria-studio-eta.vercel.app
+      - key: ARIA_FETCH_HOSTS  # arrastrar imágenes desde otras webs: cualquier web pública (nunca direcciones internas)
+        value: "*"
+      - key: ARIA_CUOTA_GB     # tope de espacio por cuenta
+        value: "3"
+      - key: ARIA_SECRETO      # cifra las claves de API de las cuentas; lo genera Render y no sale de aquí
+        generateValue: true
+      - key: ARIA_ADMIN        # llave de la copia de seguridad
+        generateValue: true
+      - key: SUPABASE_SECRET   # para leer el catálogo privado; se pega a mano al crear el servicio
+        sync: false
