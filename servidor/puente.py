@@ -37,7 +37,7 @@ MAX_CUERPO = 40 * 1024 * 1024    # tope de una petición en modo servidor
 MAX_BIBLIO = 200 * 1024 * 1024   # tope de un fichero de la biblioteca común al copiarlo
 KINDS = ('vestidor', 'hair', 'expr')   # las bibliotecas a las que una cuenta puede añadir lo suyo
 _UUID = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
-VERSION = 201
+VERSION = 202
 _ctx = threading.local()   # la cuenta del hilo: la pone cada petición (y, a mano, cada hilo de fondo)
 def uid(): return getattr(_ctx, 'uid', None)   # en local siempre None
 DUENOS = tuple(e.strip().lower() for e in (os.environ.get('ARIA_DUENOS') or 'mix1994max@gmail.com').split(',') if e.strip())   # cuentas que pueden cambiar a Aria Cruz (en la web, la de Max)
@@ -85,6 +85,7 @@ def _dentro(base, full):   # full cae dentro de base (por carpetas, no por «emp
 def busca(rel, propio=False):   # ÚNICA puerta para las rutas que manda el navegador: primero la casa de la cuenta; si no, la biblioteca común (propio=True: solo la casa). Devuelve el fichero real o None
     rel = _rel_ok(rel)
     if not rel: return None
+    if rel.startswith('assets/prestamo/'): return _prestado(rel) if getattr(_ctx, 'prestamo_ok', False) and not propio else None   # el personaje de otro creador: solo al generar, y solo con su permiso
     base = casa(); full = os.path.join(base, *rel.split('/'))
     if _dentro(base, full) and os.path.isfile(full): return full
     return _biblio(rel) if SERVIDOR and not propio else None   # en local la biblioteca común ES la carpeta de siempre
@@ -484,7 +485,7 @@ def img_bytes(img):   # {data:dataURL} o {path:'assets/…'} (+ crop opcional) �
         head, b64 = img['data'].split(',', 1); ctype = head.split(':')[1].split(';')[0]; data = base64.b64decode(b64)
     else:
         p = busca(img.get('path'))   # solo la casa de la cuenta o la biblioteca común
-        if not p: raise RuntimeError('ruta no válida: ' + str(img.get('path', ''))[:200])
+        if not p: raise RuntimeError('Ya no tienes permiso para crear con ese personaje (su creador lo ha retirado o lo ha ocultado). Quítalo de la imagen.' if str(img.get('path') or '').startswith('assets/prestamo/') else 'ruta no válida: ' + str(img.get('path', ''))[:200])
         data = open(p, 'rb').read(); ctype = mimetypes.guess_type(p)[0] or 'image/jpeg'
     if not ctype.startswith('image/'): return data, ctype
     return img_norm(data, ctype, img.get('crop'))
@@ -1050,7 +1051,7 @@ def _estado(rid):   # estado de un trabajo; si ha terminado, lo descarga a la ca
     return 200, out
 # ---- 🤝 COMUNIDAD (v195): el directorio de influencers IA de todas las cuentas, las solicitudes de colaboración y los mensajes.
 #      Privacidad: de una cuenta solo se enseña su identificador opaco (`cid`, no reversible), el nombre de creador que ella ponga y sus personajes PÚBLICOS
-#      (nombre, usuario, edad, descripción, Instagram, nicho y su avatar). Nunca el correo, ni sus fichas, ni sus creaciones.
+#      (nombre, usuario, edad, descripción, Instagram, nicho y su avatar). Nunca el correo ni sus creaciones. Sus fichas solo las usa el servidor al generar, y solo para quien tiene una colaboración aceptada (v202).
 COM_F = os.path.join(DATOS or RAIZ, 'comunidad.json'); _com_l = threading.Lock(); _COM_N = {}
 def _cid(u='__yo__'):
     if u == '__yo__': u = uid()
@@ -1095,6 +1096,61 @@ def _com_aria(d, yo):   # la solicitud de ejemplo de Aria, una sola vez por cuen
     t = time.time(); d['sol'].append({'id': 's' + hashlib.sha1(os.urandom(12)).hexdigest()[:12], 'de': ARIA_CID, 'para': yo, 'pid': 'aria', 'msg': ARIA_HOLA, 'estado': 'pendiente', 't': t, 'demo': True})
     d['msgs'].setdefault(_com_par(yo, ARIA_CID), []).append({'de': ARIA_CID, 'x': ARIA_HOLA, 't': t}); return True
 def _com_par(a, b): return '|'.join(sorted([a, b]))
+# ---- el «préstamo» (v202): con una colaboración ACEPTADA, quien la pidió puede crear con el personaje del otro creador.
+#      Su ficha y su cuerpo solo los lee el servidor al generar; al navegador solo le llega su avatar. Nunca con NSFW. Un personaje oculto no se presta.
+PREST_Q = {'ficha.jpg': ('ficha360',), 'cuerpo.jpg': ('cuerpo',), 'foto.jpg': ('avatar', 'foto', 'ficha360')}
+PREST_K = ('genero', 'complexion', 'altura', 'pecho', 'cadera', 'ojos', 'ojosHex', 'peloNombre', 'peloHex', 'peloColor')   # lo que hace falta para describirlo en el prompt
+def _com_permiso(d, yo, cid, pid):   # ¿la cuenta «yo» puede crear con el personaje pid de la cuenta cid? Solo si ELLA lo pidió (a ese personaje o a la cuenta entera) y se lo aceptaron
+    return any(x.get('estado') == 'aceptada' and x.get('de') == yo and x.get('para') == cid and x.get('pid') in (None, pid) for x in d['sol'])
+def _prestado_p(cid, pid, d=None):   # → (uid de su dueña, su personaje.json), o (None, None): sin permiso, oculto, sin ficha o inexistente
+    if not SERVIDOR or not DATOS or not isinstance(cid, str) or not re.fullmatch(r'c[0-9a-f]{14}', cid) or not _pid_ok(pid): return None, None
+    yo = _cid()
+    if cid == yo or not _com_permiso(d if d is not None else _com_lee(), yo, cid, pid): return None, None
+    u = _com_cuentas().get(cid)
+    if not u: return None, None
+    try: p = json.load(open(os.path.join(DATOS, 'usuarios', u, 'assets', 'personajes', pid, 'personaje.json'), encoding='utf-8'))
+    except Exception: return None, None
+    if not isinstance(p, dict) or not p.get('ficha360') or p.get('privado'): return None, None
+    return u, p
+def _prestado(rel):   # 'assets/prestamo/<cid>/<pid>/<ficha|cuerpo|foto>.jpg' → el fichero real en la casa de su dueña, o None
+    L = rel.split('/')
+    if len(L) != 5 or L[4] not in PREST_Q: return None
+    u, p = _prestado_p(L[2], L[3])
+    if not p: return None
+    base = os.path.join(DATOS, 'usuarios', u)
+    for k in PREST_Q[L[4]]:
+        r = _rel_ok(p.get(k) or '')
+        if not r or not r.startswith('assets/personajes/' + L[3] + '/'): continue
+        full = os.path.join(base, *r.split('/'))
+        if _dentro(base, full) and os.path.isfile(full): return full
+    return None
+def _prest_lista(d, yo):   # los personajes de otros creadores con los que esta cuenta puede crear, con lo justo para usarlos en Crear imagen
+    out = []; CU = _com_cuentas()
+    for x in d['sol']:
+        cid = x.get('para')
+        if x.get('estado') != 'aceptada' or x.get('de') != yo or cid not in CU: continue
+        for q in _com_personajes(CU[cid]):
+            if x.get('pid') not in (None, q['pid']) or any(o['cid'] == cid and o['pid'] == q['pid'] for o in out): continue
+            u, p = _prestado_p(cid, q['pid'], d)
+            if not p: continue
+            pe = p.get('peinado') if isinstance(p.get('peinado'), dict) else {}
+            o = {'cid': cid, 'pid': q['pid'], 'nombre': q['nombre'], 'creador': str(d['alias'].get(cid) or '')[:40], 'cuerpo': bool(p.get('cuerpo')), 'peinado': {'desc': str(pe.get('desc') or '')[:300], 'name': str(pe.get('name') or '')[:80]}}
+            for k in PREST_K:
+                v = p.get(k)
+                if isinstance(v, str): o[k] = v[:80]
+                elif isinstance(v, (int, float)) and not isinstance(v, bool): o[k] = v
+            out.append(o)
+    return out
+def _prest_apunta(pares):   # se ha lanzado una imagen con el personaje de otro creador: se cuenta en su colaboración (su dueña ve cuántas)
+    try:
+        yo = _cid()
+        with _com_l:
+            d = _com_lee(); toca = False
+            for cid, pid in pares:
+                x = next((x for x in d['sol'] if x.get('estado') == 'aceptada' and x.get('de') == yo and x.get('para') == cid and x.get('pid') in (None, pid)), None)
+                if x: x['usos'] = int(x.get('usos') or 0) + 1; x['uso_t'] = time.time(); toca = True
+            if toca: _com_guarda(d)
+    except Exception as e: plog('préstamo: contar ✕ ' + str(e))
 def _com_tope(que, n):   # freno por cuenta y hora (solicitudes, mensajes)
     k = (uid() or 'local', que); ahora = time.time(); L = _COM_N.setdefault(k, []); L[:] = [t for t in L if ahora - t < 3600]
     if len(L) >= n: return False
@@ -1121,7 +1177,7 @@ class H(SimpleHTTPRequestHandler):
         if self.command != 'HEAD': return self._json(code, {'error': msg})
         self.send_response(code); self.send_header('Content-Length', '0'); self.end_headers()
     def _pasa(self, fn):   # TODA petición (GET, POST y HEAD) entra por aquí: guarda de origen y, en servidor, tope de tamaño + sesión + cuenta del hilo
-        self._cc = self._fijo = None; _ctx.lectura = 0
+        self._cc = self._fijo = None; _ctx.lectura = 0; _ctx.prestamo_ok = False; _ctx.prest = None
         if not self._guard(): return self._corta(403, 'origen no permitido')
         if not SERVIDOR: return fn()
         if self.command == 'GET' and self.path.startswith('/api/admin/copia'): return self._copia()
@@ -1169,6 +1225,11 @@ class H(SimpleHTTPRequestHandler):
     def _estatico(self, cabeza=False):   # modo servidor: solo /assets/… — primero la casa de la cuenta; si no está y es de la biblioteca común, al almacén público. Nada más (ni código, ni catálogo, ni registros, ni lo de otra cuenta)
         ruta = urllib.parse.unquote(urllib.parse.urlparse(self.path).path); rel = _rel_ok(ruta[1:]) if ruta.startswith('/assets/') else None
         if not rel: return self._corta(404)
+        if rel.startswith('assets/prestamo/'):   # del personaje de otro creador, al navegador solo se le sirve el avatar (su ficha y su cuerpo los lee el servidor al generar)
+            full = _prestado(rel) if rel.endswith('/foto.jpg') else None
+            if not full: return self._corta(404)
+            self._cc = 'private, no-cache'; self._fijo = full
+            return super().do_HEAD() if cabeza else super().do_GET()
         base = casa(); full = os.path.join(base, *rel.split('/'))
         if _dentro(base, full) and os.path.isfile(full):
             self._cc = 'private, no-cache'; self._fijo = full
@@ -1177,6 +1238,11 @@ class H(SimpleHTTPRequestHandler):
             self._cc = 'private, max-age=3600'; self.send_response(302); self.send_header('Location', _biblio_url(rel)); self.send_header('Content-Length', '0'); self.end_headers(); return
         return self._corta(404)
     def _json(self, code, obj):
+        pr = getattr(_ctx, 'prest', None); _ctx.prest = None; _ctx.prestamo_ok = False
+        if pr and isinstance(obj, dict):   # con un personaje prestado no se devuelven las direcciones de las referencias subidas (entre ellas iría su ficha)
+            obj = {k: v for k, v in obj.items() if k != 'image_urls'}
+            if isinstance(obj.get('payload'), dict): obj['payload'] = {k: v for k, v in obj['payload'].items() if k not in ('image_urls', 'images', 'image_url')}
+            if code == 200 and obj.get('request_id'): _prest_apunta(pr)
         lec = getattr(_ctx, 'lectura', 0)
         if lec and isinstance(obj, dict): obj = dict(obj, usd_lectura=round(lec, 4)); _ctx.lectura = 0   # lo que han costado las lecturas de imagen de esta petición
         b = json.dumps(obj, ensure_ascii=False).encode(); self.send_response(code)
@@ -1324,7 +1390,7 @@ class H(SimpleHTTPRequestHandler):
                 otra = [c for c in par if c != yo]; otra = otra[0] if otra else yo; visto = (d['visto'].get(yo) or {}).get(otra, 0)
                 chats.append({'con': otra, 'ultimo': M[-1], 'sin_leer': sum(1 for m in M if m.get('de') != yo and m.get('t', 0) > visto)})
             chats.sort(key=lambda c: -c['ultimo'].get('t', 0))
-            return self._json(200, {'ok': True, 'yo': yo, 'alias': str(d['alias'].get(yo) or ''), 'cuentas': cuentas, 'solicitudes': [x for x in d['sol'] if yo in (x.get('de'), x.get('para'))][-200:], 'chats': chats, 'avisos': _com_avisos(d, yo)})
+            return self._json(200, {'ok': True, 'yo': yo, 'alias': str(d['alias'].get(yo) or ''), 'cuentas': cuentas, 'solicitudes': [x for x in d['sol'] if yo in (x.get('de'), x.get('para'))][-200:], 'chats': chats, 'avisos': _com_avisos(d, yo), 'prestados': _prest_lista(d, yo)})
         if u.path == '/api/comunidad/avisos':   # (la solicitud de ejemplo de Aria nace aquí también: así el aviso sale sin haber abierto la comunidad)
             yo = _cid()
             with _com_l:
@@ -1462,7 +1528,13 @@ class H(SimpleHTTPRequestHandler):
                     if ac == 'responder':
                         if x.get('para') != yo or x.get('estado') != 'pendiente': return self._json(400, {'error': 'esa solicitud no está esperando tu respuesta'})
                         x['estado'] = 'aceptada' if body.get('aceptar') else 'rechazada'
-                    else: x['estado'] = 'cancelada' if x.get('estado') == 'pendiente' and x.get('de') == yo else 'terminada'   # cualquiera de las dos partes puede retirar el permiso
+                        if x['estado'] == 'aceptada' and x.get('de') in CU:
+                            nom = next((q['nombre'] for q in _com_personajes(CU.get(yo), True) if q['pid'] == x.get('pid')), None) if x.get('pid') else None
+                            d['msgs'].setdefault(_com_par(yo, x['de']), []).append({'de': yo, 'x': '✅ Solicitud aceptada: ya puedes crear con ' + (nom or 'mis personajes') + '. Lo encontrarás en Crear imagen, al añadir una persona.', 't': time.time(), 'auto': True})
+                    else:
+                        era = x.get('estado'); x['estado'] = 'cancelada' if era == 'pendiente' and x.get('de') == yo else 'terminada'   # cualquiera de las dos partes puede retirar el permiso
+                        otra = x.get('para') if x.get('de') == yo else x.get('de')
+                        if era == 'aceptada' and otra in CU: d['msgs'].setdefault(_com_par(yo, otra), []).append({'de': yo, 'x': 'He retirado el permiso: esta colaboración ha terminado.' if x.get('para') == yo else 'He dejado esta colaboración.', 't': time.time(), 'auto': True})
                     x['t2'] = time.time(); _com_guarda(d); return self._json(200, {'ok': True, 'solicitud': x})
                 if ac == 'mensaje':
                     con = body.get('con', ''); txt = str(body.get('texto') or '').strip()[:2000]
@@ -2165,6 +2237,9 @@ class H(SimpleHTTPRequestHandler):
             return self._json(200, {'ok': True, 'raw': r})
         if self.path != '/api/generar': return self._json(404, {'error': 'no'})
         n = int(self.headers.get('Content-Length') or 0); body = json.loads(self.rfile.read(n) or b'{}')
+        prest = sorted({tuple(str(i.get('path')).split('?')[0].split('/')[2:4]) for i in (body.get('images') or []) if isinstance(i, dict) and str(i.get('path') or '').startswith('assets/prestamo/')})
+        if prest and ((body.get('meta') or {}).get('nsfw') or body.get('nsfw') or _es_nsfw(body.get('prompt'))): return self._json(400, {'error': 'Con el personaje de otro creador no se puede generar contenido NSFW.'})
+        _ctx.prestamo_ok = bool(prest); _ctx.prest = [p for p in prest if len(p) == 2]
         save_inputs(body)
         try:
             AM = all_models(); regalo = casa_on(); mkey = body.get('model') if body.get('model') in AM else (CASA_DEF if regalo else 'qwen'); M = AM[mkey]

@@ -1,7 +1,7 @@
 {
   "rewrites": [
     {
-      "source": "/assets/:carpeta(live|video|personajes|refs|perfil|mio|papelera)/:path*",
+      "source": "/assets/:carpeta(live|video|personajes|refs|perfil|mio|papelera|prestamo)/:path*",
       "destination": "https://aria-studio.onrender.com/assets/:carpeta/:path*"
     },
     {
@@ -11,7 +11,7 @@
   ],
   "redirects": [
     {
-      "source": "/assets/:carpeta((?!(?:live|video|personajes|refs|perfil|mio|papelera)/)[^/]+)/:path+",
+      "source": "/assets/:carpeta((?!(?:live|video|personajes|refs|perfil|mio|papelera|prestamo)/)[^/]+)/:path+",
       "destination": "https://uhscbgidrloskdjbevkn.supabase.co/storage/v1/object/public/assets/:carpeta/:path+",
       "permanent": false
     }

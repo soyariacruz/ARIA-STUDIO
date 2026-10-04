@@ -1,4 +1,4 @@
-/* PRUEBA DE HUMO de ARIA STUDIO (v200). No genera nada ni gasta saldo.
+/* PRUEBA DE HUMO de ARIA STUDIO (v202). No genera nada ni gasta saldo.
    Se pega en la consola de la página ya arrancada (local :8767, o la web de pruebas :3000 con una cuenta local) y devuelve la lista de fallos.
    Recorre todas las pestañas y las combinaciones típicas de Crear imagen llamando a lo mismo que pinta la app; lo que reviente, sale aquí
    y no delante de un usuario. Antes de publicar tiene que devolver `fallos: []`. */
@@ -41,6 +41,12 @@
       for (const v of ['dir', 'sol', 'msg']) { COM.vista = v; comPinta(); if (/[\w.+-]+@[\w-]+\.[a-z]{2,}/i.test(document.getElementById('compage').innerText)) throw new Error('aparece algo con forma de correo en ' + v); } COM.vista = 'dir'; hecho.push('comunidad · sin correos');
       setTab(guard.tab); if (COM.on || document.getElementById('compage')) throw new Error('no se cierra al cambiar de sección'); hecho.push('comunidad · cerrar');
     } catch (e) { fallos.push('comunidad → ' + String((e && e.stack) || e).split('\n').slice(0, 2).join(' | ').slice(0, 260)); if (window.comCierra) comCierra(true); } }
+  // 6) el personaje de otro creador (v202): entra como persona añadida, nunca como principal
+  { const pr = charList().find(c => c.prestado); if (pr) { paso('prestado · añadir', () => { state.comp = {}; state.extras = []; saveExtras(); addExtra(pr.id); if (!extraChars().some(c => c.id === pr.id)) throw new Error('no entra como persona añadida'); }); pinta('con prestado'); plan('con prestado');
+      paso('prestado · referencias', () => { const R = crearRefs(); const x = R.find(r => r.key === 'ficha:' + pr.id); if (!x || !/^assets\/prestamo\//.test(x.img.path) || !/foto\.jpg$/.test(x.thumb)) throw new Error('referencia rara: ' + JSON.stringify(x)); });
+      paso('prestado · nunca principal', () => { const a = CH().id; setChar(pr.id, true); if (CH().id !== a) throw new Error('se ha puesto de principal'); });
+      paso('prestado · sin NSFW', () => { if (!ariaSinNsfw()) throw new Error('NSFW disponible con un personaje prestado'); });
+      paso('prestado · quitar', () => { removeExtra(pr.id); if (extraChars().some(c => c.id === pr.id)) throw new Error('no se quita'); }); } }
   // dejarlo como estaba
   paso('restaurar', () => { state.comp = guard.comp; state.compBy = guard.compBy; state.extras = guard.extras; saveExtras(); state.nsfw = guard.nsfw; setChar(guard.ch, true); setTab(guard.tab); });
   return { fallos, pasos: hecho.length, cuenta: window.CUENTA && CUENTA.web ? (WEBM() ? 'web · miembro' : 'web · dueño') : 'local', escala: window.ESCALA, ventana: innerWidth + '×' + innerHeight };
