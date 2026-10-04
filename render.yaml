@@ -3,6 +3,9 @@
 # Variables: ARIA_ORIGENES = webs que pueden hablar con el servidor; ARIA_FETCH_HOSTS = arrastrar imagenes desde otras webs;
 # ARIA_CUOTA_GB = tope de espacio por cuenta; ARIA_SECRETO = cifra las claves de API de las cuentas (lo genera Render);
 # ARIA_ADMIN = llave de la copia de seguridad; SUPABASE_SECRET = para leer el catalogo privado (se pega a mano).
+# Opcionales, se pegan a mano en Render > Environment (no van en este fichero):
+#   ARIA_CASA_WS = clave de WaveSpeed "de la casa": activa el saldo regalo (sin ella no existe); ARIA_CASA_TOPE = tope en $ al mes entre todas las cuentas (1000);
+#   PIXABAY_KEY o PEXELS_KEY = buscador de fotos de Lugares.
 services:
   - type: web
     name: aria-studio

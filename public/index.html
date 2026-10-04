@@ -34,6 +34,10 @@ header{display:flex;align-items:center;justify-content:space-between;padding:0 2
 .right{display:flex;align-items:center;gap:14px}
 .meter{display:flex;gap:12px;align-items:center;font-size:9.5px;color:var(--mut);letter-spacing:.1em;text-transform:uppercase}
 .meter b{color:var(--ink);font-size:13px;font-family:var(--serif);letter-spacing:0;text-transform:none}
+.casa{display:inline-flex;align-items:center;gap:6px;padding:5px 11px;border:1px solid var(--line);border-radius:999px;font-size:11px;color:var(--mut);cursor:pointer;white-space:nowrap;background:var(--panel);font-family:var(--sans)}
+.casa b{color:var(--ink);font-weight:600}.casa:hover{border-color:var(--acc)}.casa.vacio{color:#b3261e;border-color:#f3c2be;background:#fdeceb}.casa.vacio b{color:#b3261e}
+.casabox .casan{font-family:var(--serif);font-size:34px;line-height:1.1;margin:4px 0 2px}.casabox .casal{display:flex;justify-content:space-between;align-self:stretch;width:100%;box-sizing:border-box;text-align:left;gap:16px;padding:7px 0;border-top:1px solid var(--line);font-size:12.5px}
+.casabox .casal span{color:var(--mut)}.casabox .casah{max-height:190px;overflow:auto;margin-top:6px}.casabox .casah .casal{font-size:11.5px;padding:5px 0}.casabox h4{margin:14px 0 2px;font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--mut);font-weight:500}
 .btn{border:1px solid var(--line);background:var(--panel);color:var(--ink);padding:9px 14px;border-radius:10px;font-weight:700;font-size:11px;letter-spacing:.14em;text-transform:uppercase;cursor:pointer;transition:transform .1s,border-color .15s,background .15s}
 .btn:hover{border-color:#cdc4b6}
 .btn:active{transform:scale(.97)}
@@ -1581,6 +1585,7 @@ nav .navlib button.more span{font-size:9px}
   <div class="chip" id="chip"><img id="chipImg" alt=""><div><b id="chipName">—</b><small id="chipSub">sin personaje</small></div><span class="dot" id="chipDot" style="display:none"></span></div></div>
   <div class="right">
     <span class="livedot" id="livedot"><i></i> API en vivo</span>
+    <button type="button" class="casa" id="casa" style="display:none"></button>
     <div class="meter" title="Desde la primera generación con la API (según las fichas guardadas)"><span>Total <b id="nGen">0</b> generaciones</span><span>Gasto <b id="spent">$0.00</b></span></div>
     <button class="themebtn" id="themeBtn" title="Modo oscuro / claro">☾</button>
     <button class="btn" id="btnConsole">⌘ Consola</button>

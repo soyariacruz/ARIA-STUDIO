@@ -15,7 +15,7 @@ Modo servidor (ARIA_SERVIDOR=1): el mismo puente para muchas cuentas. Cada una e
 ($ARIA_DATOS/usuarios/<uid>: sus carpetas, sus claves, su capa sobre el catálogo común) y sus trabajos. Sin la variable, todo sigue como siempre.
     GET  /api/catalogo         → el catálogo que ve la cuenta (el común + su capa)        · solo en modo servidor
 """
-import os, re, sys, hmac, json, time, base64, hashlib, tarfile, mimetypes, threading, urllib.request, urllib.error, urllib.parse
+import os, re, sys, hmac, json, math, time, base64, hashlib, tarfile, mimetypes, threading, urllib.request, urllib.error, urllib.parse
 from http.server import ThreadingHTTPServer, SimpleHTTPRequestHandler
 
 RAIZ = os.path.dirname(os.path.abspath(__file__)); ROOT = RAIZ   # la carpeta del código y de la biblioteca común (ROOT = lo mismo; solo para lo que es de todos)
@@ -37,6 +37,7 @@ MAX_CUERPO = 40 * 1024 * 1024    # tope de una petición en modo servidor
 MAX_BIBLIO = 200 * 1024 * 1024   # tope de un fichero de la biblioteca común al copiarlo
 KINDS = ('vestidor', 'hair', 'expr')   # las bibliotecas a las que una cuenta puede añadir lo suyo
 _UUID = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
+VERSION = 184
 _ctx = threading.local()   # la cuenta del hilo: la pone cada petición (y, a mano, cada hilo de fondo)
 def uid(): return getattr(_ctx, 'uid', None)   # en local siempre None
 DUENOS = tuple(e.strip().lower() for e in (os.environ.get('ARIA_DUENOS') or 'mix1994max@gmail.com').split(',') if e.strip())   # cuentas que pueden cambiar a Aria Cruz (en la web, la de Max)
@@ -44,8 +45,8 @@ def aria_fija(): return SERVIDOR and (getattr(_ctx, 'email', '') or '').lower() 
 FIJA = 'Aria Cruz es un personaje fijo: su ficha no se puede cambiar. Crea o edita tu propio personaje.'
 class como:   # «with como(uid): …» → lo de dentro corre como esa cuenta
     def __init__(self, u, email='', interno=False): self.n = (u, email, interno)
-    def __enter__(self): self.a = (getattr(_ctx, 'uid', None), getattr(_ctx, 'email', ''), getattr(_ctx, 'interno', False)); _ctx.uid, _ctx.email, _ctx.interno = self.n; _ctx.comun = None
-    def __exit__(self, *a): _ctx.uid, _ctx.email, _ctx.interno = self.a; _ctx.comun = None
+    def __enter__(self): self.a = (getattr(_ctx, 'uid', None), getattr(_ctx, 'email', ''), getattr(_ctx, 'interno', False)); _ctx.uid, _ctx.email, _ctx.interno = self.n; _ctx.comun = None; _ctx.ws_modo = None; _ctx.casa_ok = False
+    def __exit__(self, *a): _ctx.uid, _ctx.email, _ctx.interno = self.a; _ctx.comun = None; _ctx.ws_modo = None; _ctx.casa_ok = False
 def casa():   # la carpeta de la cuenta: en local, la de siempre; en servidor, $ARIA_DATOS/usuarios/<uid> (con la misma forma: assets/live, assets/video, assets/personajes, assets/perfil…)
     if not SERVIDOR: return RAIZ
     u = uid()
@@ -153,6 +154,12 @@ def _ses_pon(h, hasta, val):
 def _sb_get(path, token):
     rq = urllib.request.Request(SB_URL + path, headers={'apikey': SB_KEY, 'Authorization': 'Bearer ' + token, 'Accept': 'application/json', 'User-Agent': UA})
     with urllib.request.urlopen(rq, timeout=15) as r: return json.loads(r.read(1 << 20) or b'null')
+_precio = {}   # uid → lo que paga en Skool ($/mes, o $/año si es ≥ 100): de ahí sale su saldo regalo de cada mes
+def _miembros(token):   # la fila de quien pregunta; si la columna «precio» todavía no existe en Supabase, sin ella
+    try: return _sb_get('/rest/v1/miembros?select=email,interno,precio', token)
+    except urllib.error.HTTPError as e:
+        if e.code != 400: raise
+        return _sb_get('/rest/v1/miembros?select=email,interno', token)
 def _sesion(token):   # token de acceso de Supabase → (uid, email, interno). Se recuerda 5 min como mucho (y nunca más allá de lo que dura el token)
     if not token or len(token) > 4096 or not re.fullmatch(r'[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+', token): raise _NoEntra(401, 'sesión no válida')
     h = hashlib.sha256(token.encode()).hexdigest()
@@ -176,12 +183,14 @@ def _sesion(token):   # token de acceso de Supabase → (uid, email, interno). S
             except Exception: raise _NoEntra(503, 'no se pudo comprobar la sesión')
             us = us if isinstance(us, dict) else {}; u = str(us.get('id') or '').lower(); email = str(us.get('email') or '').strip().lower()
             if not _UUID.fullmatch(u) or not email: raise _NoEntra(401, 'sesión no válida')
-            try: filas = _sb_get('/rest/v1/miembros?select=email,interno', token)   # las reglas de Supabase solo devuelven la fila de quien pregunta
+            try: filas = _miembros(token)   # las reglas de Supabase solo devuelven la fila de quien pregunta
             except urllib.error.HTTPError as e: raise _NoEntra(403 if e.code in (401, 403) else 503, 'esta cuenta no tiene acceso' if e.code in (401, 403) else 'no se pudo comprobar la lista de miembros')
             except Exception: raise _NoEntra(503, 'no se pudo comprobar la lista de miembros')
             fila = next((f for f in (filas if isinstance(filas, list) else []) if isinstance(f, dict) and str(f.get('email') or '').strip().lower() == email), None)   # por si las reglas devolvieran más filas: solo vale la suya
             if not fila: raise _NoEntra(403, 'esta cuenta no está en la lista de miembros')
             res = (u, email, fila.get('interno') is True)
+            try: _precio[u] = float(fila.get('precio')) if fila.get('precio') is not None else 4.0
+            except (TypeError, ValueError): _precio[u] = 4.0
         except _NoEntra as e:
             if e.code != 503: _ses_pon(h, now + 30, e)   # un token malo no se le pregunta a Supabase en cada petición
             raise
@@ -191,6 +200,8 @@ def _quien(h):   # petición → (uid, email, interno), o _NoEntra(401|403|503)
         d = (h.headers.get('X-Dev-Uid') or '').strip().lower()
         if d:
             if not _UUID.fullmatch(d): raise _NoEntra(401, 'X-Dev-Uid no válido')
+            try: _precio[d] = float(h.headers.get('X-Dev-Precio') or _precio.get(d, 4))
+            except ValueError: pass
             return d, f'dev-{d[:8]}@dev.local', h.headers.get('X-Dev-Interno') == '1'
     a = h.headers.get('Authorization') or ''; tok = a[7:].strip() if a[:7].lower() == 'bearer ' else ''
     if not tok:
@@ -236,14 +247,24 @@ def _trae_url(url):   # una URL de internet → (bytes, tipo). En servidor, con 
     if not url.lower().startswith(('http://', 'https://')): raise RuntimeError('url no válida')
     req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0 (Macintosh) AppleWebKit/537.36 Chrome/120 Safari/537.36', 'Accept': 'image/*,text/html,*/*'})
     with urllib.request.urlopen(req, timeout=30) as r: return r.read(25 * 1024 * 1024), r.headers.get('Content-Type', 'image/jpeg').split(';')[0]
-def _pexels_key():   # la clave del buscador de fotos es de la plataforma (no de cada cuenta): variable PEXELS_KEY en el servidor; en local, ~/.claude/pexels.env
-    k = os.environ.get('PEXELS_KEY') or ''
-    if not k and not SERVIDOR:
-        try:
-            for line in open(os.path.expanduser('~/.claude/pexels.env')):
-                if line.startswith('PEXELS_KEY='): k = line.strip().split('=', 1)[1].strip()
-        except Exception: pass
-    return k
+def _fotos_key():   # la clave del buscador de fotos es de la plataforma (no de cada cuenta) → (proveedor, clave). Variables PEXELS_KEY o PIXABAY_KEY en el servidor; en local, ~/.claude/pexels.env o ~/.claude/pixabay.env
+    for prov, var, fich in (('pexels', 'PEXELS_KEY', 'pexels.env'), ('pixabay', 'PIXABAY_KEY', 'pixabay.env')):
+        k = (os.environ.get(var) or '').strip()
+        if not k and not SERVIDOR:
+            try:
+                for line in open(os.path.expanduser('~/.claude/' + fich)):
+                    if line.startswith(var + '='): k = line.strip().split('=', 1)[1].strip()
+            except Exception: pass
+        if k: return prov, k
+    return None, ''
+def _fotos_busca(prov, k, qq, pg):   # → lista de {id, thumb, img, autor, url, alt}
+    if prov == 'pixabay':   # https://pixabay.com/api/docs/ · 100 búsquedas/minuto · pide guardar las búsquedas 24 h y no enlazar sus imágenes de forma permanente (aquí la elegida se descarga y se guarda)
+        url = 'https://pixabay.com/api/?' + urllib.parse.urlencode({'key': k, 'q': qq, 'lang': 'es', 'image_type': 'photo', 'orientation': 'horizontal', 'safesearch': 'true', 'per_page': 30, 'page': pg})
+        j = json.loads(urllib.request.urlopen(urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0 aria-studio'}), timeout=20).read())
+        return [{'id': p.get('id'), 'thumb': p.get('webformatURL'), 'img': p.get('largeImageURL') or p.get('webformatURL'), 'autor': p.get('user') or '', 'url': p.get('pageURL') or '', 'alt': p.get('tags') or ''} for p in (j.get('hits') or []) if p.get('webformatURL')]
+    rq = urllib.request.Request('https://api.pexels.com/v1/search?' + urllib.parse.urlencode({'query': qq, 'per_page': 30, 'page': pg, 'orientation': 'landscape', 'locale': 'es-ES'}), headers={'Authorization': k, 'User-Agent': 'Mozilla/5.0 aria-studio'})
+    j = json.loads(urllib.request.urlopen(rq, timeout=20).read())
+    return [{'id': p.get('id'), 'thumb': (p.get('src') or {}).get('medium'), 'img': (p.get('src') or {}).get('large2x') or (p.get('src') or {}).get('large'), 'autor': p.get('photographer') or '', 'url': p.get('url') or '', 'alt': p.get('alt') or ''} for p in (j.get('photos') or []) if (p.get('src') or {}).get('medium')]
 _PEX = {}; _PEX_N = {}   # búsquedas ya hechas (un día) y búsquedas por cuenta en la última hora
 BASE = 'https://api.higgsfield.ai'
 MODEL = 'alibaba/qwen-image-3/edit'          # modelo por defecto (edición con 1-3 imágenes de referencia)
@@ -259,11 +280,13 @@ def _mstu(p, urls, ar, q):  return {'prompt': p[:5000], 'image_urls': urls[:16],
 def _nbp(p, urls, ar, q):   return {'prompt': p, 'images': urls[:14], 'resolution': '2k' if q == 'high' else '1k', 'aspect_ratio': ar, 'output_format': 'jpeg'}
 def _gpt(p, urls, ar, q):   return {'prompt': p, 'images': urls[:16], 'resolution': '2k' if q == 'high' else '1k', 'quality': 'high' if q == 'high' else 'medium', 'aspect_ratio': ar, 'output_format': 'jpeg'}
 def _sdrm(p, urls, ar, q):  return {'prompt': p, 'images': urls[:10], 'resolution': '2k' if q == 'high' else '1.5k', 'aspect_ratio': ar, 'output_format': 'jpeg', 'prompt_optimization_mode': 'standard'}
+def _sflash(p, urls, ar, q): return {'prompt': p, 'images': urls[:10], 'resolution': '2k' if q == 'high' else '1.5k', 'aspect_ratio': ar, 'output_format': 'jpeg'}
 def _qwws(p, urls, ar, q):  return {'prompt': p, 'images': urls[:3], 'resolution': '2k' if q == 'high' else '1k', 'aspect_ratio': ar}
 WS_MODELS = {   # precios de la página de cada modelo en wavespeed.ai (3 oct 2026): 'usd' = con UNA referencia; 'per' = recargo por cada referencia más
     'nbp':      {'ep': 'google/nano-banana-pro/edit',          'name': 'Nano Banana Pro',  'refs': 14, 'usd': {'std': 0.14,  'high': 0.14},  'per': 0,     'body': _nbp,  'nota': 'Google · por WaveSpeed · hasta 14 referencias · 1K y 2K cuestan lo mismo', 'high': '2k', 'prov': 'ws'},
     'gptimg':   {'ep': 'openai/gpt-image-2.5-sunburst/edit',   'name': 'GPT Image 2.5',    'refs': 16, 'usd': {'std': 0.039, 'high': 0.165}, 'per': 0.015, 'body': _gpt,  'nota': 'OpenAI · por WaveSpeed · hasta 16 referencias', 'high': '2k · calidad alta', 'prov': 'ws'},
     'seedream': {'ep': 'bytedance/seedream-v5.0-pro/edit',     'name': 'Seedream 5.0 Pro', 'refs': 10, 'usd': {'std': 0.045, 'high': 0.09},  'per': 0.003, 'body': _sdrm, 'nota': 'ByteDance · por WaveSpeed · hasta 10 referencias', 'high': '2k', 'std': '1.5k', 'prov': 'ws'},
+    'seedflash': {'ep': 'bytedance/seedream-v5.0-flash/edit',  'name': 'Seedream 5.0 Flash', 'refs': 10, 'usd': {'std': 0.027, 'high': 0.027}, 'per': 0, 'body': _sflash, 'nota': 'ByteDance · por WaveSpeed · el más barato · hasta 10 referencias · precio fijo', 'high': '2k', 'std': '1.5k', 'prov': 'ws'},
     'qwenws':   {'ep': 'alibaba/qwen-image-3.0/edit',          'name': 'Qwen Image 3 · WaveSpeed', 'refs': 3, 'usd': {'std': 0.03, 'high': 0.03}, 'per': 0.003, 'body': _qwws, 'nota': 'el mismo Qwen Image 3, por WaveSpeed · 1-3 referencias · 1K y 2K cuestan lo mismo', 'high': '2k', 'prov': 'ws'},
 }
 CLAVES = os.path.expanduser('~/.aria-studio/claves.env')   # claves pegadas en la pantalla «Conecta tu API»: fuera de la carpeta de la app (ni se sirven ni viajan en un zip)
@@ -333,8 +356,96 @@ def _ws_saldo(k):   # comprueba una clave de WaveSpeed pidiendo su saldo
     rq = urllib.request.Request('https://api.wavespeed.ai/api/v3/balance'); rq.add_header('Authorization', 'Bearer ' + k); rq.add_header('User-Agent', UA)
     return float((json.loads(urllib.request.urlopen(rq, timeout=30).read()).get('data') or {}).get('balance'))
 def load_ws(): return _env('WS_API_KEY', 'wavespeed.env')
+# ---- 🎁 SALDO REGALO (v184, solo en modo servidor). Quien no tiene su propia clave de WaveSpeed genera con la de la casa (variable ARIA_CASA_WS) y se le descuenta de su monedero:
+#      1 $ de bienvenida (una vez, no caduca) + cada mes ≈10 % de lo que paga en Skool, redondeado hacia arriba a 0,50 $ (se repone el día 1 y no se acumula). Sin NSFW. Sin la variable, nada de esto existe.
+def _casa_key():
+    k = (os.environ.get('ARIA_CASA_WS') or '').strip()
+    if not k and DEV:   # en el servidor de pruebas de este ordenador, la clave de Max hace de «clave de la casa»
+        try:
+            for line in open(os.path.expanduser('~/.claude/wavespeed.env')):
+                if line.startswith('WS_API_KEY='): k = line.strip().split('=', 1)[1].strip()
+        except Exception: pass
+    return k
+CASA_KEY = _casa_key() if SERVIDOR else ''
+CASA_TOPE = float(os.environ.get('ARIA_CASA_TOPE') or 1000)   # $ al mes entre TODAS las cuentas: freno de seguridad, no recorta a nadie en condiciones normales
+CASA_MODELOS = ('seedflash', 'gptimg', 'nbp'); CASA_DEF = 'seedflash'   # con el saldo regalo: el barato por defecto y los dos que traen su propio filtro; Seedream 5.0 Pro (sin filtro) queda fuera
+BIENVENIDA = 1.0; LECTURA_USD = 0.002   # cada lectura de una imagen con IA (describir una foto, detectar personas…)
+SIN_SALDO = 'Saldo regalo agotado. Se repone el día 1; para seguir ahora, conecta tu propia clave en «API en vivo».'
+_NSFW_RE = re.compile(r"\b(nsfw|topless|nipples?|areolas?|genitals?|genitalia|pubic|vagina|vulva|penis|no clothes|(?:is|are|she'?s|he'?s|fully|completely|totally|stark) naked|naked (?:woman|women|man|men|girl|boy|body|person|people|figure|torso|chest|skin)|(?:fully|completely|totally) nude|nude body|bare breasts?|no underwear|sexually explicit|explicit nud)", re.I)
+def _es_nsfw(prompt): return bool(_NSFW_RE.search(re.split(r'negative prompt\s*:', str(prompt or ''), flags=re.I)[0]))   # lo que va detrás de «Negative prompt:» es justo lo que NO se quiere en la imagen
+def _casa_base(): return bool(SERVIDOR and CASA_KEY and uid())
+def casa_on(): return _casa_base() and not load_ws()   # esta cuenta va con el saldo regalo (no tiene clave propia conectada)
+def _regalo_mes(p):   # 4 → 0,50 · 5 → 0,50 · 6 → 1 · 19 → 2 · 49 → 5 · 296 al año → 2,50
+    try: p = float(p)
+    except (TypeError, ValueError): p = 4.0
+    if p <= 0: return 0.0
+    if p >= 100: p /= 12   # plan anual
+    return math.ceil(round(p * 0.1 / 0.5, 6)) * 0.5
+def _mon_fp(): return os.path.join(casa(), 'monedero.json')   # en la casa de la cuenta, fuera de assets/: no se sirve
+def _mon_guarda(m):
+    fp = _mon_fp(); os.makedirs(os.path.dirname(fp), mode=0o700, exist_ok=True)
+    with os.fdopen(os.open(fp + '.tmp', os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600), 'w') as f: json.dump(m, f, ensure_ascii=False)
+    os.replace(fp + '.tmp', fp)
+def _mon_lee():   # SIEMPRE con _cerrojo('mon') cogido. Da la bienvenida la primera vez y repone al cambiar de mes
+    try: m = json.load(open(_mon_fp(), encoding='utf-8'))
+    except Exception: m = {}
+    if not isinstance(m, dict): m = {}
+    mes = time.strftime('%Y-%m', time.gmtime()); cambia = False
+    if 'bienvenida' not in m: m.update({'bienvenida': BIENVENIDA, 'alta': int(time.time())}); cambia = True
+    p = _precio.get(uid(), m.get('precio', 4.0))
+    if m.get('mes') != mes: r = _regalo_mes(p); m.update({'mes': mes, 'precio': p, 'mensual': r, 'resto': r}); cambia = True   # lo del mes pasado no se acumula
+    elif p != m.get('precio'):   # ha cambiado de plan a mitad de mes: su regalo del mes pasa a ser el del plan nuevo, descontando lo ya gastado
+        r = _regalo_mes(p); gastado = float(m.get('mensual', 0)) - float(m.get('resto', 0)); m.update({'precio': p, 'mensual': r, 'resto': max(0.0, round(r - gastado, 4))}); cambia = True
+    if cambia: _mon_guarda(m)
+    return m
+def _casa_en_curso():   # lo que está generándose ahora mismo con la clave de la casa y aún no se ha cobrado: cuenta como gastado
+    u = uid(); ahora = time.time()
+    return sum(float(j.get('usd') or 0) for j in list(jobs.values()) if j.get('casa') and j.get('owner') == u and not j.get('cobrado') and not j.get('failed') and ahora - float(j.get('t0') or 0) < 3 * 3600)
+_casa_l = threading.Lock()
+def _casa_global(usd=0):   # lo gastado este mes con la clave de la casa entre todas las cuentas ($DATOS/casa.json)
+    fp = os.path.join(DATOS, 'casa.json'); mes = time.strftime('%Y-%m', time.gmtime())
+    with _casa_l:
+        try: g = json.load(open(fp))
+        except Exception: g = {}
+        if not isinstance(g, dict) or g.get('mes') != mes: g = {'mes': mes, 'usd': 0.0, 'n': 0}
+        if usd:
+            g['usd'] = round(float(g.get('usd') or 0) + usd, 4); g['n'] = int(g.get('n') or 0) + 1
+            with open(fp + '.tmp', 'w') as f: json.dump(g, f)
+            os.replace(fp + '.tmp', fp)
+        return float(g.get('usd') or 0)
+def casa_info():   # el monedero tal como lo ve la web; None si la cuenta no va con el saldo regalo
+    if not casa_on(): return None
+    with _cerrojo('mon'): m = _mon_lee()
+    saldo = max(0.0, round(float(m['resto']) + float(m['bienvenida']) - _casa_en_curso(), 4)); p = WS_MODELS[CASA_DEF]['usd']['std']
+    return {'saldo': saldo, 'mensual': m['mensual'], 'resto': m['resto'], 'bienvenida': m['bienvenida'], 'mes': m['mes'], 'imagen': p, 'imagenes': int((saldo + 1e-6) // p), 'modelos': list(CASA_MODELOS), 'pausa': _casa_global() >= CASA_TOPE}
+def casa_puede(usd):   # ¿llega el saldo regalo para esto? Si no, error claro
+    if _casa_global() >= CASA_TOPE: plog(f'🎁 TOPE GLOBAL del saldo regalo alcanzado ({CASA_TOPE} $ este mes)'); raise RuntimeError('El saldo regalo está en pausa unos días. Mientras tanto puedes generar con tu propia clave en «API en vivo».')
+    c = casa_info()
+    if not c: raise RuntimeError('WaveSpeed no está conectado: conéctalo en «API en vivo»')
+    if c['saldo'] + 1e-6 >= usd: return
+    raise RuntimeError(SIN_SALDO if c['saldo'] < c['imagen'] else f"Tu saldo regalo ({c['saldo']:.2f} $) no llega para esta imagen ({usd:.3f} $). Prueba con {WS_MODELS[CASA_DEF]['name']} o conecta tu propia clave en «API en vivo».")
+def casa_cobra(usd, que, rid=None, modelo=None):   # descuenta del monedero (primero lo del mes, que caduca; luego la bienvenida) y lo apunta en su historial
+    usd = round(float(usd or 0), 4)
+    if usd <= 0: return
+    with _cerrojo('mon'):
+        m = _mon_lee(); H = m.setdefault('hist', [])
+        if rid and any(h.get('rid') == rid for h in H): return   # ese trabajo ya se cobró
+        a = min(float(m['resto']), usd); m['resto'] = round(float(m['resto']) - a, 4); m['bienvenida'] = round(max(0.0, float(m['bienvenida']) - (usd - a)), 4)
+        hoy = time.strftime('%Y-%m-%d', time.gmtime())
+        if not rid and H and H[-1].get('que') == que and H[-1].get('dia') == hoy: H[-1]['usd'] = round(H[-1]['usd'] + usd, 4); H[-1]['n'] = H[-1].get('n', 1) + 1; H[-1]['t'] = int(time.time())   # las lecturas del día van en una sola línea
+        else: H.append({'t': int(time.time()), 'dia': hoy, 'usd': usd, 'que': que, **({'rid': rid} if rid else {}), **({'modelo': modelo} if modelo else {})})
+        m['hist'] = H[-400:]; _mon_guarda(m)
+    _casa_global(usd)
+def _casa_puerta(path):   # qué se puede pedir a WaveSpeed con la clave de la casa (solo POST): subir referencias, leer imágenes (se cobra) y generar con los modelos permitidos y con permiso
+    if '/media/upload' in path: return
+    if '/any-llm' in path: casa_puede(LECTURA_USD); casa_cobra(LECTURA_USD, 'lectura'); return
+    if getattr(_ctx, 'casa_ok', False) and any(path == '/api/v3/' + WS_MODELS[k]['ep'] for k in CASA_MODELOS): return
+    raise RuntimeError('Esto no entra en el saldo regalo: conecta tu propia clave en «API en vivo».')
 def ws(method, path, body=None, raw=None, ctype=None):
-    k = load_ws()
+    modo = getattr(_ctx, 'ws_modo', None); k = '' if modo == 'casa' else load_ws()   # ws_modo: un trabajo se consulta con la misma clave con la que se lanzó
+    if not k and modo != 'propia' and _casa_base():
+        k = CASA_KEY
+        if method == 'POST': _casa_puerta(path)
     if not k: raise RuntimeError('WaveSpeed no está conectado: conéctalo en «API en vivo»' if SERVIDOR else 'falta WS_API_KEY en ~/.claude/wavespeed.env')
     req = urllib.request.Request('https://api.wavespeed.ai' + path, data=raw if raw is not None else (json.dumps(body).encode() if body is not None else None), method=method)
     req.add_header('Authorization', 'Bearer ' + k); req.add_header('Content-Type', ctype or 'application/json'); req.add_header('User-Agent', UA)
@@ -382,7 +493,7 @@ UNAVAILABLE = [   # lo que Max usa a diario y la API pública de Higgsfield NO o
     {'key': 'gpt-image-2.5',   'name': 'GPT Image 2.5',    'why': 'próximamente'},
     {'key': 'seedream-5',      'name': 'Seedream 5',       'why': 'próximamente'},
 ]
-def all_models(): return dict((MODELS if _hf_listo() else {}), **(WS_MODELS if load_ws() else {}))   # solo los modelos de los proveedores con clave
+def all_models(): return dict((MODELS if _hf_listo() else {}), **(WS_MODELS if load_ws() else ({k: WS_MODELS[k] for k in CASA_MODELOS} if casa_on() else {})))   # solo los modelos de los proveedores con clave
 def model_list(): return [{'key': k, 'name': m['name'], 'ep': m['ep'], 'refs': m['refs'], 'usd': m['usd'], 'per': m.get('per', 0), 'nota': m['nota'], 'high': m['high'], 'std': m.get('std', '1k'), 'prov': m.get('prov', 'hf')} for k, m in all_models().items()]
 def unavailable(): return [] if load_ws() else UNAVAILABLE
 UA = 'aria-mirror/1.0 (puente local; +https://higgsfield.ai)'   # Cloudflare devuelve 403 «error code: 1010» al User-Agent por defecto de Python
@@ -872,6 +983,7 @@ def _estado(rid):   # estado de un trabajo; si ha terminado, lo descarga a la ca
                   'video': {'url': (a.get('content') or {}).get('video_url')}, 'error': (a.get('error') or {}).get('message') if a.get('error') else None, 'usage': a.get('usage')}
             if st['status'] == 'completed' and a.get('usage'): j['tokens'] = a['usage'].get('total_tokens')
         elif j.get('prov') == 'ws':
+            if SERVIDOR: _ctx.ws_modo = 'casa' if j.get('casa') else 'propia'
             w = (ws('GET', f'/api/v3/predictions/{rid}/result').get('data') or {})
             outs = w.get('outputs') or []
             st = {'status': {'completed': 'completed', 'failed': 'failed'}.get(w.get('status'), 'in_progress'), 'request_id': rid, 'images': [{'url': u} for u in outs], 'video': {'url': outs[0] if outs else None}, 'error': w.get('error') or None}
@@ -887,6 +999,10 @@ def _estado(rid):   # estado de un trabajo; si ha terminado, lo descarga a la ca
     except Exception as e:   # un 429/5xx o un corte de red al preguntar NO es un trabajo perdido: la web vuelve a preguntar
         plog(f'estado {rid[:8]} ✕ {e}'); return 503, {'error': str(e), 'retry': True}
     status = st.get('status'); out = {'status': status, 'usd': j.get('usd'), 'credits': j.get('credits'), 'model': j.get('model'), 'elapsed': round(time.time() - j['t0'], 1)}
+    if j.get('casa') and status == 'completed' and not j.get('cobrado'):   # 🎁 se cobra al terminar (si falla, no se cobra nada)
+        j['cobrado'] = True
+        try: casa_cobra(j.get('usd'), 'imagen', rid, j.get('model'))
+        except Exception as e: plog('saldo regalo: cobro ✕ ' + str(e))
     if status == 'completed' and not j.get('file') and j.get('kind') == 'video' and time.time() - j.get('dl', 0) > 900:
         vurl = (st.get('video') or {}).get('url')
         if vurl:
@@ -911,6 +1027,9 @@ def _estado(rid):   # estado de un trabajo; si ha terminado, lo descarga a la ca
                 try: j['prenda'] = add_prenda(j, os.path.join(live_dir(), fn)); j['file'] = j['prenda']['ficha']
                 except Exception as e: plog('prenda ✕ ' + str(e))
     if status in ('failed', 'nsfw', 'canceled'): j['failed'] = True; _job_done(rid); out['error'] = st.get('error') or st.get('detail') or status; plog(f"{rid[:8]} {status} · {out['error']} · {j.get('item')}")
+    if j.get('casa'):
+        try: out['casa'] = casa_info()
+        except Exception: pass
     out['file'] = j.get('file'); out['kind'] = j.get('kind', 'image'); out['prenda'] = j.get('prenda'); out['nf'] = j.get('nf_item'); out['estilo'] = j.get('estilo'); out['raw'] = {k: st.get(k) for k in ('status', 'request_id')}
     return 200, out
 class H(SimpleHTTPRequestHandler):
@@ -932,7 +1051,7 @@ class H(SimpleHTTPRequestHandler):
         if not self._guard(): return self._corta(403, 'origen no permitido')
         if not SERVIDOR: return fn()
         if self.command == 'GET' and self.path.startswith('/api/admin/copia'): return self._copia()
-        if self.command in ('GET', 'HEAD') and self.path == '/salud': return self._json(200, {'ok': True}) if self.command == 'GET' else self._corta(200)   # el alojamiento pregunta aquí si el servidor está vivo (sin sesión, sin datos)
+        if self.command in ('GET', 'HEAD') and self.path == '/salud': return self._json(200, {'ok': True, 'v': VERSION}) if self.command == 'GET' else self._corta(200)   # el alojamiento pregunta aquí si el servidor está vivo (sin sesión, sin datos)
         if self.command == 'POST':
             try: n = int(self.headers.get('Content-Length') or 0)
             except ValueError: n = -1
@@ -1004,9 +1123,14 @@ class H(SimpleHTTPRequestHandler):
             if u.path == '/api/catalogo': return self._json(200, _cat_load()[1])   # el catálogo que ve esta cuenta: el común + su capa
         if u.path == '/api/claves':   # estado de las APIs, sin enseñar nunca las claves
             A = _apis_estado(); w = A[0]
-            return self._json(200, {'ok': True, 'apis': A, 'ws': w['on'], 'ws_fin': w['fin'], 'saldo': w['saldo']})
+            return self._json(200, {'ok': True, 'apis': A, 'ws': w['on'], 'ws_fin': w['fin'], 'saldo': w['saldo'], 'casa': casa_info()})
+        if u.path == '/api/monedero':   # 🎁 el saldo regalo de la cuenta y su historial de gasto (lo más nuevo primero)
+            c = casa_info()
+            if not c and not _casa_base(): return self._json(200, {'ok': True, 'casa': None, 'hist': []})
+            with _cerrojo('mon'): m = _mon_lee()
+            return self._json(200, {'ok': True, 'casa': c, 'hist': [{k: h.get(k) for k in ('t', 'usd', 'que', 'modelo', 'n')} for h in reversed(m.get('hist') or [])][:200]})
         if u.path == '/api/ping':
-            return self._json(200, {'ok': True, **({'espacio': {'usado': espacio(), 'tope': CUOTA}, 'aria_mia': not aria_fija()} if SERVIDOR else {}), 'model': MODEL, 'default': 'mstudio', 'models': model_list(), 'unavailable': unavailable(), 'ws': bool(load_ws()), 'aspects': ASPECTS, 'key': _hf_listo(), 'ark': bool(load_ark()[0]), 'ark_usd': ARK_USD, 'interno': bool(getattr(_ctx, 'interno', False)) if SERVIDOR else os.path.isfile(os.path.expanduser('~/.claude/notion.env')), **({'servidor': True} if SERVIDOR else {})})   # interno = el ordenador de Max: enseña «Workflows» (en la web alojada, solo las cuentas autorizadas)
+            return self._json(200, {'ok': True, **({'espacio': {'usado': espacio(), 'tope': CUOTA}, 'aria_mia': not aria_fija()} if SERVIDOR else {}), 'model': MODEL, 'default': CASA_DEF if casa_on() else 'mstudio', 'models': model_list(), 'unavailable': unavailable(), 'ws': bool(load_ws()) or casa_on(), 'casa': casa_info(), 'aspects': ASPECTS, 'key': _hf_listo(), 'ark': bool(load_ark()[0]), 'ark_usd': ARK_USD, 'interno': bool(getattr(_ctx, 'interno', False)) if SERVIDOR else os.path.isfile(os.path.expanduser('~/.claude/notion.env')), **({'servidor': True} if SERVIDOR else {})})   # interno = el ordenador de Max: enseña «Workflows» (en la web alojada, solo las cuentas autorizadas)
         if u.path == '/api/live':   # lo ya generado por la API (assets/live/<item>_<rid>.ext) → la app lo enseña sin volver a generar
             files = {}; allf = []; ld, vd = live_dir(), video_dir()
             for fn in sorted(os.listdir(ld), key=lambda f: os.path.getmtime(os.path.join(ld, f))):
@@ -1090,25 +1214,23 @@ class H(SimpleHTTPRequestHandler):
                     except Exception: raise RuntimeError('eso no es una imagen')
                 return self._json(200, {'data': 'data:' + ctype + ';base64,' + base64.b64encode(data).decode()})
             except Exception as e: return self._json(400, {'error': str(e)[:200]})
-        if u.path == '/api/lugares_buscar':   # fotos de sitios para «Mis lugares» (Pexels: gratis y de uso libre). Devuelve miniatura, imagen grande, autor y enlace
-            qq = (q.get('q') or [''])[0].strip()[:80]; k = _pexels_key()
+        if u.path == '/api/lugares_buscar':   # fotos de sitios para «Mis lugares» (Pexels o Pixabay: gratis y de uso libre). Devuelve miniatura, imagen grande, autor y enlace
+            qq = (q.get('q') or [''])[0].strip()[:80]; prov, k = _fotos_key()
             try: pg = max(1, min(5, int((q.get('p') or ['1'])[0])))
             except Exception: pg = 1
             if not k: return self._json(200, {'ok': False, 'falta': True, 'error': 'el buscador de fotos todavía no está activado'})
             if len(qq) < 2: return self._json(400, {'error': 'escribe qué sitio buscas'})
             ck = qq.lower() + '|' + str(pg); hit = _PEX.get(ck)
-            if hit and time.time() - hit[0] < 86400: return self._json(200, {'ok': True, 'fotos': hit[1]})
+            if hit and time.time() - hit[0] < 86400: return self._json(200, {'ok': True, 'prov': prov, 'fotos': hit[1]})
             quien = uid() or 'local'; ahora = time.time(); L = _PEX_N.setdefault(quien, []); L[:] = [t for t in L if ahora - t < 3600]
             if len(L) >= 40: return self._json(429, {'error': 'demasiadas búsquedas seguidas: prueba dentro de un rato'})
             L.append(ahora)
             try:
-                rq = urllib.request.Request('https://api.pexels.com/v1/search?' + urllib.parse.urlencode({'query': qq, 'per_page': 30, 'page': pg, 'orientation': 'landscape', 'locale': 'es-ES'}), headers={'Authorization': k, 'User-Agent': 'Mozilla/5.0 aria-studio'})
-                j = json.loads(urllib.request.urlopen(rq, timeout=20).read())
+                fotos = _fotos_busca(prov, k, qq, pg)
             except urllib.error.HTTPError as e: return self._json(502, {'error': f'el buscador de fotos respondió {e.code}'})
             except Exception: return self._json(502, {'error': 'no se ha podido buscar ahora'})
-            fotos = [{'id': p.get('id'), 'thumb': (p.get('src') or {}).get('medium'), 'img': (p.get('src') or {}).get('large2x') or (p.get('src') or {}).get('large'), 'autor': p.get('photographer') or '', 'url': p.get('url') or '', 'alt': p.get('alt') or ''} for p in (j.get('photos') or []) if (p.get('src') or {}).get('medium')]
             if len(_PEX) > 600: _PEX.clear()
-            _PEX[ck] = (time.time(), fotos); return self._json(200, {'ok': True, 'fotos': fotos})
+            _PEX[ck] = (time.time(), fotos); return self._json(200, {'ok': True, 'prov': prov, 'fotos': fotos})
         if u.path == '/api/pendientes':   # trabajos de personajes que la página aún no ha recogido (si se recarga, no se pierden)
             out = [{'rid': rid, 'item': j.get('item'), 'meta': {k: (j.get('meta') or {}).get(k) for k in ('personaje', 'pjKind', 'name')}, 'file': j.get('file'), 'usd': j.get('usd'), 'kind': j.get('kind', 'image'), 'edad': round(time.time() - j['t0'], 1)}
                    for rid, j in list(jobs.items()) if j.get('owner') == uid() and not j.get('claimed') and not j.get('failed') and str((j.get('meta') or {}).get('personaje') or '_').strip()[:1] not in ('_', '')]
@@ -1856,16 +1978,30 @@ class H(SimpleHTTPRequestHandler):
         n = int(self.headers.get('Content-Length') or 0); body = json.loads(self.rfile.read(n) or b'{}')
         save_inputs(body)
         try:
-            AM = all_models(); mkey = body.get('model') if body.get('model') in AM else 'qwen'; M = AM[mkey]
+            AM = all_models(); regalo = casa_on(); mkey = body.get('model') if body.get('model') in AM else (CASA_DEF if regalo else 'qwen'); M = AM[mkey]
             if M.get('prov') == 'ws':
+                usd = round(M['usd']['high' if body.get('quality') == 'high' else 'std'] + M.get('per', 0) * max(0, min(len(body.get('images', [])), M['refs']) - 1), 4)   # precio de tarifa con sus referencias
+                if regalo:   # 🎁 paga el saldo regalo: nunca NSFW (la clave es la de la casa) y solo si le llega
+                    if (body.get('meta') or {}).get('nsfw') or body.get('nsfw') or _es_nsfw(body.get('prompt')): raise RuntimeError('El saldo regalo no vale para contenido NSFW. Para eso, conecta tu propia clave en «API en vivo».')
+                    casa_puede(usd)
                 urls = [resolve_ws(i) for i in body.get('images', [])][:M['refs']]
                 if not urls: raise RuntimeError('hacen falta imágenes de referencia')
                 payload = M['body'](body.get('prompt', ''), urls, aspect_ok(body.get('aspect')), 'high' if body.get('quality') == 'high' else 'std')
+                bal0 = None
+                if regalo:
+                    if 'seedream' in M['ep']: payload['enable_safety_checker'] = True
+                    with _cerrojo('gen'):   # de una en una: dos peticiones a la vez no pueden gastar el mismo saldo
+                        casa_puede(usd); _ctx.casa_ok = True
+                        try: r = ws('POST', '/api/v3/' + M['ep'], payload)
+                        finally: _ctx.casa_ok = False
+                        rid = (r.get('data') or {}).get('id')
+                        if not rid: raise RuntimeError('WaveSpeed no devolvió id: ' + json.dumps(r)[:200])
+                        jobs[rid] = {'t0': time.time(), 'item': body.get('item', 'img'), 'model': mkey, 'prov': 'ws', 'usd': usd, 'bal0': None, 'casa': True, 'credits': None, 'meta': body.get('meta') or {}}
+                    return self._json(200, {'request_id': rid, 'usd': usd, 'credits': None, 'model': M['ep'], 'model_key': mkey, 'image_urls': urls, 'casa': casa_info(), 'payload': {k: v for k, v in payload.items() if k != 'images'}})
                 try: bal0 = float((ws('GET', '/api/v3/balance').get('data') or {}).get('balance'))
                 except Exception: bal0 = None
                 r = ws('POST', '/api/v3/' + M['ep'], payload); rid = (r.get('data') or {}).get('id')
                 if not rid: raise RuntimeError('WaveSpeed no devolvió id: ' + json.dumps(r)[:200])
-                usd = round(M['usd']['high' if body.get('quality') == 'high' else 'std'] + M.get('per', 0) * max(0, len(urls) - 1), 4)   # precio de tarifa con sus referencias
                 jobs[rid] = {'t0': time.time(), 'item': body.get('item', 'img'), 'model': mkey, 'prov': 'ws', 'usd': usd, 'bal0': bal0, 'credits': None, 'meta': body.get('meta') or {}}
                 return self._json(200, {'request_id': rid, 'usd': usd, 'credits': None, 'model': M['ep'], 'model_key': mkey, 'image_urls': urls, 'payload': {k: v for k, v in payload.items() if k != 'images'}})
             if not _hf_listo(): raise RuntimeError('Higgsfield no está conectado: conéctalo en «API en vivo»' if SERVIDOR else 'falta la clave ID:SECRET en ~/.claude/higgsfield.env')
@@ -1976,6 +2112,6 @@ if __name__ == '__main__':
         if not SECRETO: print('AVISO: falta ARIA_SECRETO (32+ caracteres): no se podrán guardar claves de API', flush=True)
         if os.environ.get('ARIA_DEV') == '1' and not DEV: print('ARIA_DEV se ignora: el servidor no escucha en 127.0.0.1', flush=True)
     _jobs_restore(); threading.Thread(target=_vigilante, daemon=True).start()
-    if SERVIDOR: print(f'ARIA STUDIO · modo servidor en http://{HOST}:{PORT} · datos en {DATOS} · orígenes: {", ".join(ORIGENES)}' + (' · ATAJO DE PRUEBAS X-Dev-Uid ACTIVO' if DEV else ''), flush=True)
+    if SERVIDOR: print(f'ARIA STUDIO v{VERSION} · modo servidor en http://{HOST}:{PORT} · datos en {DATOS} · orígenes: {", ".join(ORIGENES)}' + (' · ATAJO DE PRUEBAS X-Dev-Uid ACTIVO' if DEV else '') + (f' · 🎁 saldo regalo ACTIVO (tope {CASA_TOPE:g} $/mes)' if CASA_KEY else ' · saldo regalo apagado (falta ARIA_CASA_WS)'), flush=True)
     else: print(f'ARIA MIRROR · puente en http://localhost:{PORT} · modelo {MODEL} · clave {"OK" if _hf_listo() else "FALTA (ID:SECRET)"}')
     ThreadingHTTPServer((HOST, PORT), H).serve_forever()
