@@ -1283,7 +1283,7 @@ function renderSide() {
   side.querySelectorAll('video').forEach(v => { try { v.pause(); v.removeAttribute('src'); v.load(); } catch (e) {} });   // que ningún vídeo del panel siga sonando tras re-pintar
   const t = TABS[state.tab], it = cur(); side.innerHTML = '';
   if (state.pick && state.tab === state.pick.tab && it) { pickPanel(it); return; }
-  if (!it && state.tab === 'lugar') { side.appendChild(sec('Lugares', lugZona(null, n => { renderRail(); renderChips(); if (n) select(n, false, true); else renderSide(); }))); side.appendChild(sec('', el('div', 'status', 'Todavía no hay lugares. Añade el primero: la foto de un despacho, una cocina, una calle… Se guarda con tu personaje principal y lo puedes usar en cualquier imagen.'))); return; }
+  if (!it && state.tab === 'lugar') { { const fin = n => { renderRail(); renderChips(); if (n) select(n, false, true); else renderSide(); }; const st = el('div', 'stack'); st.appendChild(lugZona(null, fin)); st.appendChild(lugBarra(null, fin)); if (lugCreando().length) st.appendChild(el('div', 'status', '⏳ Creando un lugar con IA…')); side.appendChild(sec('Lugares', st)); } side.appendChild(sec('', el('div', 'status', 'Todavía no hay lugares. Añade el primero: la foto de un despacho, una cocina, una calle… Se guarda con tu personaje principal y lo puedes usar en cualquier imagen.'))); return; }
   if (!it && state.tab !== 'perfil') { side.appendChild(sec(t.label, el('div', 'status', state.tab === 'creaciones' ? 'Todavía no hay nada generado con la API. Lo que generes en cualquier sección aparecerá aquí con su modelo, calidad, formato, coste y prompt.' : 'No hay elementos.'))); return; }
   if (state.back && COMP[state.tab]) { const bb = el('button', 'btn backbtn', '← Volver a ' + (state.back === 'video' ? 'Crear vídeo' : 'Crear imagen')); bb.onclick = () => setTab(state.back); side.appendChild(bb); }
   if (state.tab === 'biblio' || state.tab === 'videoteca') { /* la IA y la fecha van debajo de la imagen/vídeo */ }
@@ -1323,7 +1323,7 @@ function renderSide() {
     { const mp = el('div', 'mini'); mp.innerHTML = `<img src="${it.files.main}" alt="">`; mp.onclick = () => lightbox(it.files.main, it.name); side.appendChild(mp); }
     side.appendChild(sec('', el('div', 'status', 'El lugar va como imagen de referencia: tu personaje aparece dentro de él. Si hay varios personajes, comparten el mismo sitio.')));
     if (it.desc) { const box = el('div', 'stack'); box.appendChild(el('div', 'promptbox', esc(it.desc))); side.appendChild(sec('Cómo se describe', box)); }
-    side.appendChild(sec('Añadir otro', lugZona(null, n => { renderRail(); renderChips(); if (n) select(n, false, true); })));
+    { const fin = n => { renderRail(); renderChips(); if (n) select(n, false, true); }; const st = el('div', 'stack'); st.appendChild(lugZona(null, fin)); st.appendChild(lugBarra(null, fin)); if (lugCreando().length) st.appendChild(el('div', 'status', '⏳ Creando un lugar con IA…')); side.appendChild(sec('Añadir otro', st)); }
   } else if (LIVE && state.tab === 'crear') {
     side.appendChild(crearPanel(it));
   } else if (LIVE) { // secciones de componentes: primero Añadir, luego la preview con los ajustes plegados
@@ -1467,10 +1467,46 @@ function lugZona(owner, despues) { // «añadir un lugar»: arrastrar su foto (d
   inp.onchange = () => { const f = inp.files[0]; if (!f) return; const r = new FileReader(); r.onload = () => usa(r.result); r.readAsDataURL(f); }; z.onclick = () => inp.click();
   ['dragenter', 'dragover'].forEach(ev => z.addEventListener(ev, e => { e.preventDefault(); e.stopPropagation(); z.classList.add('over'); })); z.addEventListener('dragleave', () => z.classList.remove('over'));
   z.addEventListener('drop', async e => { e.preventDefault(); e.stopPropagation(); z.classList.remove('over'); usa(window.dropData ? await dropData(e) : null); }); return z; }
+function lugBarra(owner, despues) { // debajo de «Añadir un lugar»: buscar fotos, pegar un enlace o crear el sitio con IA
+  const w = el('div', 'lugbarra'); const inp = el('input', 'pjin'); inp.placeholder = 'Busca un sitio (cocina rústica…) o pega un enlace'; inp.title = 'Escribe qué sitio buscas y pulsa Intro, o pega el enlace de un pin de Pinterest, de una web o de una imagen';
+  const ir = async () => { const v = inp.value.trim(); if (!v) return; if (/^https?:\/\//i.test(v)) { inp.disabled = true; toast('Trayendo la imagen de ese enlace…'); const data = await traeImagen(v); inp.disabled = false; if (!data) { toast('En ese enlace no he encontrado ninguna imagen'); return; } inp.value = ''; const it = await lugarNuevo(data, owner); if (despues) despues(it); } else lugBusca(v, owner, despues); };
+  inp.onkeydown = e => { if (e.key === 'Enter') ir(); }; const b1 = el('button', 'btn', '🔎'); b1.title = 'Buscar o traer el enlace'; b1.onclick = ir; const b2 = el('button', 'btn pinkline', '✨ Crear con IA'); b2.title = 'Describe el sitio y se genera vacío, sin nadie'; b2.onclick = () => lugIA(owner, despues);
+  const r = el('div', 'lugbr'); r.appendChild(inp); r.appendChild(b1); w.appendChild(r); w.appendChild(b2); return w; }
+function lugBusca(q0, owner, despues) { // buscador de fotos de sitios (Pexels): clic en una foto = se añade a tus lugares
+  let m0 = $('#lugbm'); if (m0) m0.remove(); m0 = el('div', 'fxm'); m0.id = 'lugbm'; document.body.appendChild(m0); m0.onclick = e => { if (e.target === m0) m0.remove(); };
+  const box = el('div', 'lugbbox'); m0.appendChild(box); const hd = el('div', 'lugbhd'); const inp = el('input', 'pjin'); inp.value = q0; inp.placeholder = 'cocina rústica, despacho moderno, playa al atardecer…'; const bt = el('button', 'btn acc', 'Buscar'); const x = el('button', 'btn', 'Cerrar'); x.onclick = () => m0.remove(); hd.appendChild(inp); hd.appendChild(bt); hd.appendChild(x); box.appendChild(hd);
+  const g = el('div', 'lugbgrid'); box.appendChild(g); box.appendChild(el('div', 'status lugbpie', 'Fotos de <a href="https://www.pexels.com" target="_blank" rel="noopener">Pexels</a>, de uso libre. Pulsa una para añadirla a tus lugares; puedes añadir varias.'));
+  const busca = async () => { const q = inp.value.trim(); if (q.length < 2) return; g.innerHTML = '<div class="status" style="grid-column:1/-1;padding:30px;text-align:center">Buscando…</div>'; let r; try { r = await fetch('/api/lugares_buscar?q=' + encodeURIComponent(q)).then(z => z.json()); } catch (e) { r = { error: 'sin respuesta' }; }
+    if (!m0.isConnected) return; g.innerHTML = ''; if (!r || !r.ok) { g.appendChild(el('div', 'status', r && r.falta ? 'El buscador de fotos se está activando. Mientras tanto, arrastra una imagen o pega su enlace.' : 'No se ha podido buscar: ' + esc((r && r.error) || 'sin respuesta'))).style.cssText = 'grid-column:1/-1;padding:30px;text-align:center'; return; }
+    if (!r.fotos.length) { g.appendChild(el('div', 'status', 'No he encontrado fotos para eso. Prueba con otras palabras.')).style.cssText = 'grid-column:1/-1;padding:30px;text-align:center'; return; }
+    r.fotos.forEach(p => { const d = el('div', 'lugbf', `<img loading="lazy" src="${p.thumb}" alt=""><small>${esc(p.autor)}</small>`); d.title = (p.alt ? p.alt + ' · ' : '') + 'Foto de ' + p.autor + ' en Pexels'; d.onclick = async () => { if (d.classList.contains('ok') || d.classList.contains('va')) return; d.classList.add('va'); const data = await traeImagen(p.img); const it = data && await lugarNuevo(data, owner); d.classList.remove('va'); if (it) { d.classList.add('ok'); if (despues) despues(it); } else toast('No se ha podido añadir esa foto'); }; g.appendChild(d); }); };
+  bt.onclick = busca; inp.onkeydown = e => { if (e.key === 'Enter') busca(); }; busca(); }
+function lugIA(owner, despues) { // crear el sitio con IA desde una frase: sale vacío, sin nadie, listo como referencia
+  owner = owner || CH().id; if (!LIVE) { toast('Conecta primero tu API'); return; }
+  let m0 = $('#lugia'); if (m0) m0.remove(); m0 = el('div', 'fxm'); m0.id = 'lugia'; document.body.appendChild(m0); m0.onclick = e => { if (e.target === m0) m0.remove(); };
+  const m = MODELS.find(z => z.key === 'seedream') || curModel(); const usd = (m.usd0 || m.usd).std; const box = el('div', 'devbox lugiabox'); m0.appendChild(box);
+  box.appendChild(el('h3', '', 'Crear un lugar con IA')); box.appendChild(el('p', '', 'Describe el sitio como se lo contarías a alguien. Se genera vacío, sin nadie, para usarlo de fondo en tus imágenes.'));
+  const ta = el('textarea', 'prompt'); ta.placeholder = 'Ej.: cocina rústica española antigua, con vigas de madera, azulejos y una ventana con luz de la mañana'; ta.style.minHeight = '90px'; box.appendChild(ta);
+  const a = el('div', 'pjacts'); const ok = el('button', 'btn acc big', `✨ Crear · ${fmtUsd(usd)}`); const cn = el('button', 'btn', 'Cancelar'); cn.onclick = () => m0.remove(); a.appendChild(ok); a.appendChild(cn); box.appendChild(a); setTimeout(() => ta.focus(), 50);
+  ok.onclick = async () => { const txt = ta.value.trim(); if (txt.length < 6) { ta.focus(); return; } ok.disabled = true; ok.textContent = 'Enviando…';
+    const cv = document.createElement('canvas'); cv.width = 1280; cv.height = 720; const cx = cv.getContext('2d'); cx.fillStyle = '#d9d9d9'; cx.fillRect(0, 0, 1280, 720); const lienzo = cv.toDataURL('image/jpeg', 0.8);
+    const prompt = `Create a photorealistic wide photograph of this place, completely EMPTY, with no people at all: ${txt}. Real materials and textures, natural believable light, eye-level view that shows the whole space, like a location scouting photo. The input image is only a blank grey canvas: replace it entirely. No people, no text, no logos, no watermark.`;
+    const body = { item: 'lugar', prompt, images: [{ data: lienzo }], aspect: '16:9', quality: 'std', model: m.key, meta: { name: 'Lugar · ' + txt.slice(0, 40), tab: 'lugar', variaciones: true, lugarNuevo: { owner, texto: txt }, model: m.name, ep: m.ep, prompt } };
+    let g; try { g = await fetch('/api/generar', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).then(z => z.json()); } catch (e) { g = { error: String(e) }; }
+    if (!g || g.error) { ok.disabled = false; ok.textContent = `✨ Crear · ${fmtUsd(usd)}`; toast(errCreditos(g && g.error) ? 'No hay suficientes créditos' : 'No se ha podido crear: ' + ((g && g.error) || 'sin respuesta')); return; }
+    const job = { rid: g.request_id, it: { id: 'lugar-ia-' + Date.now(), name: 'Lugar · ' + txt.slice(0, 40) }, tab: 'lugar', m, kind: 'image', lugar: { owner, texto: txt, despues }, t0: performance.now(), status: 'queued', usd: g.usd != null ? Number(g.usd) : usd }; JOBS.set(job.rid, job); ensurePoller(); jobsGuardar();
+    m0.remove(); toast('Creando el lugar… tarda alrededor de un minuto. Puedes seguir con otra cosa.'); if (state.tab === 'perfil' && window.renderProfile) renderProfile(); if (state.tab === 'lugar') renderSide(); }; }
+async function lugarFinish(job, st) { job.end = true; jobsGuardar(); const usd = st.usd != null ? Number(st.usd) : (job.usd || 0); state.nGen++; state.spent += usd; meter();
+  const data = await lugJpg(st.file); const it = data && await lugarNuevo(data, job.lugar.owner); refreshLive();
+  if (!it) { toast('El lugar se ha generado, pero no se ha podido guardar: está en tus creaciones'); return; }
+  if (state.tab === 'perfil' && window.renderProfile) renderProfile(); if (state.tab === 'lugar') { renderRail(); renderChips(); renderSide(); } if (job.lugar.despues) { try { job.lugar.despues(it); } catch (e) {} } }
+function lugCreando(owner) { return [...JOBS.values()].filter(j => j.lugar && !j.end && (!owner || j.lugar.owner === owner)); }
 window.lugPanel = function (owner) { // Perfil › Lugares: los sitios de ESE personaje
   const fija = owner === 'aria' && WEBM(); const box = el('div', 'pjgrp'); const L = lugLista(owner);
   box.appendChild(el('div', 'acchead left', `<div><b>Lugares</b><small>Sus sitios de siempre: su casa, su cocina, su despacho… Se usan como referencia para que sus escenas sean siempre en el mismo sitio.</small></div>`));
+  if (!fija) box.appendChild(lugBarra(owner, () => renderProfile()));
   const g = el('div', 'lugcards');
+  lugCreando(owner).forEach(j => g.appendChild(el('div', 'lugcard add', `<span class="spin"></span><b>Creando el lugar…</b>${esc(j.lugar.texto.slice(0, 60))}`)));
   L.forEach(x => { const it = TABS.lugar.items.find(q => q.owner === owner && q.lid === x.id); const d = el('div', 'lugcard', `<img src="${x.thumb || x.img}" alt=""><b>${esc(x.name || 'Lugar')}</b><small>${esc((x.tags || []).join(' · ') || 'lugar')} · clic para usarlo</small>`); d.title = x.desc || ''; d.onclick = () => { if (it) addToImage('lugar', it, true); };
     if (!fija) { const q = el('button', 'pjx', '×'); q.title = 'Quitar de sus lugares'; q.onclick = e => { e.stopPropagation(); lugarQuita(it); }; d.appendChild(q); } g.appendChild(d); });
   if (!fija) { const a = lugZona(owner, () => renderProfile()); a.classList.add('lugcard', 'add'); g.appendChild(a); }
@@ -1607,7 +1643,7 @@ function hydrateLive() { // lo ya generado se recupera (it.live) pero NO se reve
     if (!j || !j.files) return; const map = new Map(allItems().map(i => [i.id, i])); let n = 0;
     for (const [id, f] of Object.entries(j.files)) { const it = map.get(id); if (it) { it.live = f; n++; } }
     if (n) { log(`<span class="g">· ${n} imagen(es) generadas antes por la API recuperadas de assets/live/ · se enseñan sin gastar al pulsar Generar</span>`); if (state.ready) { renderRail(); renderSide(); } }
-    if (!hydrateLive._ja) { hydrateLive._ja = true; jobsRecuperar(); }   // antes de montar Mis creaciones: así las que siguen generándose tienen su tarjeta
+    if (!hydrateLive._ja) { hydrateLive._ja = true; jobsRecuperar(); lugJobsRecuperar(); }   // antes de montar Mis creaciones: así las que siguen generándose tienen su tarjeta
     buildVideoLib(j); buildCreations(j); if (state.ready && (state.tab === 'crear' || state.tab === 'creaciones')) renderChips();
     if (!hydrateLive._ya) { hydrateLive._ya = true;   // solo al abrir la página: en grande, tu última creación (la de esta combinación si se sabe cuál fue; si no, la más reciente). Al cambiar la combinación vuelve el lienzo
       try { const cu = C.crear.find(x => x.custom); let u = JSON.parse(localStorage.getItem('am_crear_last') || 'null'); const sg = compSig();
@@ -1826,7 +1862,11 @@ function activeJobs() { return [...JOBS.values()].filter(j => !j.end); }
 function updateQueueOverlay(j) { const sec = Math.round((performance.now() - j.t0) / 1000); $('#genTxt').innerHTML = `<b>${j.status === 'in_progress' ? (j.kind === 'video' ? 'Generando vídeo' : 'Generando') : 'En cola'}</b><span>${esc(j.it.name)}</span><small>${esc(j.m.name)}</small>`; $('#genSub').innerHTML = `<b>${sec} s${j.kind === 'video' ? ' · suele tardar 1-4 min' : ''}</b><span>Puedes seguir navegando</span>`; }
 function ensurePoller() { if (!pollT) pollT = setInterval(pollJobs, 4000); }
 // Las generaciones de Crear imagen que están en marcha se apuntan en el navegador: si se recarga la página, vuelven a verse «Generando» y se recogen al terminar
-function jobsGuardar() { try { const corto = x => (typeof x === 'string' && !x.startsWith('data:')) ? x : null; persist('am_jobs', JSON.stringify([...JOBS.values()].filter(j => !j.end && j.tab === 'crear' && j.kind === 'image' && j.it && j.it.custom && !j.persona).map(j => ({ rid: j.rid, t: Date.now() - (performance.now() - j.t0), mk: j.m && j.m.key, usd: j.usd, sig: j.sig, hidden: j.hidden || undefined, name: j.name, thumb: corto(j.thumb), bg: corto(j.bg) })))); } catch (e) {} }
+function jobsGuardar() { try { const corto = x => (typeof x === 'string' && !x.startsWith('data:')) ? x : null; persist('am_jobs', JSON.stringify([...JOBS.values()].filter(j => !j.end && j.tab === 'crear' && j.kind === 'image' && j.it && j.it.custom && !j.persona).map(j => ({ rid: j.rid, t: Date.now() - (performance.now() - j.t0), mk: j.m && j.m.key, usd: j.usd, sig: j.sig, hidden: j.hidden || undefined, name: j.name, thumb: corto(j.thumb), bg: corto(j.bg) }))));
+  persist('am_lugjobs', JSON.stringify([...JOBS.values()].filter(j => !j.end && j.lugar).map(j => ({ rid: j.rid, t: Date.now() - (performance.now() - j.t0), mk: j.m && j.m.key, usd: j.usd, owner: j.lugar.owner || null, texto: j.lugar.texto })))); } catch (e) {} }
+function lugJobsRecuperar() { let L = []; try { L = JSON.parse(localStorage.getItem('am_lugjobs') || '[]'); } catch (e) {} if (!Array.isArray(L)) return; let n = 0; // los lugares que se estaban creando con IA al recargar
+  L.forEach(q => { if (!q || !q.rid || JOBS.has(q.rid) || Date.now() - q.t > 3 * 3600e3) return; const txt = String(q.texto || ''); JOBS.set(q.rid, { rid: q.rid, it: { id: 'lugar-ia-' + q.rid, name: 'Lugar · ' + txt.slice(0, 40) }, tab: 'lugar', m: MODELS.find(x => x.key === q.mk) || curModel(), kind: 'image', lugar: { owner: q.owner || null, texto: txt }, t0: performance.now() - (Date.now() - q.t), status: 'in_progress', usd: q.usd }); n++; });
+  if (n) { ensurePoller(); pollJobs(); } }
 function jobsRecuperar() { let L = []; try { L = JSON.parse(localStorage.getItem('am_jobs') || '[]'); } catch (e) {} const it = C.crear.find(x => x.custom); if (!it || !Array.isArray(L)) return; let n = 0;
   L.forEach(q => { if (!q || !q.rid || JOBS.has(q.rid) || Date.now() - q.t > 3 * 3600e3) return; JOBS.set(q.rid, { rid: q.rid, it, tab: 'crear', m: MODELS.find(x => x.key === q.mk) || curModel(), kind: 'image', t0: performance.now() - (Date.now() - q.t), status: 'in_progress', usd: q.usd, sig: q.sig, hidden: !!q.hidden, name: q.name, thumb: q.thumb, bg: q.bg }); n++; });
   if (n) { ensurePoller(); pollJobs(); if (state.ready) { renderSide(); const c = cur(); if (c) paint(c, true); } } }
@@ -1845,6 +1885,7 @@ async function pollJobs_() {
   if (!activeJobs().length && pollT) { clearInterval(pollT); pollT = 0; }
 }
 function finishJob(job, st) {
+  if (job.lugar) return lugarFinish(job, st);
   if (job.estilo) return estiloFinish(job, st);
   if (job.hairvar) { job.end = true; job.it._hvJob = Math.max(0, (job.it._hvJob || 1) - 1); job.it._variant = st.file; toast('Nuevo color de pelo listo'); refreshLive(); setTimeout(() => { if (state.tab === 'hair' && cur() === job.it) { showImage(st.file, true); renderSide(); } }, 1500); return; }
   if (job.variant) { job.end = true; job.it._gridJob = false; job.it._grid = st.file + '?t=' + Date.now(); toast('Variaciones listas: elige la que más te guste'); if (state.tab === 'vestidor' && cur() === job.it) renderSide(); refreshLive(); return; }

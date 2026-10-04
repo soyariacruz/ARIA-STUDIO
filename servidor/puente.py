@@ -231,6 +231,20 @@ def _fetch_seguro(url, tope=25 * 1024 * 1024):
             return data, (r.getheader('Content-Type') or 'image/jpeg').split(';')[0].strip()
         finally: c.close()
     raise RuntimeError('demasiadas redirecciones')
+def _trae_url(url):   # una URL de internet → (bytes, tipo). En servidor, con todas las comprobaciones de _fetch_seguro
+    if SERVIDOR: return _fetch_seguro(url)
+    if not url.lower().startswith(('http://', 'https://')): raise RuntimeError('url no válida')
+    req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0 (Macintosh) AppleWebKit/537.36 Chrome/120 Safari/537.36', 'Accept': 'image/*,text/html,*/*'})
+    with urllib.request.urlopen(req, timeout=30) as r: return r.read(25 * 1024 * 1024), r.headers.get('Content-Type', 'image/jpeg').split(';')[0]
+def _pexels_key():   # la clave del buscador de fotos es de la plataforma (no de cada cuenta): variable PEXELS_KEY en el servidor; en local, ~/.claude/pexels.env
+    k = os.environ.get('PEXELS_KEY') or ''
+    if not k and not SERVIDOR:
+        try:
+            for line in open(os.path.expanduser('~/.claude/pexels.env')):
+                if line.startswith('PEXELS_KEY='): k = line.strip().split('=', 1)[1].strip()
+        except Exception: pass
+    return k
+_PEX = {}; _PEX_N = {}   # búsquedas ya hechas (un día) y búsquedas por cuenta en la última hora
 BASE = 'https://api.higgsfield.ai'
 MODEL = 'alibaba/qwen-image-3/edit'          # modelo por defecto (edición con 1-3 imágenes de referencia)
 # Modelos de imagen de la API pública que aceptan una foto de entrada (docs.higgsfield.ai, 23 sep 2026). Precio = /estimate a 1k, 3:4.
@@ -1057,17 +1071,44 @@ class H(SimpleHTTPRequestHandler):
         if u.path == '/api/fetch':   # descarga una imagen de internet (arrastrada desde el navegador) y la devuelve en base64
             url = (q.get('url') or [''])[0]
             try:
-                if SERVIDOR: data, ctype = _fetch_seguro(url)   # solo https, solo sitios de la lista (ARIA_FETCH_HOSTS), nunca direcciones internas
-                else:
-                    if not url.lower().startswith(('http://', 'https://')): raise RuntimeError('url no válida')
-                    req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0 (Macintosh) AppleWebKit/537.36 Chrome/120 Safari/537.36', 'Accept': 'image/*,*/*'})
-                    with urllib.request.urlopen(req, timeout=30) as r: data = r.read(25 * 1024 * 1024); ctype = r.headers.get('Content-Type', 'image/jpeg').split(';')[0]
+                data, ctype = _trae_url(url)
+                if not ctype.startswith('image/') and (ctype.startswith('text/html') or data[:400].lstrip().lower().startswith((b'<!doctype', b'<html'))):   # es una página: su imagen de portada (og:image)
+                    import html as _h
+                    P = data[:6000000]; m = re.search(rb'<meta[^>]+(?:property|name)=["\'](?:og:image(?::secure_url)?|twitter:image)["\'][^>]*content=["\']([^"\']+)["\']', P, re.I) or re.search(rb'<meta[^>]+content=["\']([^"\']+)["\'][^>]+(?:property|name)=["\'](?:og:image|twitter:image)["\']', P, re.I)
+                    if not m: raise RuntimeError('en ese enlace no he encontrado ninguna imagen')
+                    u2 = urllib.parse.urljoin(url, _h.unescape(m.group(1).decode('utf-8', 'replace'))); pm = re.match(r'^(https://i\.pinimg\.com/)(?:\d+x\d*(?:_RS)?)(/.+)$', u2)
+                    ok = False
+                    for c in ([pm.group(1) + 'originals' + pm.group(2)] if pm else []) + [u2]:   # Pinterest: primero el original
+                        try:
+                            data, ctype = _trae_url(c)
+                            if ctype.startswith('image/'): ok = True; break
+                        except Exception: continue
+                    if not ok: raise RuntimeError('no he podido descargar la imagen de ese enlace')
                 if not ctype.startswith('image/'):
                     try:
                         from PIL import Image; import io; Image.open(io.BytesIO(data)); ctype = 'image/jpeg'
                     except Exception: raise RuntimeError('eso no es una imagen')
                 return self._json(200, {'data': 'data:' + ctype + ';base64,' + base64.b64encode(data).decode()})
             except Exception as e: return self._json(400, {'error': str(e)[:200]})
+        if u.path == '/api/lugares_buscar':   # fotos de sitios para «Mis lugares» (Pexels: gratis y de uso libre). Devuelve miniatura, imagen grande, autor y enlace
+            qq = (q.get('q') or [''])[0].strip()[:80]; k = _pexels_key()
+            try: pg = max(1, min(5, int((q.get('p') or ['1'])[0])))
+            except Exception: pg = 1
+            if not k: return self._json(200, {'ok': False, 'falta': True, 'error': 'el buscador de fotos todavía no está activado'})
+            if len(qq) < 2: return self._json(400, {'error': 'escribe qué sitio buscas'})
+            ck = qq.lower() + '|' + str(pg); hit = _PEX.get(ck)
+            if hit and time.time() - hit[0] < 86400: return self._json(200, {'ok': True, 'fotos': hit[1]})
+            quien = uid() or 'local'; ahora = time.time(); L = _PEX_N.setdefault(quien, []); L[:] = [t for t in L if ahora - t < 3600]
+            if len(L) >= 40: return self._json(429, {'error': 'demasiadas búsquedas seguidas: prueba dentro de un rato'})
+            L.append(ahora)
+            try:
+                rq = urllib.request.Request('https://api.pexels.com/v1/search?' + urllib.parse.urlencode({'query': qq, 'per_page': 30, 'page': pg, 'orientation': 'landscape', 'locale': 'es-ES'}), headers={'Authorization': k, 'User-Agent': 'Mozilla/5.0 aria-studio'})
+                j = json.loads(urllib.request.urlopen(rq, timeout=20).read())
+            except urllib.error.HTTPError as e: return self._json(502, {'error': f'el buscador de fotos respondió {e.code}'})
+            except Exception: return self._json(502, {'error': 'no se ha podido buscar ahora'})
+            fotos = [{'id': p.get('id'), 'thumb': (p.get('src') or {}).get('medium'), 'img': (p.get('src') or {}).get('large2x') or (p.get('src') or {}).get('large'), 'autor': p.get('photographer') or '', 'url': p.get('url') or '', 'alt': p.get('alt') or ''} for p in (j.get('photos') or []) if (p.get('src') or {}).get('medium')]
+            if len(_PEX) > 600: _PEX.clear()
+            _PEX[ck] = (time.time(), fotos); return self._json(200, {'ok': True, 'fotos': fotos})
         if u.path == '/api/pendientes':   # trabajos de personajes que la página aún no ha recogido (si se recarga, no se pierden)
             out = [{'rid': rid, 'item': j.get('item'), 'meta': {k: (j.get('meta') or {}).get(k) for k in ('personaje', 'pjKind', 'name')}, 'file': j.get('file'), 'usd': j.get('usd'), 'kind': j.get('kind', 'image'), 'edad': round(time.time() - j['t0'], 1)}
                    for rid, j in list(jobs.items()) if j.get('owner') == uid() and not j.get('claimed') and not j.get('failed') and str((j.get('meta') or {}).get('personaje') or '_').strip()[:1] not in ('_', '')]
