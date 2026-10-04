@@ -37,7 +37,7 @@ MAX_CUERPO = 40 * 1024 * 1024    # tope de una petición en modo servidor
 MAX_BIBLIO = 200 * 1024 * 1024   # tope de un fichero de la biblioteca común al copiarlo
 KINDS = ('vestidor', 'hair', 'expr')   # las bibliotecas a las que una cuenta puede añadir lo suyo
 _UUID = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
-VERSION = 187
+VERSION = 188
 _ctx = threading.local()   # la cuenta del hilo: la pone cada petición (y, a mano, cada hilo de fondo)
 def uid(): return getattr(_ctx, 'uid', None)   # en local siempre None
 DUENOS = tuple(e.strip().lower() for e in (os.environ.get('ARIA_DUENOS') or 'mix1994max@gmail.com').split(',') if e.strip())   # cuentas que pueden cambiar a Aria Cruz (en la web, la de Max)
@@ -1249,6 +1249,16 @@ class H(SimpleHTTPRequestHandler):
             except Exception: return self._json(502, {'error': 'no se ha podido buscar ahora'})
             if len(_PEX) > 600: _PEX.clear()
             _PEX[ck] = (time.time(), fotos); return self._json(200, {'ok': True, 'prov': prov, 'fotos': fotos})
+        if u.path == '/api/papelera':   # lo borrado de Mis creaciones que aún se puede recuperar (30 días), lo más reciente primero
+            trash = papelera(); out = []; ahora = time.time()
+            for fn in os.listdir(trash):
+                fp = os.path.join(trash, fn)
+                if fn.startswith('.') or fn.endswith('.json') or not os.path.isfile(fp + '.json'): continue   # solo creaciones (llevan su ficha .json al lado)
+                try: meta = json.load(open(fp + '.json', encoding='utf-8'))
+                except Exception: meta = {}
+                t = os.path.getmtime(fp); video = fn.lower().endswith('.mp4'); po = os.path.splitext(fn)[0] + '.jpg'
+                out.append({'file': fn, 'src': 'assets/papelera/' + fn, 'thumb': 'assets/papelera/' + (po if video and os.path.isfile(os.path.join(trash, po)) else fn), 'kind': 'video' if video else 'image', 'name': str(meta.get('name') or fn)[:120], 't': int(t), 'dias': max(0, 30 - int((ahora - t) // 86400))})
+            out.sort(key=lambda x: -x['t']); return self._json(200, {'ok': True, 'items': out[:500], 'dias': 30, 'caduca': bool(SERVIDOR)})
         if u.path == '/api/pendientes':   # trabajos de personajes que la página aún no ha recogido (si se recarga, no se pierden)
             out = [{'rid': rid, 'item': j.get('item'), 'meta': {k: (j.get('meta') or {}).get(k) for k in ('personaje', 'pjKind', 'name')}, 'file': j.get('file'), 'usd': j.get('usd'), 'kind': j.get('kind', 'image'), 'edad': round(time.time() - j['t0'], 1)}
                    for rid, j in list(jobs.items()) if j.get('owner') == uid() and not j.get('claimed') and not j.get('failed') and str((j.get('meta') or {}).get('personaje') or '_').strip()[:1] not in ('_', '')]
@@ -1324,7 +1334,23 @@ class H(SimpleHTTPRequestHandler):
                 if os.path.exists(full + extra): shutil.move(full + extra, os.path.join(trash, os.path.basename(full) + extra))
             po = os.path.splitext(full)[0] + '.jpg'
             if full.lower().endswith('.mp4') and os.path.exists(po): shutil.move(po, os.path.join(trash, os.path.basename(po)))
+            for fn in os.listdir(trash):
+                if fn.startswith(os.path.splitext(os.path.basename(full))[0]):
+                    try: os.utime(os.path.join(trash, fn), None)
+                    except OSError: pass
             plog('borrar → papelera ' + rel); return self._json(200, {'ok': True})
+        if self.path == '/api/restaurar':   # saca una creación de la papelera y la devuelve a Mis creaciones
+            n = int(self.headers.get('Content-Length') or 0); body = json.loads(self.rfile.read(n) or b'{}'); fn = os.path.basename(str(body.get('file') or ''))
+            trash = papelera(); src = os.path.join(trash, fn)
+            if not fn or fn.startswith('.') or not os.path.isfile(src) or not os.path.isfile(src + '.json'): return self._json(400, {'error': 'no está en la papelera'})
+            import shutil
+            dest = video_dir() if fn.lower().endswith('.mp4') else live_dir()
+            if os.path.exists(os.path.join(dest, fn)): return self._json(400, {'error': 'ya hay una creación con ese nombre'})
+            if lleno(): return self._json(400, {'error': LLENO, 'lleno': True})
+            for extra in ('', '.json'): shutil.move(src + extra, os.path.join(dest, fn + extra))
+            po = os.path.splitext(fn)[0] + '.jpg'
+            if fn.lower().endswith('.mp4') and os.path.isfile(os.path.join(trash, po)): shutil.move(os.path.join(trash, po), os.path.join(dest, po))
+            plog('restaurar ← papelera ' + fn); return self._json(200, {'ok': True})
         if self.path == '/api/zip':   # varias creaciones seleccionadas → un zip
             n = int(self.headers.get('Content-Length') or 0); body = json.loads(self.rfile.read(n) or b'{}'); files = body.get('files') or []
             import io, zipfile; buf = io.BytesIO(); z = zipfile.ZipFile(buf, 'w', zipfile.ZIP_STORED); k = 0
@@ -1542,9 +1568,16 @@ class H(SimpleHTTPRequestHandler):
             return self._json(200, {'ok': True})
         if self.path == '/api/feedback':   # feedback de las secciones en desarrollo → base «💬 Feedback de ARIA STUDIO» de Notion (+ copia en assets/feedback)
             n = int(self.headers.get('Content-Length') or 0); body = json.loads(self.rfile.read(n) or b'{}')
-            texto = (body.get('texto') or '').strip()
+            texto = (body.get('texto') or '').strip(); audio = body.get('audio') or ''; arel = ''
+            if isinstance(audio, str) and audio.startswith('data:audio/') and ',' in audio and len(audio) < 6 * 1024 * 1024:
+                try:
+                    cab, b64 = audio.split(',', 1); ext = 'm4a' if ('mp4' in cab or 'aac' in cab) else 'ogg' if 'ogg' in cab else 'webm'
+                    ad = os.path.join(casa(), 'feedback_audio') if SERVIDOR else os.path.join(ROOT, 'assets', 'feedback'); os.makedirs(ad, exist_ok=True)
+                    an = time.strftime('%Y%m%d-%H%M%S') + '.' + ext; open(os.path.join(ad, an), 'wb').write(base64.b64decode(b64)); arel = ('feedback_audio/' if SERVIDOR else 'assets/feedback/') + an
+                except Exception as e: plog('feedback: audio ✕ ' + str(e))
+            if not texto and arel: texto = '(nota de voz sin transcribir: ' + arel + ')'
             if not texto: return self._json(400, {'error': 'el comentario está vacío'})
-            rec = {'t': time.strftime('%Y-%m-%d %H:%M:%S'), 'texto': texto, 'tipo': body.get('tipo') or '💬 Comentario', 'via': body.get('via') or '⌨️ Escrito', 'seccion': (body.get('seccion') or '')[:300], 'contexto': (body.get('contexto') or '')[:1800], 'usuario': body.get('usuario') or 'Max (local)'}
+            rec = {'t': time.strftime('%Y-%m-%d %H:%M:%S'), 'texto': texto, 'tipo': body.get('tipo') or '💬 Comentario', 'via': body.get('via') or '⌨️ Escrito', 'seccion': (body.get('seccion') or '')[:300], 'contexto': (body.get('contexto') or '')[:1800], 'usuario': body.get('usuario') or 'Max (local)', **({'audio': arel} if arel else {})}
             if SERVIDOR:   # en servidor: al registro común, con el correo de la sesión (lo que diga el navegador en «usuario» no cuenta); sin Notion
                 rec.update({'texto': texto[:6000], 'tipo': str(rec['tipo'])[:60], 'via': str(rec['via'])[:60], 'usuario': getattr(_ctx, 'email', ''), 'uid': uid()})
                 open(os.path.join(DATOS, 'feedback.jsonl'), 'a').write(json.dumps(rec, ensure_ascii=False) + '\n'); return self._json(200, {'ok': True})
