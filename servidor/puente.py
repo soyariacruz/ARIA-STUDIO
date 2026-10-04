@@ -37,7 +37,7 @@ MAX_CUERPO = 40 * 1024 * 1024    # tope de una petición en modo servidor
 MAX_BIBLIO = 200 * 1024 * 1024   # tope de un fichero de la biblioteca común al copiarlo
 KINDS = ('vestidor', 'hair', 'expr')   # las bibliotecas a las que una cuenta puede añadir lo suyo
 _UUID = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
-VERSION = 195
+VERSION = 197
 _ctx = threading.local()   # la cuenta del hilo: la pone cada petición (y, a mano, cada hilo de fondo)
 def uid(): return getattr(_ctx, 'uid', None)   # en local siempre None
 DUENOS = tuple(e.strip().lower() for e in (os.environ.get('ARIA_DUENOS') or 'mix1994max@gmail.com').split(',') if e.strip())   # cuentas que pueden cambiar a Aria Cruz (en la web, la de Max)
@@ -1087,6 +1087,13 @@ def _com_personajes(u, con_ocultos=False):   # los personajes de una cuenta tal 
                         'avatar': bool(p.get('avatar') or p.get('foto')), 'oculto': bool(p.get('privado')), 'orden': p.get('orden') if isinstance(p.get('orden'), int) else 999})
     except Exception as e: plog('comunidad: personajes ✕ ' + str(e))
     out.sort(key=lambda x: x['orden']); return out
+ARIA_CID = 'caria'   # Aria en la comunidad: no es una cuenta, es el personaje de muestra. Le manda a cada cuenta una solicitud de ejemplo y contesta con un mensaje fijo
+ARIA_HOLA = '¡Hola! Soy Aria 💕 Te mando esta solicitud para que veas cómo funcionan las colaboraciones: acéptala y podremos crear imágenes juntas.'
+ARIA_RESP = '¡Genial! Conmigo puedes crear cuando quieras: elígeme en Crear imagen junto a tu personaje. (Soy el personaje de muestra: este chat es un ejemplo de cómo hablarás con otros creadores.)'
+def _com_aria(d, yo):   # la solicitud de ejemplo de Aria, una sola vez por cuenta → True si ha habido que crearla
+    if any(x.get('de') == ARIA_CID and x.get('para') == yo for x in d['sol']): return False
+    t = time.time(); d['sol'].append({'id': 's' + hashlib.sha1(os.urandom(12)).hexdigest()[:12], 'de': ARIA_CID, 'para': yo, 'pid': 'aria', 'msg': ARIA_HOLA, 'estado': 'pendiente', 't': t, 'demo': True})
+    d['msgs'].setdefault(_com_par(yo, ARIA_CID), []).append({'de': ARIA_CID, 'x': ARIA_HOLA, 't': t}); return True
 def _com_par(a, b): return '|'.join(sorted([a, b]))
 def _com_tope(que, n):   # freno por cuenta y hora (solicitudes, mensajes)
     k = (uid() or 'local', que); ahora = time.time(); L = _COM_N.setdefault(k, []); L[:] = [t for t in L if ahora - t < 3600]
@@ -1301,7 +1308,11 @@ class H(SimpleHTTPRequestHandler):
             if len(_PEX) > 600: _PEX.clear()
             _PEX[ck] = (time.time(), fotos); return self._json(200, {'ok': True, 'prov': prov, 'fotos': fotos})
         if u.path == '/api/comunidad':   # el directorio + lo mío (solicitudes, conversaciones, avisos)
-            yo = _cid(); d = _com_lee(); cuentas = []
+            yo = _cid()
+            with _com_l:
+                d = _com_lee()
+                if _com_aria(d, yo): _com_guarda(d)
+            cuentas = []
             for cid, uu in _com_cuentas().items():
                 pjs = _com_personajes(uu, cid == yo)
                 if pjs or cid == yo: cuentas.append({'cid': cid, 'alias': str(d['alias'].get(cid) or '')[:40], 'yo': cid == yo, 'personajes': pjs})
@@ -1314,10 +1325,15 @@ class H(SimpleHTTPRequestHandler):
                 chats.append({'con': otra, 'ultimo': M[-1], 'sin_leer': sum(1 for m in M if m.get('de') != yo and m.get('t', 0) > visto)})
             chats.sort(key=lambda c: -c['ultimo'].get('t', 0))
             return self._json(200, {'ok': True, 'yo': yo, 'alias': str(d['alias'].get(yo) or ''), 'cuentas': cuentas, 'solicitudes': [x for x in d['sol'] if yo in (x.get('de'), x.get('para'))][-200:], 'chats': chats, 'avisos': _com_avisos(d, yo)})
-        if u.path == '/api/comunidad/avisos': return self._json(200, {'ok': True, 'n': _com_avisos(_com_lee(), _cid())})
+        if u.path == '/api/comunidad/avisos':   # (la solicitud de ejemplo de Aria nace aquí también: así el aviso sale sin haber abierto la comunidad)
+            yo = _cid()
+            with _com_l:
+                d = _com_lee()
+                if _com_aria(d, yo): _com_guarda(d)
+            return self._json(200, {'ok': True, 'n': _com_avisos(d, yo)})
         if u.path == '/api/comunidad/chat':   # la conversación con otra cuenta (y se da por leída)
             yo = _cid(); con = (q.get('con') or [''])[0]
-            if not re.fullmatch(r'c[0-9a-f]{14}', con) or con == yo: return self._json(400, {'error': 'conversación no válida'})
+            if not (con == ARIA_CID or re.fullmatch(r'c[0-9a-f]{14}', con)) or con == yo: return self._json(400, {'error': 'conversación no válida'})
             with _com_l:
                 d = _com_lee(); M = d['msgs'].get(_com_par(yo, con)) or []
                 if M and (d['visto'].get(yo) or {}).get(con, 0) < M[-1].get('t', 0): d['visto'].setdefault(yo, {})[con] = time.time(); _com_guarda(d)
@@ -1450,10 +1466,12 @@ class H(SimpleHTTPRequestHandler):
                     x['t2'] = time.time(); _com_guarda(d); return self._json(200, {'ok': True, 'solicitud': x})
                 if ac == 'mensaje':
                     con = body.get('con', ''); txt = str(body.get('texto') or '').strip()[:2000]
-                    if con not in CU or con == yo or not txt: return self._json(400, {'error': 'mensaje no válido'})
+                    if (con not in CU and con != ARIA_CID) or con == yo or not txt: return self._json(400, {'error': 'mensaje no válido'})
                     if not any(x for x in d['sol'] if {x.get('de'), x.get('para')} == {yo, con} and x.get('estado') in ('pendiente', 'aceptada')): return self._json(403, {'error': 'para escribirle, primero pídele una colaboración'})
                     if not _com_tope('msg', 120): return self._json(429, {'error': 'demasiados mensajes seguidos: prueba dentro de un rato'})
-                    M = d['msgs'].setdefault(_com_par(yo, con), []); M.append({'de': yo, 'x': txt, 't': time.time()}); del M[:-500]; _com_guarda(d); return self._json(200, {'ok': True})
+                    M = d['msgs'].setdefault(_com_par(yo, con), []); M.append({'de': yo, 'x': txt, 't': time.time()})
+                    if con == ARIA_CID and not any(m.get('x') == ARIA_RESP for m in M): M.append({'de': ARIA_CID, 'x': ARIA_RESP, 't': time.time() + 1})
+                    del M[:-500]; _com_guarda(d); return self._json(200, {'ok': True})
             return self._json(400, {'error': 'acción desconocida'})
         if self.path == '/api/restaurar':   # saca una creación de la papelera y la devuelve a Mis creaciones
             n = int(self.headers.get('Content-Length') or 0); body = json.loads(self.rfile.read(n) or b'{}'); fn = os.path.basename(str(body.get('file') or ''))
