@@ -731,7 +731,7 @@
   }
   function updSide() { if (state.tab === 'perfil' && pj.wiz) renderSide(); }
 
-  const TABS_ARIA = [['ficha', '🪪', 'Fichas 360'], ['complementos', '👓', 'Complementos'], ['voz', '🎙', 'Voz', 1], ['lugares', '📍', 'Lugares', 1]]; // Poses irá al menú de la izquierda
+  const TABS_ARIA = [['ficha', '🪪', 'Fichas 360'], ['complementos', '👓', 'Complementos'], ['voz', '🎙', 'Voz', 1], ['lugares', '📍', 'Lugares']]; // Poses irá al menú de la izquierda
   const TABS_PJ = TABS_ARIA; // todos los personajes con la misma interfaz que Aria (el prompt base está en el panel de la izquierda)
   const SOON = { voz: 'Su voz para los vídeos: la voz clonada, su cadencia y sus muletillas, con muestras para escuchar y elegir.', lugares: 'Sus sitios de siempre (su habitación, su cocina, su calle…) guardados como referencias, para que sus escenas sean coherentes.' };
   pj.tabBy = pj.tabBy || {};
@@ -741,6 +741,7 @@
     if (def[3]) { const s0 = el('div', 'pjsoon', `<span>${def[1]}</span><h3>${def[2]}</h3><p>${SOON[def[0]] || ''}</p><small>Próximamente</small>`); bd.appendChild(s0); return; }
     if (tab === 'ficha' && p && window.F3 && F3.open && F3.owner === p.id && window.f3Render && f3Render(bd)) return;   // «Nueva ficha» de este personaje
     if (tab === 'ficha' && !p) { if (window.F3 && F3.owner) { F3.open = false; F3.owner = null; } if (window.f3Render && f3Render(bd)) return; if (window.fbRender && fbRender(bd)) return; if (window.f3Gallery) { bd.appendChild(f3Gallery()); return; } }
+    if (tab === 'lugares' && window.lugPanel) { const w = el('div', 'pjpane'); w.appendChild(lugPanel(p ? p.id : 'aria')); bd.appendChild(w); return; }
     if (tab === 'complementos' && window.accPanel) { const w = el('div', 'pjpane'); w.appendChild(accPanel(p ? p.id : 'aria')); bd.appendChild(w); return; }
     if (tab === 'prompt' && p) { const w = el('div', 'pjpane'); const g = el('div', 'pjgrp'); g.appendChild(el('h4', '', 'Prompt base<small>la plantilla de la lección 1.4 con lo que elegiste</small>')); g.appendChild(el('div', 'promptbox', esc(p.prompt || ''))); const c = el('button', 'btn', 'Copiar prompt base'); c.onclick = () => { navigator.clipboard && navigator.clipboard.writeText(p.prompt || ''); toast('Prompt base copiado'); }; g.appendChild(c); w.appendChild(g); bd.appendChild(w); return; }
     bd.appendChild(p ? viewPersona(p) : viewAria()); if (p && Object.keys(pj.jobs).length) startTick(); }

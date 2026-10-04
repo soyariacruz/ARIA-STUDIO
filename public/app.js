@@ -23,7 +23,7 @@ const TABS = {
   cartoon:  { label: 'Cartoon',   icon: '🎨', shape: 'wide',  ar: 16 / 9, items: C.cartoon,  base: 'Cartoon Art Styles', sub: () => 'estilo de dibujo' },
   photo:    { label: 'Efectos',   icon: '📷', shape: 'wide',  ar: 16 / 9, items: C.photo,    base: 'Photography Styles', sub: () => 'estilo fotográfico' },
   movie:    { label: 'Movie looks', icon: '🎬', shape: 'wide',  ar: 16 / 9, items: C.movie,    base: 'Movie Looks', sub: () => 'movie look' },
-  lugar:    { label: 'Lugares',   icon: '📍', shape: 'wide',  ar: 16 / 9, items: C.lugar,    filters: ['Interior', 'Exterior'], fkey: 'tags', base: 'Lugares', sub: i => (i.tags || []).join(' · ') || 'lugar' },
+  lugar:    { label: 'Lugares',   icon: '📍', shape: 'wide',  ar: 16 / 9, items: C.lugar,    filters: ['Míos', 'Interior', 'Exterior'], fkey: 'tags', base: 'Lugares', sub: i => (i.tags || []).join(' · ') || 'lugar' },
   videoteca: { label: 'Filmoteca', icon: '🎞', shape: 'tall', ar: 9 / 16, items: (C.videoteca || []).map(v => Object.assign(v, { kind: 'video', src: v.video, thumb: v.poster })), filters: ['Cinematic', 'UGC'], fkey: 'tags', base: 'Prompts de Vídeo (pago)', sub: i => (i.ai || []).join(' · ') || 'vídeo' },
   biblio:   { label: 'Fototeca',  icon: '🖼️', shape: 'tall', ar: 3 / 4,  items: C.biblio || [], filters: ['Individual', 'Carrousel'], fkey: 'tags', base: 'Prompts de Imágenes (pago)', sub: i => (i.ai || []).join(' · ') || 'prompt' },
   crear:    { label: 'Crear imagen', icon: '📸', shape: 'tall', ar: 3 / 4, items: C.crear,    base: 'Tu creación', sub: i => i.sub || (i.custom ? 'combina lo que añadas' : 'receta') },
@@ -573,7 +573,7 @@ function setChar(id, quiet) { // cambia el personaje principal: sus fichas, su c
   state.cfocus = c.id; state.accOn = {}; state.accFor = null; charPool(); badge(); chipSync();
   if (state.ready) { renderSide(); const it = cur(); if (it && (state.tab === 'crear' || state.tab === 'video')) paint(it, true); } if (!quiet) toast(`Ahora creas con ${c.name}`); }
 window.setChar = setChar;
-window.charsReady = function () { if (!charsReady._s && window.PJ && (PJ.list || []).length) { charsReady._s = true; if (!PJ.wiz && PJ.sel === 'aria' && !CH().aria) PJ.sel = CH().id; } navSync(); if (state.ready && (state.tab === 'crear' || state.tab === 'creaciones')) { try { renderChips(); } catch (e) {} } if ((state.char && state.char !== 'aria' && !CH().aria) || multiOn()) { charPool(); chipSync(); if (state.ready && (state.tab === 'crear' || state.tab === 'video')) { renderSide(); const it = cur(); if (it) paint(it, true); } } }; // los personajes llegan después del primer pintado
+window.charsReady = function () { try { syncLugares(); if (state.ready && state.tab === 'lugar') { renderRail(); renderChips(); } } catch (e) {} if (!charsReady._s && window.PJ && (PJ.list || []).length) { charsReady._s = true; if (!PJ.wiz && PJ.sel === 'aria' && !CH().aria) PJ.sel = CH().id; } navSync(); if (state.ready && (state.tab === 'crear' || state.tab === 'creaciones')) { try { renderChips(); } catch (e) {} } if ((state.char && state.char !== 'aria' && !CH().aria) || multiOn()) { charPool(); chipSync(); if (state.ready && (state.tab === 'crear' || state.tab === 'video')) { renderSide(); const it = cur(); if (it) paint(it, true); } } }; // los personajes llegan después del primer pintado
 const WEBM = () => !!(window.CUENTA && CUENTA.web && !CUENTA.ariaMia);   // miembro de la web: primero SUS personajes; Aria es un personaje fijo (no se edita ni es su principal)
 function navAvatar() { const c = CH(); if (!WEBM()) return c.avatar || C.perfil.avatar || C.base.thumb; const L = (window.PJ && PJ.list) || []; if (c.aria && L.length) return C.perfil.avatar || C.base.thumb; const p = L.find(x => x.id === c.id) || L[0]; return p ? (p.avatar || p.foto || p.ficha360 || '') : ''; }   // el círculo de «Perfil» es el personaje principal (en la web, siempre uno del miembro)
 function navSync() { const r = document.querySelector('nav .ring'); if (!r) return; const a = navAvatar(); r.innerHTML = a ? `<img src="${a}" alt="">` : '<i class="ringv">👤</i>'; }
@@ -587,12 +587,14 @@ function charSel(tab) { // selector de personaje. En Crear imagen: una burbuja p
   const alPerfil = c => { dd.classList.remove('on'); state.charOpen = null; toast(`${c.name} aún no tiene su ficha 360: termínala en el Perfil`); if (window.PJ) { PJ.sel = c.id; PJ.wiz = null; } setTab('perfil'); };
   const fill = mode => { dd.innerHTML = ''; const act = allChars().map(c => c.id);
     if (mode === 'multi') { dd.appendChild(el('div', 'ddh', 'Quién sale en la imagen'));
-      charList().forEach(c => { const dentro = act.includes(c.id); const r = el('div', 'it' + (dentro ? ' on' : '') + (c.ok ? '' : ' off'), `${av(c)}<b>${esc(c.name)}</b><small>${!c.ok ? 'le falta su ficha 360' : c.id === A.id ? 'principal' : dentro ? 'en la imagen' : 'añadir'}</small><span class="ck">✓</span>`);
-        r.onclick = e => { e.stopPropagation(); if (!c.ok) { alPerfil(c); return; } state.charOpen = tab;
-          if (!dentro) addExtra(c.id);
-          else if (act.length < 2) toast('Tiene que quedar al menos un personaje: marca antes otro');
-          else if (c.id === A.id) removeMain();
-          else removeExtra(c.id); }; dd.appendChild(r); }); }
+      charList().forEach(c => { const dentro = act.includes(c.id); const r = el('div', 'it' + (dentro ? ' on' : '') + (c.ok ? '' : ' off'), `${av(c)}<b>${esc(c.name)}</b><small>${!c.ok ? 'le falta su ficha 360' : c.id === A.id ? 'principal' : dentro ? 'en la imagen' : ''}</small>${c.ok ? `<span class="cadd${dentro ? ' quitar' : ''}">${dentro ? (act.length > 1 ? '× quitar' : '') : '＋ añadir'}</span>` : ''}`);
+        r.title = c.ok ? 'Crear solo con ' + c.name : ''; { const cb = r.querySelector('.cadd'); if (cb) cb.title = dentro ? 'Quitarlo de la imagen' : 'Añadirlo a la imagen, junto a ' + act.map(id => charInfo(id).short).join(' y '); }
+        r.onclick = e => { e.stopPropagation(); if (!c.ok) { alPerfil(c); return; }
+          if (e.target.closest('.cadd')) { state.charOpen = tab; if (!dentro) addExtra(c.id); else if (act.length > 1) { if (c.id === A.id) removeMain(); else removeExtra(c.id); } return; }   // el botón de la derecha: sumar o quitar
+          state.charOpen = null; dd.classList.remove('on');   // la ficha entera: se crea SOLO con este personaje
+          if (dentro && act.length === 1) return; const mio = state.compBy[c.id]; if (mio) PERCHAR.forEach(k => { if (mio[k]) state.comp[k] = mio[k]; else delete state.comp[k]; });
+          state.extras = []; saveExtras(); state.compBy = {}; const b = state.comp.biblio; if (b && b.people) b.people.forEach(p => { if (p.char !== c.id) p.char = null; });
+          if (c.id !== A.id) setChar(c.id); else { state.cfocus = c.id; badge(); renderSide(); const it0 = cur(); if (it0) paint(it0, true); toast(`Ahora creas solo con ${c.name}`); } }; dd.appendChild(r); }); }
     else charList().forEach(c => { const r = el('div', 'it' + (c.id === A.id ? ' on' : '') + (c.ok ? '' : ' off'), `${av(c)}<b>${esc(c.name)}</b><small>${!c.ok ? 'le falta su ficha 360' : c.id === A.id ? 'principal' : 'crear con ' + (c.name || '').split(' ')[0]}</small>`);
       r.onclick = e => { e.stopPropagation(); if (!c.ok) { alPerfil(c); return; } dd.classList.remove('on'); if (c.id !== A.id) setChar(c.id); }; dd.appendChild(r); });
     const nw = el('div', 'it', '<span class="pjplus">＋</span><b>Crear personaje</b><small>en el Perfil</small>'); nw.onclick = e => { e.stopPropagation(); dd.classList.remove('on'); state.charOpen = null; setTab('perfil'); if (window.pjStart) setTimeout(pjStart, 50); }; dd.appendChild(nw); };
@@ -1281,6 +1283,7 @@ function renderSide() {
   side.querySelectorAll('video').forEach(v => { try { v.pause(); v.removeAttribute('src'); v.load(); } catch (e) {} });   // que ningún vídeo del panel siga sonando tras re-pintar
   const t = TABS[state.tab], it = cur(); side.innerHTML = '';
   if (state.pick && state.tab === state.pick.tab && it) { pickPanel(it); return; }
+  if (!it && state.tab === 'lugar') { side.appendChild(sec('Lugares', lugZona(null, n => { renderRail(); renderChips(); if (n) select(n, false, true); else renderSide(); }))); side.appendChild(sec('', el('div', 'status', 'Todavía no hay lugares. Añade el primero: la foto de un despacho, una cocina, una calle… Se guarda con tu personaje principal y lo puedes usar en cualquier imagen.'))); return; }
   if (!it && state.tab !== 'perfil') { side.appendChild(sec(t.label, el('div', 'status', state.tab === 'creaciones' ? 'Todavía no hay nada generado con la API. Lo que generes en cualquier sección aparecerá aquí con su modelo, calidad, formato, coste y prompt.' : 'No hay elementos.'))); return; }
   if (state.back && COMP[state.tab]) { const bb = el('button', 'btn backbtn', '← Volver a ' + (state.back === 'video' ? 'Crear vídeo' : 'Crear imagen')); bb.onclick = () => setTab(state.back); side.appendChild(bb); }
   if (state.tab === 'biblio' || state.tab === 'videoteca') { /* la IA y la fecha van debajo de la imagen/vídeo */ }
@@ -1316,9 +1319,11 @@ function renderSide() {
     biblioPanel(it);
   } else if (state.tab === 'lugar') {   // un lugar: su foto, qué es y «Añadir»
     side.appendChild(addBtn('lugar', 'lugar'));
+    if (it.own) { const st = el('div', 'stack'); const nm = el('input', 'pjin'); nm.value = it.name; nm.title = 'Cambiar el nombre'; nm.onchange = () => lugarNombre(it, nm.value); nm.onkeydown = e => { if (e.key === 'Enter') nm.blur(); }; st.appendChild(nm); const q = el('button', 'btn', '🗑 Quitar de mis lugares'); q.onclick = () => lugarQuita(it); st.appendChild(q); side.appendChild(sec('Lugar de ' + esc(it.de || ''), st)); }
     { const mp = el('div', 'mini'); mp.innerHTML = `<img src="${it.files.main}" alt="">`; mp.onclick = () => lightbox(it.files.main, it.name); side.appendChild(mp); }
     side.appendChild(sec('', el('div', 'status', 'El lugar va como imagen de referencia: tu personaje aparece dentro de él. Si hay varios personajes, comparten el mismo sitio.')));
     if (it.desc) { const box = el('div', 'stack'); box.appendChild(el('div', 'promptbox', esc(it.desc))); side.appendChild(sec('Cómo se describe', box)); }
+    side.appendChild(sec('Añadir otro', lugZona(null, n => { renderRail(); renderChips(); if (n) select(n, false, true); })));
   } else if (LIVE && state.tab === 'crear') {
     side.appendChild(crearPanel(it));
   } else if (LIVE) { // secciones de componentes: primero Añadir, luego la preview con los ajustes plegados
@@ -1436,6 +1441,41 @@ async function dropAny(e, dz) { const dt = e.dataTransfer; const f = dt.files &&
   catch (err) { toast('No se pudo descargar esa imagen: guárdala y arrástrala desde el ordenador'); }
 }
 function useDrop(f) { if (!f || !f.type.startsWith('image/')) return; const r = new FileReader(); r.onload = () => { state.comp.biblio = { id: 'drop-' + Date.now(), name: f.name.replace(/\.[a-z0-9]+$/i, ''), image: r.result, thumb: r.result, prompt: '', drop: true, tags: 'Tu foto' }; modeloPorModo(state.comp.biblio); badge(); state.flash = 'biblio'; renderSide(); paint(cur(), true); toast('Tu foto es ahora la imagen a recrear'); }; r.readAsDataURL(f); }
+const LUG_COMUN = (C.lugar || []).slice();   // los de ejemplo, comunes a todas las cuentas
+function lugLista(owner) { if (owner === 'aria') return (C.perfil && C.perfil.lugares) || []; const p = ((window.PJ && PJ.list) || []).find(q => q.id === owner); return (p && p.lugares) || []; }
+function syncLugares() { // la biblioteca = los comunes + los de cada personaje de la cuenta
+  const due = [['aria', (C.perfil && C.perfil.name) || 'Aria']].concat(((window.PJ && PJ.list) || []).map(p => [p.id, p.nombre])); const out = LUG_COMUN.slice();
+  due.forEach(([ow, nom]) => lugLista(ow).forEach(x => { if (x && x.img) out.push({ id: 'lg-' + ow + '-' + x.id, lid: x.id, owner: ow, own: true, name: x.name || 'Lugar', tags: ['Míos'].concat(x.tags || []), de: nom, desc: x.desc || '', files: { main: x.img, thumb: x.thumb || x.img } }); }));
+  const L = TABS.lugar.items; L.length = 0; out.forEach(x => L.push(x));
+  const sel = state.comp && state.comp.lugar; if (sel && !sel.drop) { const v = L.find(x => x.id === sel.id); if (v) state.comp.lugar = v; } }
+async function lugSave(owner, L, files) { let r; try { r = await fetch('/api/lugares', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ owner, list: L, files: files || {} }) }).then(x => x.json()); } catch (e) { r = { error: String(e) }; }
+  if (!r || !r.ok) { toast(r && r.lleno ? 'No queda espacio en tu cuenta' : 'No se pudo guardar el lugar: ' + (r ? r.error : 'sin respuesta')); return false; }
+  if (owner === 'aria') C.perfil.lugares = r.list; else { const p = ((window.PJ && PJ.list) || []).find(q => q.id === owner); if (p) p.lugares = r.list; } syncLugares(); return true; }
+const lugJpg = src => new Promise(res => { const im = new Image(); if (!String(src).startsWith('data:')) im.crossOrigin = 'anonymous'; im.onload = () => { try { const k = Math.min(1, 2000 / Math.max(im.naturalWidth, im.naturalHeight)); const cv = document.createElement('canvas'); cv.width = Math.round(im.naturalWidth * k); cv.height = Math.round(im.naturalHeight * k); cv.getContext('2d').drawImage(im, 0, 0, cv.width, cv.height); res(cv.toDataURL('image/jpeg', 0.9)); } catch (e) { res(null); } }; im.onerror = () => res(null); im.src = src; });
+async function lugarNuevo(data, owner) { // una foto de un sitio → un lugar de ese personaje (la IA le pone nombre y lo describe; si no puede, se guarda igual)
+  owner = owner || CH().id; if (owner === 'aria' && WEBM()) { const p0 = ((window.PJ && PJ.list) || []).find(p => p.ficha360); if (!p0) { toast('Crea primero tu personaje: tus lugares se guardan con él'); return null; } owner = p0.id; }
+  const jpg = await lugJpg(data); if (!jpg) { toast('No he podido leer esa imagen'); return null; } toast('Guardando el lugar…');
+  let name = 'Lugar nuevo', desc = '', ext = false;
+  if (LIVE) { try { const r = await fetch('/api/describir', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ image: { data: jpg }, modo: 'lugar' }) }).then(x => x.json()); if (r && r.ok) { name = (r.nombre || name).slice(0, 40); desc = r.desc || ''; ext = /exterior/i.test((r.extra || [])[0] || ''); } } catch (e) {} }
+  const id = 'l' + Date.now().toString(36); const L = [{ id, name, desc, tags: [ext ? 'Exterior' : 'Interior'] }].concat(lugLista(owner));
+  if (!(await lugSave(owner, L, { [id]: jpg }))) return null; toast(`«${name}» añadido a tus lugares`); return TABS.lugar.items.find(x => x.owner === owner && x.lid === id) || null; }
+async function lugarQuita(it) { if (!it || !it.own || !confirm(`¿Quitar «${it.name}» de tus lugares?`)) return; if (state.comp.lugar && state.comp.lugar.id === it.id) delete state.comp.lugar; if (await lugSave(it.owner, lugLista(it.owner).filter(x => x.id !== it.lid))) { toast('Lugar quitado'); badge(); if (state.tab === 'lugar') { renderRail(); renderChips(); renderSide(); } if (window.renderProfile && state.tab === 'perfil') renderProfile(); } }
+async function lugarNombre(it, nombre) { nombre = String(nombre || '').trim().slice(0, 40); if (!it || !it.own || !nombre || nombre === it.name) return; if (await lugSave(it.owner, lugLista(it.owner).map(x => x.id === it.lid ? Object.assign({}, x, { name: nombre }) : x))) { toast('Nombre cambiado'); if (state.tab === 'lugar') { renderRail(); renderSide(); } } }
+function lugZona(owner, despues) { // «añadir un lugar»: arrastrar su foto (del ordenador o de una web) o hacer clic
+  const z = el('div', 'lugzona', '<span>＋</span><b>Añadir un lugar</b>Arrastra aquí la foto de un sitio (o haz clic)'); const inp = document.createElement('input'); inp.type = 'file'; inp.accept = 'image/*'; inp.style.display = 'none'; z.appendChild(inp);
+  const usa = async data => { if (!data) { toast('No he podido leer esa imagen'); return; } z.innerHTML = '<span class="spin"></span><b>Guardando el lugar…</b>'; const it = await lugarNuevo(data, owner); if (despues) despues(it); };
+  inp.onchange = () => { const f = inp.files[0]; if (!f) return; const r = new FileReader(); r.onload = () => usa(r.result); r.readAsDataURL(f); }; z.onclick = () => inp.click();
+  ['dragenter', 'dragover'].forEach(ev => z.addEventListener(ev, e => { e.preventDefault(); e.stopPropagation(); z.classList.add('over'); })); z.addEventListener('dragleave', () => z.classList.remove('over'));
+  z.addEventListener('drop', async e => { e.preventDefault(); e.stopPropagation(); z.classList.remove('over'); usa(window.dropData ? await dropData(e) : null); }); return z; }
+window.lugPanel = function (owner) { // Perfil › Lugares: los sitios de ESE personaje
+  const fija = owner === 'aria' && WEBM(); const box = el('div', 'pjgrp'); const L = lugLista(owner);
+  box.appendChild(el('div', 'acchead left', `<div><b>Lugares</b><small>Sus sitios de siempre: su casa, su cocina, su despacho… Se usan como referencia para que sus escenas sean siempre en el mismo sitio.</small></div>`));
+  const g = el('div', 'lugcards');
+  L.forEach(x => { const it = TABS.lugar.items.find(q => q.owner === owner && q.lid === x.id); const d = el('div', 'lugcard', `<img src="${x.thumb || x.img}" alt=""><b>${esc(x.name || 'Lugar')}</b><small>${esc((x.tags || []).join(' · ') || 'lugar')} · clic para usarlo</small>`); d.title = x.desc || ''; d.onclick = () => { if (it) addToImage('lugar', it, true); };
+    if (!fija) { const q = el('button', 'pjx', '×'); q.title = 'Quitar de sus lugares'; q.onclick = e => { e.stopPropagation(); lugarQuita(it); }; d.appendChild(q); } g.appendChild(d); });
+  if (!fija) { const a = lugZona(owner, () => renderProfile()); a.classList.add('lugcard', 'add'); g.appendChild(a); }
+  if (fija && !L.length) g.appendChild(el('div', 'status', 'Aria aún no tiene lugares guardados.'));
+  box.appendChild(g); return box; };
 function lugarRow() { // el sitio de la imagen: uno solo, compartido por todos los personajes
   const L = state.comp.lugar; const w = el('div', 'accsel lugarsel' + (L ? ' on' : ''));
   w.innerHTML = `<small>Lugar</small>${L ? `<span class="accmini"><img src="${compThumb('lugar', L)}" alt=""></span>` : ''}<span class="cnt">${L ? esc(L.name) : 'ninguno · el de la foto'}</span>${L ? '<span class="x" title="Quitar el lugar">×</span>' : '<span class="caret">▸</span>'}`;
@@ -1443,7 +1483,8 @@ function lugarRow() { // el sitio de la imagen: uno solo, compartido por todos l
   w.onclick = e => { if (e.target.classList.contains('x')) { delete state.comp.lugar; badge(); renderSide(); paint(cur(), true); return; } state.back = 'crear'; setTab('lugar'); if (L && !L.drop) { const v = view(); if (v.includes(L)) select(L, false, true); } };
   ['dragenter', 'dragover'].forEach(ev => w.addEventListener(ev, e => { e.preventDefault(); e.stopPropagation(); w.classList.add('over'); })); w.addEventListener('dragleave', () => w.classList.remove('over'));
   w.addEventListener('drop', async e => { e.preventDefault(); e.stopPropagation(); w.classList.remove('over'); const data = window.dropData ? await dropData(e) : null; if (!data) { toast('No he podido leer esa imagen'); return; }
-    state.comp.lugar = { id: 'lugar-drop-' + Date.now(), name: 'Tu lugar', drop: true, desc: '', tags: [], files: { main: data, thumb: data } }; badge(); renderSide(); paint(cur(), true); toast('Ese sitio es ahora el lugar de la imagen'); });
+    state.comp.lugar = { id: 'lugar-drop-' + Date.now(), name: 'Tu lugar', drop: true, desc: '', tags: [], files: { main: data, thumb: data } }; badge(); renderSide(); paint(cur(), true); toast('Ese sitio es ahora el lugar de la imagen'); const dr = state.comp.lugar;
+    lugarNuevo(data).then(it => { if (it && state.comp.lugar === dr) { state.comp.lugar = it; badge(); if (state.tab === 'crear') { renderSide(); const c0 = cur(); if (c0) paint(c0, true); } } }); });
   if (state.flash === 'lugar') { w.classList.add('flash'); setTimeout(() => { w.classList.remove('flash'); if (state.flash === 'lugar') state.flash = null; }, 1200); }
   return w; }
 function lugarTxt(I, plural, conFoto) { // la frase del lugar para el prompt (I = cómo se llama su imagen)

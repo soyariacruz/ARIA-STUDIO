@@ -715,6 +715,10 @@ def _cat_save(head, C):   # escritura atómica del catálogo (temporal + cambio 
 def _safe_item(x):   # el nombre del elemento acaba en el nombre del archivo: nunca puede salirse de su carpeta
     return re.sub(r'[^A-Za-z0-9_.@:-]', '-', str(x or 'img')).strip('.')[:90] or 'img'
 _ASK_ESTILO = {   # leer un peinado o una expresión de una foto cualquiera (dos líneas: nombre en español + descripción en inglés)
+    'lugar': ('Look ONLY at the PLACE shown in this photo (ignore any person in it). Answer with EXACTLY three lines and nothing else. '
+              'Line 1: a short name for the place in Spanish, 2-4 words (e.g. "Cocina luminosa", "Despacho de madera", "Azotea al atardecer"). '
+              'Line 2: one English sentence, 25-50 words, describing the place so an AI image generator can reproduce it: what kind of place it is, its layout, furniture, materials, colours and light. Never mention people. '
+              'Line 3: the single word Interior or Exterior.'),
     'escena': ('Describe this photo so an AI image generator can recreate THE SAME SCENE with a DIFFERENT person. Answer with EXACTLY four lines and nothing else. '
                'Line 1: a short title in Spanish, 2-5 words. '
                'Line 2: one English paragraph, 60-110 words: the place and background, time of day and lighting, camera distance, angle and framing, what she is doing and her exact pose, her expression and mood, props, and the photo style (phone snapshot, studio, film grain...). Start with the framing. Use "she" for the person. '
@@ -1587,6 +1591,41 @@ class H(SimpleHTTPRequestHandler):
                 if ck and people: _PPL[ck] = people; _ppl_save()
             except Exception as e: return self._json(400, {'error': str(e)})
             plog(f'personas_img ok · {len(people)} persona(s)'); return self._json(200, {'ok': True, 'people': people, 'person': (people[0] if pt and people else None)})
+        if self.path == '/api/lugares':   # lugares de un personaje (su casa, su despacho…): {owner:'aria'|id, list:[{id,name,tags,desc,img,thumb}], files:{id: dataURL}}
+            n = int(self.headers.get('Content-Length') or 0); body = json.loads(self.rfile.read(n) or b'{}'); owner = body.get('owner') or 'aria'
+            L = [x for x in (body.get('list') or []) if isinstance(x, dict)][:80]; files = body.get('files') or {}
+            if owner == 'aria' and aria_fija(): return self._json(403, {'error': FIJA, 'fija': True})
+            import io
+            from PIL import Image
+            try:
+                with _cerrojo():
+                    if owner == 'aria': d = perfil_dir('lugares'); relb = 'assets/perfil/lugares/'
+                    else:
+                        if not _pid_ok(owner) or not os.path.isdir(os.path.join(pers_dir(), owner)): return self._json(404, {'error': 'personaje no encontrado'})
+                        d = os.path.join(pers_dir(), owner, 'lugares'); relb = f'assets/personajes/{owner}/lugares/'
+                    os.makedirs(d, exist_ok=True); stamp = int(time.time()); out = []
+                    for c in L:
+                        cid = re.sub(r'[^a-z0-9-]+', '-', str(c.get('id') or 'lugar').lower()).strip('-')[:40] or 'lugar'
+                        it = {'id': cid, 'name': str(c.get('name') or 'Lugar')[:60], 'desc': str(c.get('desc') or '')[:600], 'tags': [str(t)[:20] for t in (c.get('tags') or []) if isinstance(t, str)][:4], 'img': c.get('img'), 'thumb': c.get('thumb')}
+                        du = files.get(cid)
+                        if isinstance(du, str) and ',' in du:
+                            im = Image.open(io.BytesIO(base64.b64decode(du.split(',', 1)[1]))).convert('RGB'); im.thumbnail((2000, 2000)); im.save(os.path.join(d, cid + '.jpg'), quality=90)
+                            th = im.copy(); th.thumbnail((720, 720)); th.save(os.path.join(d, cid + '_t.jpg'), quality=85)
+                            it['img'] = relb + cid + '.jpg' + f'?v={stamp}'; it['thumb'] = relb + cid + '_t.jpg' + f'?v={stamp}'
+                        if not (isinstance(it['img'], str) and it['img'].split('?')[0].startswith(relb)): continue   # solo imágenes de su propia carpeta
+                        out.append(it)
+                    vivos = {x['id'] for x in out}
+                    for fn in os.listdir(d):   # lo quitado se borra de su carpeta
+                        if fn.endswith('.jpg') and fn.replace('_t.jpg', '').replace('.jpg', '') not in vivos:
+                            try: os.remove(os.path.join(d, fn))
+                            except OSError: pass
+                    if owner == 'aria':
+                        head, C = _cat_load(); C['perfil']['lugares'] = out
+                        _cat_save(head, C)
+                    else:
+                        fp = os.path.join(pers_dir(), owner, 'personaje.json'); P = json.load(open(fp)); P['lugares'] = out; json.dump(P, open(fp, 'w'), ensure_ascii=False, indent=1)
+            except Exception as e: return self._json(400, {'error': str(e)})
+            plog(f'lugares de {owner}: {len(out)}'); return self._json(200, {'ok': True, 'list': out})
         if self.path == '/api/acc_cajas':   # dónde está cada complemento en la ficha del personaje, para recortar de ahí su portada
             n = int(self.headers.get('Content-Length') or 0); body = json.loads(self.rfile.read(n) or b'{}')
             try:
@@ -1625,7 +1664,7 @@ class H(SimpleHTTPRequestHandler):
                 ask = _ASK_ESTILO[body.get('modo')] if body.get('modo') in _ASK_ESTILO else ('Look ONLY at the main object in this image' + (' ("' + body['nombre'] + '", type: ' + (body.get('tipo') or 'accessory') + ')' if body.get('nombre') else ' (type: ' + (body.get('tipo') or 'accessory') + ')') + '. Answer with EXACTLY two lines and nothing else. '
                        'Line 1: a short product name in Spanish, 2-5 words, like a shop label (e.g. "Bolso de lona verde", "iPhone 17 Pro naranja"). '
                        'Line 2: a precise English prompt fragment for an AI image generator so it can reproduce the object exactly: one line, 15-35 words, starting with an article (a/an), no full sentences, no people, no background, no brand guesses unless a logo is clearly visible; mention shape, material, color and finish, size and distinctive details.')
-                r = ws('POST', '/api/v3/wavespeed-ai/any-llm/vision', {'prompt': ask, 'images': [url], 'model': 'google/gemini-2.5-flash', 'temperature': 0.2, 'max_tokens': 480 if body.get('modo') == 'escena' else 220, 'priority': 'latency'})
+                r = ws('POST', '/api/v3/wavespeed-ai/any-llm/vision', {'prompt': ask, 'images': [url], 'model': 'google/gemini-2.5-flash', 'temperature': 0.2, 'max_tokens': 480 if body.get('modo') == 'escena' else 260, 'priority': 'latency'})
                 rid = (r.get('data') or {}).get('id'); txt = ''
                 for _ in range(40):
                     time.sleep(1.5); w = ws('GET', f'/api/v3/predictions/{rid}/result').get('data') or {}
