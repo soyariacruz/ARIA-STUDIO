@@ -37,7 +37,7 @@ MAX_CUERPO = 40 * 1024 * 1024    # tope de una petición en modo servidor
 MAX_BIBLIO = 200 * 1024 * 1024   # tope de un fichero de la biblioteca común al copiarlo
 KINDS = ('vestidor', 'hair', 'expr')   # las bibliotecas a las que una cuenta puede añadir lo suyo
 _UUID = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
-VERSION = 184
+VERSION = 185
 _ctx = threading.local()   # la cuenta del hilo: la pone cada petición (y, a mano, cada hilo de fondo)
 def uid(): return getattr(_ctx, 'uid', None)   # en local siempre None
 DUENOS = tuple(e.strip().lower() for e in (os.environ.get('ARIA_DUENOS') or 'mix1994max@gmail.com').split(',') if e.strip())   # cuentas que pueden cambiar a Aria Cruz (en la web, la de Max)
@@ -200,6 +200,7 @@ def _quien(h):   # petición → (uid, email, interno), o _NoEntra(401|403|503)
         d = (h.headers.get('X-Dev-Uid') or '').strip().lower()
         if d:
             if not _UUID.fullmatch(d): raise _NoEntra(401, 'X-Dev-Uid no válido')
+            _ctx.sin_casa = h.headers.get('X-Dev-Casa') == '0'   # pruebas: esta petición, como si no hubiera clave de la casa
             try: _precio[d] = float(h.headers.get('X-Dev-Precio') or _precio.get(d, 4))
             except ValueError: pass
             return d, f'dev-{d[:8]}@dev.local', h.headers.get('X-Dev-Interno') == '1'
@@ -373,7 +374,7 @@ BIENVENIDA = 1.0; LECTURA_USD = 0.002   # cada lectura de una imagen con IA (des
 SIN_SALDO = 'Saldo regalo agotado. Se repone el día 1; para seguir ahora, conecta tu propia clave en «API en vivo».'
 _NSFW_RE = re.compile(r"\b(nsfw|topless|nipples?|areolas?|genitals?|genitalia|pubic|vagina|vulva|penis|no clothes|(?:is|are|she'?s|he'?s|fully|completely|totally|stark) naked|naked (?:woman|women|man|men|girl|boy|body|person|people|figure|torso|chest|skin)|(?:fully|completely|totally) nude|nude body|bare breasts?|no underwear|sexually explicit|explicit nud)", re.I)
 def _es_nsfw(prompt): return bool(_NSFW_RE.search(re.split(r'negative prompt\s*:', str(prompt or ''), flags=re.I)[0]))   # lo que va detrás de «Negative prompt:» es justo lo que NO se quiere en la imagen
-def _casa_base(): return bool(SERVIDOR and CASA_KEY and uid())
+def _casa_base(): return bool(SERVIDOR and CASA_KEY and uid() and not getattr(_ctx, 'sin_casa', False))
 def casa_on(): return _casa_base() and not load_ws()   # esta cuenta va con el saldo regalo (no tiene clave propia conectada)
 def _regalo_mes(p):   # 4 → 0,50 · 5 → 0,50 · 6 → 1 · 19 → 2 · 49 → 5 · 296 al año → 2,50
     try: p = float(p)

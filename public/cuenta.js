@@ -39,6 +39,9 @@ html.gate #gate{display:flex}
 #gate h1{font-family:var(--serif);font-weight:500;font-size:32px;letter-spacing:.06em;color:var(--ink)}
 #gate h1 i{font-style:normal;color:var(--acc);margin-left:.3em}
 #gate p{color:var(--mut);font-size:14px;line-height:1.55}
+#gate.entrar #gateMsg{white-space:nowrap;font-size:13.5px}
+#gate .gnota a{color:inherit;text-decoration:underline;text-underline-offset:2px}
+#gate .gnota a:hover{color:var(--acc)}
 #gate button{font-family:inherit;font-size:15px;font-weight:700;border-radius:999px;padding:14px 20px;cursor:pointer;border:1px solid var(--line);background:var(--bg);color:var(--ink);transition:transform .1s,filter .15s}
 #gate .gin{border-color:var(--acc);background:var(--acc);color:#fff}
 #gate button:hover{filter:brightness(1.07)}
@@ -69,7 +72,7 @@ html.sinapi #livedot,html.sinapi .meter{display:none!important}
     '<ul class="gpts"><li><b>Tu personaje, siempre el mismo</b>Crea su ficha una vez y sale igual en todas sus fotos.</li><li><b>Recrea cualquier foto con él</b>Elige una de la Fototeca o arrastra la tuya.</li><li><b>Pagas solo lo que generas</b>Unos 5 céntimos por imagen, con tu propia API. Sin suscripción.</li></ul>' +
     '<button class="gin" id="gateIn" hidden>Entrar con Google</button>' +
     '<button id="gateOut" hidden>Cerrar sesión</button>' +
-    '<p class="gerr" id="gateErr" hidden></p><p class="gnota" id="gateNota" hidden>Acceso por invitación · comunidad de Aria Cruz</p></div></div>';
+    '<p class="gerr" id="gateErr" hidden></p><p class="gnota" id="gateNota" hidden>Acceso por invitación · <a href="https://www.skool.com/influencer-ai/about" target="_blank" rel="noopener">comunidad de Aria Cruz</a></p></div></div>';
   document.body.prepend(gate);
   const G = (id) => gate.querySelector('#' + id);
   // La portada tiene cuatro caras: esperando, entrar, abriendo el estudio y «sin acceso».
@@ -239,7 +242,7 @@ html.sinapi #livedot,html.sinapi .meter{display:none!important}
     catch (e) { console.error('[cuenta]', e); dentro = null; return cara('', { salir: true, error: 'No se ha podido abrir el estudio. Recarga la página.' }); }
     root.classList.remove('gate'); mountBtn();
   }
-  function fuera() { CU.user = null; dentro = null; cara('Crea imágenes y vídeos con tus propios personajes de IA.', { entrar: true }); }
+  function fuera() { CU.user = null; dentro = null; cara('Crea imágenes y vídeos con tu personaje de IA', { entrar: true }); }
 
   const lib = document.createElement('script');
   lib.src = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2';

@@ -790,6 +790,7 @@
   window.pjEyes = p => en('ojos', p.ojos) || (p.ojosHex ? p.ojosHex + ' colored' : '');
   window.pjHair = p => ({ color: colorOf(p, 'pelo') || en('peloColor', p.peloColor) || '', style: p.peinado ? (p.peinado.desc || p.peinado.name || '') : '' });   // su pelo (color y peinado) para Crear imagen: al recrear una foto no se queda el pelo de la foto   // color de ojos para la frase de identidad (también el elegido con las barras)
   window.pjStart = () => startWiz();
+  window.pjNuevo = mode => { newWiz(mode); renderProfile(); renderSide(); };   // directo a un camino del asistente (p. ej. «tengo» desde la bienvenida)
   window.pjReload = () => load();   // releer los personajes del disco (p. ej. al terminar una ficha nueva)
-  load().then(() => { if (state.tab === 'perfil') { renderProfile(); renderSide(); } });
+  load().then(() => { pj.cargado = true; if (state.tab === 'perfil') { renderProfile(); renderSide(); } if (window.bienvenida) setTimeout(bienvenida, 400); });
 })();
