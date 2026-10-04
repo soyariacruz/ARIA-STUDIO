@@ -100,7 +100,7 @@
     Object.values(PEND).filter(E => E.owner === owner && (E.job || E.nuevas.length) && E.idx == null).forEach(E => { const d = el('div', 'accpend', `${E.job ? '<span class="spin"></span>' : '🧩'}<b>${E.job ? 'Generando la ficha de producto de' : 'Ficha de producto lista, sin guardar:'} «${esc(E.c.nombre || 'complemento nuevo')}»</b><button class="btn">Abrir</button>`); d.querySelector('button').onclick = () => openEditor(owner, null); box.appendChild(d); });
     REGLAS.forEach(([rk, rn]) => {
       const idx = L.map((c, i) => [c, i]).filter(([c]) => c.regla === rk); const grid = el('div', 'acccards'); grid.dataset.regla = rk;
-      box.appendChild(el('div', 'accsub', `${rn}<small>${rk === 'siempre' ? 'en todas sus fotos' : rk === 'escena' ? 'solo cuando la escena lo tiene' : 'no lo lleva nunca'}</small>`));
+      const grp = el('div', 'accgrp r-' + rk); grp.appendChild(el('div', 'accsub', `${rn}<small>${rk === 'siempre' ? 'en todas sus fotos' : rk === 'escena' ? 'solo cuando la escena lo tiene' : 'no lo lleva nunca'}</small>`));
       grid.ondragover = e => { e.preventDefault(); grid.classList.add('over'); }; grid.ondragleave = () => grid.classList.remove('over');
       grid.ondrop = async e => { e.preventDefault(); grid.classList.remove('over'); const i = +e.dataTransfer.getData('text/acc'); if (isNaN(i) || !L[i] || L[i].regla === rk) return; const N = L.slice(); N[i] = Object.assign({}, L[i], { regla: rk }); if (await save(owner, N)) { toast(`«${L[i].nombre}» → ${rn}`); renderProfile(); } };
 
@@ -113,7 +113,7 @@
         grid.appendChild(d);
       });
       { const at = el('button', 'accaddtile', `<span>＋</span><b>Añadir nuevo</b><small>${rn.toLowerCase()}</small>`); at.title = `Complemento nuevo en «${rn}»`; at.onclick = () => openEditor(owner, null, rk); grid.appendChild(at); } // cuadrado de añadir en cada grupo, con su regla ya elegida
-      box.appendChild(grid);
+      grp.appendChild(grid); box.appendChild(grp);   // cada grupo, en su recuadro de color
     });
     return box;
   };
