@@ -8,5 +8,12 @@
       "source": "/assets/:path*",
       "destination": "https://uhscbgidrloskdjbevkn.supabase.co/storage/v1/object/public/assets/:path*"
     }
+  ],
+  "redirects": [
+    {
+      "source": "/assets/:carpeta((?!(?:live|video|personajes|refs|perfil|mio|papelera)/)[^/]+)/:path+",
+      "destination": "https://uhscbgidrloskdjbevkn.supabase.co/storage/v1/object/public/assets/:carpeta/:path+",
+      "permanent": false
+    }
   ]
 }
