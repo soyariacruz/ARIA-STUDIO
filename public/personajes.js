@@ -176,7 +176,24 @@
   ];
   const STEPS_FOTOS = [{ id: 'fotos', t: 'Tus fotos', h: 'Suelta fotos de personas que te gusten: la IA saca sus rasgos en común.' }].concat(STEPS.filter(s => ['rol', 'nicho', 'nombre', 'edad', 'fin'].includes(s.id)));
   const STEPS_TENGO = [{ id: 'tficha', t: 'Su ficha 360', h: 'Sube la ficha de tu personaje. La IA la mira y rellena sus rasgos por ti.' }, { id: 'tdatos', t: 'Sus datos', h: 'Lo justo para crear imágenes con tu personaje. Todo se puede cambiar después.' }];
-  const stepsOf = w => w.mode === 'fotos' ? STEPS_FOTOS : w.mode === 'tengo' ? STEPS_TENGO : STEPS;
+  const STEPS_CERO = [   // v191 · crear desde cero, en corto. Después vienen «elige su cara» (9 a la vez) y la ficha automática
+    { id: 'quien', t: 'Quién es', h: 'Su nombre y lo básico. Todo se puede cambiar después.', ids: ['nombre', 'edad'], opc: ['rol', 'nicho'] },
+    { id: 'como', t: 'Cómo es', h: 'Pulsa «Sorpréndeme» y listo, o abre cada apartado y elige. No hace falta rellenarlo todo.', ids: ['cara', 'ojos', 'boca', 'pelocolor', 'peinado', 'piel', 'cuerpo', 'curvas', 'estilo'], plegado: true },
+    STEPS.find(x => x.id === 'fin')];
+  const stepsOf = w => w.mode === 'fotos' ? STEPS_FOTOS : w.mode === 'tengo' ? STEPS_TENGO : w.editId ? STEPS : STEPS_CERO;
+  const resumenDe = (id, d) => { const j = a => a.filter(Boolean).join(' · '); try { return id === 'cara' ? es('cara', d.cara) : id === 'ojos' ? j([d.ojosNombre || es('ojos', d.ojos), es('ojosForma', d.ojosForma)]) : id === 'boca' ? j([es('labios', d.labios), es('nariz', d.nariz)]) : id === 'pelocolor' ? (d.peloNombre || es('peloColor', d.peloColor)) : id === 'peinado' ? ((d.peinado && d.peinado.name) || '') : id === 'piel' ? es('piel', d.piel)
+      : id === 'cuerpo' ? j([d.altura && (d.altura / 100).toFixed(2).replace('.', ',') + ' m', es('complexion', d.complexion)]) : id === 'curvas' ? j([d.genero !== 'masc' && es('pecho', d.pecho), es('cadera', d.cadera)]) : id === 'estilo' ? (d.estilo === 'realista' ? 'Realista' : d.estilo === 'cartoon' ? 'Cartoon' : d.estilo ? 'Su propio estilo' : '') : id === 'rol' ? arr(d.rol).map(x => es('rol', x)).filter(Boolean).join(', ') : id === 'nicho' ? arr(d.nicho).map(x => es('nicho', x)).filter(Boolean).join(', ') : ''; } catch (e) { return ''; } };
+  function sorprende(d) { // rasgos al azar (sin las opciones marcadas como poco fiables): para quien no quiere pensar
+    const al = a => a[Math.floor(Math.random() * a.length)]; const pick = k => { const L = (O[k] || []).filter(o => !o[5] && !o[4]); return L.length ? al(L)[0] : null; };
+    ['cara', 'ojos', 'ojosForma', 'labios', 'nariz', 'peloColor', 'piel', 'complexion', 'cadera'].forEach(k => { const v = pick(k); if (v) d[k] = v; }); if (d.genero !== 'masc') { const v = pick('pecho'); if (v) d.pecho = v; }
+    d.ojosHex = null; d.ojosNombre = null; d.peloNombre = null; d.altura = 158 + Math.round(Math.random() * 20); if (!d.estilo) d.estilo = 'realista'; }
+  function stepMulti(stp, d) { // varios apartados en una sola pantalla: los principales a la vista o plegados (con lo elegido en su cabecera) y los opcionales al final
+    const w = pj.wiz; w.open = w.open || {}; const box = el('div', 'pjmulti'); const T = id => (STEPS.find(x => x.id === id) || {}).t || id;
+    if (stp.id === 'como') { const sb = el('button', 'btn acc big pjsorp', '🎲 Sorpréndeme'); sb.title = 'Elige todos sus rasgos al azar; luego cambias lo que quieras'; sb.onclick = () => { sorprende(d); changed(d); paintWiz(); updSide(); toast('Rasgos elegidos al azar: cambia lo que quieras'); }; box.appendChild(sb); }
+    const sec = (id, plegado, opcional) => { if (!plegado) { box.appendChild(stepBody(id, d)); return; }
+      const dt = document.createElement('details'); dt.className = 'pjsec'; dt.open = !!w.open[id]; dt.addEventListener('toggle', () => { w.open[id] = dt.open; });
+      const r = resumenDe(id, d); dt.appendChild(el('summary', '', `<b>${T(id)}</b>${opcional ? '<i>opcional</i>' : ''}<span class="${r ? '' : 'no'}">${r ? esc(r) : 'sin elegir'}</span>`)); dt.appendChild(stepBody(id, d)); box.appendChild(dt); };
+    stp.ids.forEach(id => sec(id, !!stp.plegado)); (stp.opc || []).forEach(id => sec(id, true, true)); return box; }
   const DRAFT = 'am_pj_draft';
   function newWiz(mode, data) { pj.wiz = { mode, step: 0, d: Object.assign({ edad: 25, altura: 168, genero: 'fem', rol: [], nicho: [], pers: [], voz: [], pielDet: [], inspo: [] }, data || {}) }; saveDraft(); }
   function saveDraft() { try { if (pj.wiz) localStorage.setItem(DRAFT, JSON.stringify(Object.assign({}, pj.wiz, { d: Object.assign({}, pj.wiz.d, { foto: null, ficha: null, cuerpoUp: null, _err: null }) }))); else localStorage.removeItem(DRAFT); } catch (e) { try { localStorage.setItem(DRAFT, JSON.stringify(Object.assign({}, pj.wiz, { d: Object.assign({}, pj.wiz.d, { foto: null, ficha: null, cuerpoUp: null, inspo: [], _err: null }) }))); } catch (e2) {} } }
@@ -640,8 +657,13 @@
     if (rounds.length > 1) { const h = el('div', 'pjrounds'); rounds.forEach((r, i) => { const t = el('button', 'pjround' + (i === ri ? ' on' : ''), `<img src="${r.file}" alt=""><small>Ronda ${i + 1}${(r.sel || [])[0] ? ' · nº ' + r.sel[0] : ''}</small>`); t.onclick = () => { pj.ver = i; renderProfile(); }; h.appendChild(t); }); box.appendChild(grp('Rondas anteriores', h, 'nada se pierde: puedes volver a una y elegir una cara de ella')); }
     return box;
   }
+  function autoCaja(p) { // el camino fácil: que la ficha se cree sola (o cómo va, si ya está en marcha)
+    const c = el('div', 'pjauto'); const corriendo = jobsDe(p.id).length > 0; const nOk = 4 - faltaVistas(p);
+    if (p.autoFicha) { c.innerHTML = `<div class="f3hd">${corriendo ? '<i class="spin"></i>' : ''}<b>${corriendo ? 'Creando su ficha…' : 'Su ficha se quedó a medias'}</b></div><p>${corriendo ? `Va sola: sus 4 vistas (${nOk} de 4), su cuerpo y su ficha principal. Tarda unos minutos y puedes seguir usando la app.` : 'Pulsa «Continuar» y sigue por donde iba.'}</p>`; if (!corriendo) { const g = el('button', 'btn acc big', '✨ Continuar'); g.onclick = () => autoEmpieza(p); c.appendChild(g); } return c; }
+    c.innerHTML = `<b>Lo más fácil: que se cree sola</b><p>Con un clic salen sus 4 vistas, su cuerpo completo y su ficha principal. Después puedes repetir la que no te guste.</p>${p.autoErr ? `<p style="color:#e0566a">La última vez se paró: ${esc(p.autoErr)}</p>` : ''}`;
+    const g = el('button', 'btn acc big pr', `✨ Crear su ficha completa<i>${fmtUsd(autoCoste(p))}</i>`); g.onclick = () => autoEmpieza(p); c.appendChild(g); return c; }
   function panelVistas(p) { // su cara arriba y las 4 vistas debajo, sin scroll
-    const box = el('div', 'pjv2'); const m = modelFor(2); const cost = fmtUsd(m.usd[state.quality]); const fOk = vok(p, 'frente'); const fJob = pj.jobs[p.id + ':frente'];
+    const box = el('div', 'pjv2'); if (faltaVistas(p) || p.autoFicha) { box.appendChild(autoCaja(p)); if (!p.autoFicha) box.appendChild(el('p', 'pjautoo', 'O hazlo paso a paso, aprobando cada vista:')); } const m = modelFor(2); const cost = fmtUsd(m.usd[state.quality]); const fOk = vok(p, 'frente'); const fJob = pj.jobs[p.id + ':frente'];
     const top = el('div', 'pjv2top'); const cara0 = p.foto || p.importada || p.ficha360; const face = el('div', 'pjv2face', `<img src="${cara0}" alt=""><small>${p.foto ? 'Su cara' : 'Tu ficha importada'}</small>`); face.onclick = () => lightbox(cara0, (p.foto ? 'Su cara · ' : 'Ficha importada · ') + p.nombre); top.appendChild(face);
     const info = el('div', 'pjv2info'); const faltan = ['perfil', 'tres', 'espalda'].filter(k => !vfile(p, k) && !pj.jobs[p.id + ':' + k]);
     info.appendChild(el('p', '', !vfile(p, 'frente') && !fJob ? '<b>Primero, su vista de frente</b> a partir de su cara. Cuando te guste, apruébala.' : !fOk ? '<b>¿Te gusta su frente?</b> Apruébalo o genera otro.' : faltan.length ? '<b>Frente aprobado.</b> Ahora genera las otras tres a la vez.' : '<b>Aprueba las que te gusten</b> o genera otra de la que no. Al aprobar las cuatro se unen en su ficha 360.'));
@@ -771,7 +793,7 @@
     const hd = el('div', 'pjwhd'); hd.appendChild(el('div', '', `<small class="pjk">${w.editId ? 'Editar personaje' : w.mode === 'tengo' ? 'Ya tengo mi personaje' : w.mode === 'fotos' ? 'Desde tus favoritas' : 'Crear personaje desde cero'} · paso ${w.step + 1} de ${S.length}</small><h3>${stp.t}</h3><p>${stp.h}</p>`));
     const dots = el('div', 'pjdots'); S.forEach((s, i) => { const k = i; const b = el('button', k === w.step ? 'on' : k < w.step ? 'done' : '', ''); b.title = s.t; b.onclick = () => { w.step = k; saveDraft(); paintWiz(); updSide(); }; dots.appendChild(b); }); hd.appendChild(dots);
     if (w.editId) { const p0 = pj.list.find(x => x.id === w.editId); const bb = el('button', 'btn fxback', `← Volver a ${esc((p0 && p0.nombre) || 'su ficha')} sin guardar`); bb.onclick = () => { pj.wiz = null; saveDraft(); pj.sel = w.editId; window.pjScrollTop = true; renderProfile(); renderSide(); }; host.appendChild(bb); }
-    host.appendChild(hd); host.appendChild(stepBody(stp.id, d));
+    host.appendChild(hd); host.appendChild(stp.ids ? stepMulti(stp, d) : stepBody(stp.id, d));
     const nav = el('div', 'pjnav'); const first = w.step === 0;
     const bk = el('button', 'btn', first ? '✕ Salir' : '← Atrás'); bk.onclick = () => { if (first) { if (confirm('¿Salir del creador? El borrador se queda guardado.')) { pj.wiz = null; renderProfile(); renderSide(); } return; } w.step--; saveDraft(); paintWiz(); updSide(); host.scrollTop = 0; }; nav.appendChild(bk);
     if (stp.id === 'fin' || stp.id === 'tdatos') { const sv = el('button', 'btn acc', w.editId ? '✓ Guardar cambios' : stp.id === 'tdatos' ? '✓ Guardar mi personaje' : '✓ Guardar y crear su imagen'); sv.onclick = () => savePersona(); nav.appendChild(sv); }
@@ -785,13 +807,13 @@
   }
   function inicio(h) {   // la pantalla «Crear un personaje nuevo», con sus tres caminos
     const dr = loadDraft();
-    const box = el('div', 'pjstart'); box.appendChild(el('h3', '', 'Crear un personaje nuevo')); box.appendChild(el('p', '', 'Si ya tienes tu personaje del curso «De 0 a 100 para crear tu Influencer IA», súbelo y empieza a crear. Si no, pronto podrás crearlo aquí desde cero.'));
+    const box = el('div', 'pjstart'); box.appendChild(el('h3', '', 'Crear un personaje nuevo')); box.appendChild(el('p', '', 'Créalo aquí en cuatro pasos (quién es, cómo es, su cara y su ficha) o, si ya tienes tu personaje del curso «De 0 a 100 para crear tu Influencer IA», impórtalo.'));
     const r = el('div', 'pjrow');
     const f = el('button', 'pjbigopt', '<span>⚡</span><b>Desde tus favoritas</b><small>Sueltas fotos de personas que te gusten y la IA rellena los rasgos. Solo te pregunta rol, nombre y edad.</small>'); f.onclick = () => { newWiz('fotos'); renderProfile(); renderSide(); };
-    const a = el('button', 'pjbigopt', '<span>🧬</span><b>Empezar desde cero</b><small>Eliges rol, nombre, rostro, pelo, piel, cuerpo, estilo y personalidad.</small>'); a.onclick = () => { newWiz('cero'); renderProfile(); renderSide(); };
+    const a = el('button', 'pjbigopt', '<span>🧬</span><b>Empezar desde cero</b><small>Le pones nombre, eliges cómo es (o pulsas «Sorpréndeme»), escoges su cara entre nueve y su ficha se crea sola.</small>'); a.onclick = () => { newWiz('cero'); renderProfile(); renderSide(); };
     const b = el('button', 'pjbigopt', '<span>📸</span><b>Ya tengo mi personaje</b><small>Subes su ficha 360, la IA rellena sus rasgos y en dos pasos está lista para crear imágenes.</small>'); b.onclick = () => { newWiz('tengo'); renderProfile(); renderSide(); };
-    if (window.devGate) { devGate(f, 'Crear personaje · Desde tus favoritas', () => { newWiz('fotos'); renderProfile(); renderSide(); }); devGate(a, 'Crear personaje · Empezar desde cero', () => { newWiz('cero'); renderProfile(); renderSide(); }); }
-    r.appendChild(b); r.appendChild(a); r.appendChild(f); box.appendChild(r);
+    if (window.devGate) devGate(f, 'Crear personaje · Desde tus favoritas', () => { newWiz('fotos'); renderProfile(); renderSide(); });
+    r.appendChild(a); r.appendChild(b); r.appendChild(f); box.appendChild(r);
     if (dr) { const c = el('button', 'btn w', `↺ Seguir con el borrador${dr.d.nombre ? ' de ' + dr.d.nombre : ''}`); c.onclick = () => { pj.wiz = dr; renderProfile(); renderSide(); }; box.appendChild(c); }
     h.appendChild(box);
   }
