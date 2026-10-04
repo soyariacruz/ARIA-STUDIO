@@ -569,7 +569,7 @@ function removeMain() { const nx = nextMain(); if (!nx) return; const old = CH()
   const b = state.comp.biblio; if (b && b.people) b.people.forEach(p => { if (p.char === old) p.char = null; }); setChar(nx.id, true); toast(`${nx.name} pasa a ser el personaje principal`); }
 function charPool() { const c = CH(); if (state.vchar === false) return; state.vpool = state.vpool.filter(r => r.id !== 'ficha360'); state.vpool.unshift({ id: 'ficha360', kind: 'image', name: c.name, src: c.ficha, thumb: c.avatar || c.ficha }); if (typeof vbadge === 'function') vbadge(); }
 function setChar(id, quiet) { // cambia el personaje principal: sus fichas, su cuerpo y sus complementos pasan a ser las referencias
-  extraChars(); state.char = id || 'aria'; persist('am_charsel', state.char); if (state.extras.includes(state.char)) { state.extras = state.extras.filter(x => x !== state.char); saveExtras(); } const c = CH(); if (window.PJ && !PJ.wiz && PJ.sel !== 'nuevo') PJ.sel = c.id; navSync();   // el Perfil y el círculo del menú van a la par del principal
+  extraChars(); state.char = id || 'aria'; persist('am_charsel', state.char); if (state.extras.includes(state.char)) { state.extras = state.extras.filter(x => x !== state.char); saveExtras(); } const c = CH(); if (window.PJ && !PJ.wiz && PJ.sel !== 'nuevo') { const t0 = PJ.tabBy && PJ.tabBy[PJ.sel]; PJ.sel = c.id; if (t0 && PJ.tabBy) PJ.tabBy[c.id] = t0; } navSync();   // el Perfil y el círculo del menú van a la par del principal
   state.cfocus = c.id; state.accOn = {}; state.accFor = null; charPool(); badge(); chipSync();
   if (state.ready) { renderSide(); const it = cur(); if (it && (state.tab === 'crear' || state.tab === 'video')) paint(it, true); } if (!quiet) toast(`Ahora creas con ${c.name}`); }
 window.setChar = setChar;
@@ -1437,7 +1437,7 @@ async function dropAny(e, dz) { const dt = e.dataTransfer; const f = dt.files &&
     const c = pth && TABS.creaciones.items.find(x => !x.pending && x.kind !== 'video' && x.src && x.src.split('?')[0] === pth);
     if (c) { state.comp.biblio = { id: 'drop-' + Date.now(), name: 'Tu creación', image: pth, thumb: pth, prompt: '', drop: true, tags: 'Tu creación' }; modeloPorModo(state.comp.biblio); badge(); state.flash = 'biblio'; renderSide(); paint(cur(), true); toast('Tu creación es ahora la imagen a recrear'); return; } }
   if (!/^https?:\/\//i.test(url) && !url.startsWith('data:')) return; toast('Descargando la imagen…');
-  try { const r = await fetch('/api/fetch?url=' + encodeURIComponent(url)); const j = await r.json(); if (j.error) throw new Error(j.error); state.comp.biblio = { id: 'drop-' + Date.now(), name: (url.split('/').pop().split('?')[0] || 'imagen de internet').replace(/\.[a-z0-9]+$/i, '').slice(0, 40) || 'imagen de internet', image: j.data, thumb: j.data, prompt: '', drop: true, tags: 'Tu foto' }; modeloPorModo(state.comp.biblio); badge(); state.flash = 'biblio'; renderSide(); paint(cur(), true); toast('La imagen de internet es ahora la imagen a recrear'); }
+  try { const j = { data: await traeImagen(url) }; if (!j.data) throw new Error('no se pudo descargar'); state.comp.biblio = { id: 'drop-' + Date.now(), name: (url.split('/').pop().split('?')[0] || 'imagen de internet').replace(/\.[a-z0-9]+$/i, '').slice(0, 40) || 'imagen de internet', image: j.data, thumb: j.data, prompt: '', drop: true, tags: 'Tu foto' }; modeloPorModo(state.comp.biblio); badge(); state.flash = 'biblio'; renderSide(); paint(cur(), true); toast('La imagen de internet es ahora la imagen a recrear'); }
   catch (err) { toast('No se pudo descargar esa imagen: guárdala y arrástrala desde el ordenador'); }
 }
 function useDrop(f) { if (!f || !f.type.startsWith('image/')) return; const r = new FileReader(); r.onload = () => { state.comp.biblio = { id: 'drop-' + Date.now(), name: f.name.replace(/\.[a-z0-9]+$/i, ''), image: r.result, thumb: r.result, prompt: '', drop: true, tags: 'Tu foto' }; modeloPorModo(state.comp.biblio); badge(); state.flash = 'biblio'; renderSide(); paint(cur(), true); toast('Tu foto es ahora la imagen a recrear'); }; r.readAsDataURL(f); }
@@ -1502,12 +1502,15 @@ function dropRecrear() { // arrastra cualquier imagen del escritorio: se usa com
   return d;
 }
 function trayBib() { const t = trayGroup(['biblio']); t.classList.add('one'); const d = t.firstChild; const it = state.comp.biblio; if (it) { d.innerHTML = `<span class="x" title="Quitar">×</span><img src="${compThumb('biblio', it)}" alt=""><div><small>${it.drop ? 'Tu foto' : 'Fototeca'}</small><b>${it.name}</b><div class="status">${it.drop ? 'Imagen arrastrada: se recrea la escena tal cual, sin prompt.' : (it.prompt || '').slice(0, 90) + '…'}</div></div>`; } else d.innerHTML = `<img src="${((C.biblio || [])[0] || {}).thumb || ''}" alt=""><div><small>Fototeca</small><b>ninguna</b><div class="status">Elige una imagen de la Fototeca para recrearla con Aria y lo que hayas añadido arriba.</div></div>`; return t; }
+function urlsGrandes(url) { // Pinterest sirve cada imagen en varios tamaños con la misma ruta: del más grande al que venía
+  const m = String(url).match(/^(https?:\/\/i\.pinimg\.com\/)(\d+x\d*(?:_RS)?|originals)(\/.+)$/i); if (!m) return [url]; return [...new Set([m[1] + 'originals' + m[3], m[1] + '736x' + m[3], url])]; }
+async function traeImagen(url) { for (const u of urlsGrandes(url)) { try { const j = await fetch('/api/fetch?url=' + encodeURIComponent(u)).then(r => r.json()); if (j && j.data) return j.data; } catch (x) {} } return null; }
 async function dropData(e) { // la imagen soltada (del ordenador o de otra web) como dataURL
   const dt = e.dataTransfer; const f = dt.files && dt.files[0];
   if (f) { if (!f.type.startsWith('image/')) return null; return await new Promise(res => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = () => res(null); r.readAsDataURL(f); }); }
   let url = dt.getData('text/uri-list') || dt.getData('text/plain') || ''; const m = (dt.getData('text/html') || '').match(/<img[^>]+src=["']([^"']+)["']/i); if (m) url = m[1];
   if (url.startsWith('data:image')) return url; if (!/^https?:\/\//i.test(url)) return null; toast('Descargando la imagen…');
-  try { const j = await fetch('/api/fetch?url=' + encodeURIComponent(url)).then(r => r.json()); return j.data || null; } catch (x) { return null; } }
+  return await traeImagen(url); }
 window.dropData = dropData;
 const DROPMSG = { vestidor: 'Suelta: crea la prenda', hair: 'Suelta: crea el peinado', expr: 'Suelta: crea la expresión' };
 function trayDrop(d, k) { // soltar una foto encima del recuadro crea la prenda / el peinado / la expresión en su biblioteca y la deja elegida
