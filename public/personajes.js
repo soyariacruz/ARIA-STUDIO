@@ -195,7 +195,7 @@
       const r = resumenDe(id, d); dt.appendChild(el('summary', '', `<b>${T(id)}</b>${opcional ? '<i>opcional</i>' : ''}<span class="${r ? '' : 'no'}">${r ? esc(r) : 'sin elegir'}</span>`)); dt.appendChild(stepBody(id, d)); box.appendChild(dt); };
     stp.ids.forEach(id => sec(id, !!stp.plegado)); (stp.opc || []).forEach(id => sec(id, true, true)); return box; }
   const DRAFT = 'am_pj_draft';
-  function newWiz(mode, data) { pj.wiz = { mode, step: 0, d: Object.assign({ edad: 25, altura: 168, genero: 'fem', rol: [], nicho: [], pers: [], voz: [], pielDet: [], inspo: [] }, data || {}) }; saveDraft(); }
+  function newWiz(mode, data) { pj.wiz = { mode, step: 0, d: Object.assign({ edad: 25, altura: 168, genero: 'fem', estilo: 'realista', rol: [], nicho: [], pers: [], voz: [], pielDet: [], inspo: [] }, data || {}) }; saveDraft(); }
   function saveDraft() { try { if (pj.wiz) localStorage.setItem(DRAFT, JSON.stringify(Object.assign({}, pj.wiz, { d: Object.assign({}, pj.wiz.d, { foto: null, ficha: null, cuerpoUp: null, _err: null }) }))); else localStorage.removeItem(DRAFT); } catch (e) { try { localStorage.setItem(DRAFT, JSON.stringify(Object.assign({}, pj.wiz, { d: Object.assign({}, pj.wiz.d, { foto: null, ficha: null, cuerpoUp: null, inspo: [], _err: null }) }))); } catch (e2) {} } }
   function loadDraft() { try { const w = JSON.parse(localStorage.getItem(DRAFT) || 'null'); if (w && w.d) return w; } catch (e) {} return null; }
   const changed = d => { d.prompt = d.promptManual ? d.prompt : null; saveDraft(); updSide(); };
@@ -361,7 +361,7 @@
     if (id === 'curvas') { if (d.genero !== 'masc') b.appendChild(grp('Pecho', cards('pecho', d, 'pecho', { cls: 'two body' }))); b.appendChild(grp('Cadera y glúteos', cards('cadera', d, 'cadera', { cls: 'two body' }))); }
     if (id === 'estilo') {
       const box = el('div', 'pjcards h169'); const on = k => d.estilo === k;
-      const real = el('button', 'pjcard' + (on('realista') ? ' on' : ''), `<span class="pjvis"><img src="assets/perfil/podcast.jpg" alt=""></span><b>Realista</b>`); real.onclick = () => { d.estilo = on('realista') ? null : 'realista'; changed(d); paintWiz(); }; box.appendChild(real);
+      const real = el('button', 'pjcard' + (on('realista') ? ' on' : ''), `<span class="pjvis"><img src="assets/biblio/p273-2.jpg" alt="" style="object-position:50% 30%"></span><b>Realista</b>`); real.onclick = () => { d.estilo = on('realista') ? null : 'realista'; changed(d); paintWiz(); }; box.appendChild(real);
       const ct = el('button', 'pjcard' + (on('cartoon') ? ' on' : ''), `<span class="pjvis"><img src="${(d.cartoon && d.cartoon.img) || 'assets/cartoon/caricature-portrait-style_t.jpg'}" alt=""></span><b>${d.cartoon ? 'Cartoon · ' + esc(d.cartoon.name) : 'Cartoon'}</b><em class="pjmore">${d.cartoon ? 'Cambiar el estilo' : 'Ver más estilos'}</em>`); ct.onclick = () => elegirCartoon(d); box.appendChild(ct);
       const pr = d.estiloRef ? el('div', 'pjcard' + (on('propio') ? ' on' : ''), `<span class="pjvis"><img src="${d.estiloRef}" alt=""></span><b>Su propio estilo</b>`) : el('div', 'pjcard pjplus', '');
       if (d.estiloRef) { pr.onclick = () => { d.estilo = on('propio') ? null : 'propio'; changed(d); paintWiz(); }; const x = el('button', 'pjx', '×'); x.onclick = e => { e.stopPropagation(); d.estiloRef = null; if (on('propio')) d.estilo = null; changed(d); paintWiz(); }; pr.appendChild(x); }
@@ -384,7 +384,7 @@
       one('piel', d.piel, 'Piel'); arr(d.pielDet).forEach(x => one('pielDet', x)); if (d.detImg) img(d.detImg, 'Su detalle', 'detImg');
       one('complexion', d.complexion); if (d.genero !== 'masc') one('pecho', d.pecho, 'Pecho'); one('cadera', d.cadera, 'Cadera');
       if (d.estilo === 'cartoon' && d.cartoon) img(d.cartoon.img, 'Cartoon: ' + d.cartoon.name, 'cartoon'); else if (d.estilo === 'propio' && d.estiloRef) img(d.estiloRef, 'Su propio estilo', 'estiloRef'); else one('estilo', d.estilo);
-      arr(d.rol).forEach(x => one('rol', x)); arr(d.nicho).forEach(x => one('nicho', x)); arr(d.pers).forEach(x => one('pers', x)); arr(d.voz).forEach(x => one('voz', x, 'Habla'));
+      arr(d.rol).forEach(x => one('rol', x, 'Rol')); arr(d.nicho).forEach(x => one('nicho', x, 'Nicho')); arr(d.pers).forEach(x => one('pers', x)); arr(d.voz).forEach(x => one('voz', x, 'Habla'));
       if (sm.children.length) b.appendChild(grp(d.nombre ? `Así es ${d.nombre}` : 'Lo que has elegido', sm, [d.edad && d.edad + ' años', d.altura && (d.altura / 100).toFixed(2).replace('.', ',') + ' m', d.usuario].filter(Boolean).join(' · ')));
       const ta = el('textarea', 'pjin pjprompt'); ta.value = promptOf(d); const fit = () => { ta.style.setProperty('height', 'auto', 'important'); ta.style.setProperty('height', (ta.scrollHeight + 4) + 'px', 'important'); };
       ta.oninput = () => { const auto = ta.value.trim() === basePrompt(d).trim(); d.prompt = auto ? null : ta.value; d.promptManual = !auto; saveDraft(); fit(); rs.style.display = d.promptManual ? '' : 'none'; }; setTimeout(fit, 0);
@@ -397,12 +397,11 @@
     const all = (TABS.hair.items || []).filter(i => !i.group); const tags = [...new Set(all.flatMap(i => i.tags || []))];
     const tag = pj.hairTag || null; const L = tag ? all.filter(i => (i.tags || []).includes(tag)) : all; const per = 8; const pages = Math.max(1, Math.ceil(L.length / per)); const pg = Math.min(pj.hairPage || 0, pages - 1);
     const w = el('div', 'pjhairg'); const top = el('div', 'pjhairtop'); const ch = el('div', 'pjcards pill');
-    [[null, 'Todos']].concat(tags.map(t => [t, t])).forEach(([k, n]) => { const b = el('button', 'pjcard' + (tag === k ? ' on' : ''), `<b>${esc(n)}</b>`); b.onclick = () => { pj.hairTag = k; pj.hairPage = 0; paintWiz(); }; ch.appendChild(b); }); top.appendChild(ch);
+    [[null, 'Todos']].concat(tags.map(t => [t, t])).forEach(([k, n]) => { const b = el('button', 'pjcard' + (tag === k ? ' on' : ''), `<b>${esc(n)}</b>`); b.onclick = () => { pj.hairTag = k; pj.hairPage = 0; pj.hairScroll = 0; paintWiz(); }; ch.appendChild(b); }); top.appendChild(ch);
     if (d.peinado) { const c = el('div', 'pjhairsel', `<img src="${d.peinado.img || ''}" alt=""><b>✓ ${esc(d.peinado.name)}</b>`); const x = el('button', 'pjx', '×'); x.title = 'Quitar'; x.onclick = () => { d.peinado = null; changed(d); paintWiz(); }; c.appendChild(x); top.appendChild(c); }
     w.appendChild(top);
-    const g = el('div', 'pjcards h169 pjhairgrid'); L.slice(pg * per, pg * per + per).forEach(it => { const on = d.peinado && d.peinado.id === it.id; const c = el('button', 'pjcard' + (on ? ' on' : ''), `<span class="pjvis"><img src="${it.files.main}" alt="" loading="lazy"></span><b>${esc(it.name)}</b>`); c.onclick = () => { d.peinado = on ? null : { id: it.id, name: it.name, desc: it.desc || '', img: it.files.main }; changed(d); paintWiz(); }; c.ondblclick = () => lightbox(it.files.main, it.name); g.appendChild(c); }); w.appendChild(g);
-    const nav = el('div', 'pjhairnav'); const pv = el('button', 'btn', '‹'); pv.disabled = pg === 0; pv.onclick = () => { pj.hairPage = pg - 1; paintWiz(); }; const nx = el('button', 'btn', '›'); nx.disabled = pg >= pages - 1; nx.onclick = () => { pj.hairPage = pg + 1; paintWiz(); };
-    nav.appendChild(pv); nav.appendChild(el('small', '', `${pg + 1} de ${pages} · ${L.length} peinados · doble clic para verlo en grande`)); nav.appendChild(nx); w.appendChild(nav); return w;
+    const g = el('div', 'pjcards h169 pjhairgrid scroll'); g.onscroll = () => { pj.hairScroll = g.scrollTop; }; setTimeout(() => { g.scrollTop = pj.hairScroll || 0; }, 0); L.forEach(it => { const on = d.peinado && d.peinado.id === it.id; const c = el('button', 'pjcard' + (on ? ' on' : ''), `<span class="pjvis"><img src="${it.files.main}" alt="" loading="lazy"></span><b>${esc(it.name)}</b>`); c.onclick = () => { d.peinado = on ? null : { id: it.id, name: it.name, desc: it.desc || '', img: it.files.main }; changed(d); paintWiz(); }; c.ondblclick = () => lightbox(it.files.main, it.name); g.appendChild(c); }); w.appendChild(g);
+    const nav = el('div', 'pjhairnav'); nav.appendChild(el('small', '', `${L.length} peinados · desliza para verlos todos · doble clic para ver uno en grande`)); w.appendChild(nav); return w;
   }
   function elegirPeinado(d) { pickFrom('hair', 'tu personaje nuevo', it => { d.peinado = { id: it.id, name: it.name, desc: it.desc || '', img: imgOf(it) }; toast(`Peinado «${it.name}» añadido`); }); }
   function elegirCartoon(d) { pickFrom('cartoon', 'el estilo de tu personaje', it => { d.estilo = 'cartoon'; d.cartoon = { id: it.id, name: it.name, desc: it.desc || '', img: (it.files && (it.files.thumb || it.files.main)) || imgOf(it) }; toast(`Estilo «${it.name}» elegido`); }); }
@@ -410,7 +409,12 @@
   // ---------------------------------------------------------------- guardar
   async function savePersona() {
     const w = pj.wiz, d = w.d; const S = stepsOf(w);
-    if (!(d.nombre || '').trim()) { d._err = 'nombre'; toast('Ponle un nombre antes de guardar'); w.step = Math.max(0, S.findIndex(s => s.id === 'nombre' || s.id === 'tdatos')); paintWiz(); updSide(); setTimeout(() => { const i = document.querySelector('.pjin.err'); if (i) { i.focus(); i.scrollIntoView({ block: 'center' }); } }, 60); return; }
+    if (!(d.nombre || '').trim()) { // lo único obligatorio: se pide en una ventana y se sigue guardando, sin volver atrás por los pasos
+      let m0 = document.getElementById('pjfalta'); if (m0) m0.remove(); m0 = el('div', 'fxm'); m0.id = 'pjfalta'; document.body.appendChild(m0); m0.onclick = e => { if (e.target === m0) m0.remove(); };
+      const bx = el('div', 'devbox'); m0.appendChild(bx); bx.appendChild(el('div', 'devemo', '✍️')); bx.appendChild(el('h3', '', 'Solo falta su nombre')); bx.appendChild(el('p', '', 'Es lo único obligatorio. Lo demás lo puedes cambiar cuando quieras.'));
+      const inp = el('input', 'pjin'); inp.placeholder = 'Ej.: Aria Cruz'; inp.style.cssText = 'align-self:stretch;text-align:center;font-size:15px'; bx.appendChild(inp);
+      const ft = el('div', 'pjacts'); const ok = el('button', 'btn acc big', '✓ Guardar'); const go = () => { const v = inp.value.trim(); if (!v) { inp.focus(); return; } d.nombre = v; d._err = null; changed(d); m0.remove(); savePersona(); }; ok.onclick = go; inp.onkeydown = e => { if (e.key === 'Enter') go(); };
+      const no = el('button', 'btn', 'Cancelar'); no.onclick = () => m0.remove(); ft.appendChild(ok); ft.appendChild(no); bx.appendChild(ft); setTimeout(() => inp.focus(), 50); return; }
     const tengo = w.mode === 'tengo' && !w.editId;
     if (tengo && !d.ficha) { toast('Falta su ficha 360'); w.step = 0; paintWiz(); updSide(); return; }
     if (tengo && !d.okIA) { d._err = 'okIA'; toast('Marca la casilla de abajo para poder guardar'); paintWiz(); return; }
@@ -468,7 +472,7 @@
     const job = { rid: r.request_id, it: { id: 'pj:' + p.id + ':' + kind, name: body_.meta.name }, tab: 'perfil', m, kind: 'image', persona: { id: p.id, kind, extra: spec.extra }, t0: performance.now(), status: 'queued', usd: r.usd != null ? Number(r.usd) : usd };
     JOBS.set(job.rid, job); pj.jobs[p.id + ':' + kind] = job; ensurePoller(); renderProfile(); if (kind === 'explora' && pj.x3paint) pj.x3paint(); startTick();
   }
-  function startTick() { clearInterval(pj.tick); pj.tick = setInterval(() => { const ns = document.querySelectorAll('#profcard [data-t0], #pjx3m [data-t0]'); if (!ns.length && !Object.keys(pj.jobs).length) { clearInterval(pj.tick); return; } ns.forEach(n => { n.textContent = Math.round((performance.now() - +n.dataset.t0) / 1000) + ' s'; }); }, 1000); }
+  function startTick() { clearInterval(pj.tick); pj.tick = setInterval(() => { const ns = document.querySelectorAll('#profcard [data-t0], #pjx3m [data-t0], #pjmod [data-t0]'); if (!ns.length && !Object.keys(pj.jobs).length) { clearInterval(pj.tick); return; } ns.forEach(n => { n.textContent = Math.round((performance.now() - +n.dataset.t0) / 1000) + ' s'; }); }, 1000); }
   function explorar(p) {
     const inspo = arr(p.inspo).slice(0, 4).map(f => ({ path: clean(p[f] || f) }));
     const ex = refsExtra(p, (inspo.length || 1) + 1); const images = (inspo.length ? inspo : [{ path: 'assets/personajes/_lienzo.jpg' }]).concat(ex.imgs);
@@ -614,18 +618,36 @@
     else if (st === 'vistas') v.appendChild(panelVistas(p));
     else if (st === 'cuerpo') v.appendChild(panelCuerpo(p));
     else v.appendChild(panelLista(p));
-    return v;
+    if (stageOf(p) !== 'lista') return enModal(p, v, st);
+    cierraModal(); return v;
   }
+  pj.modalOff = pj.modalOff || {};
+  function cierraModal() { const m = document.getElementById('pjmod'); if (m) { clearInterval(m._iv); m.remove(); } }
+  function enModal(p, v, st) { // los pasos 3 y 4 de crear un personaje (su cara y su ficha) van en una ventana. «Seguir más tarde» la cierra; al volver a ese personaje se reabre donde iba
+    const paso = st === 'explorar' ? 'paso 3 de 4 · su cara' : 'paso 4 de 4 · su ficha'; const short = esc((p.nombre || '').split(' ')[0] || 'tu personaje');
+    const ph = el('div', 'pjmedias', `<span>🧩</span><h3>${esc(p.nombre)} está a medias</h3><p>Le falta ${st === 'explorar' ? 'elegir su cara' : 'terminar su ficha'} para poder crear imágenes con ${p.genero === 'masc' ? 'él' : 'ella'}.</p>`);
+    const cb = el('button', 'btn acc big', '✨ Continuar'); cb.onclick = () => { delete pj.modalOff[p.id]; renderProfile(); }; ph.appendChild(cb);
+    if (pj.modalOff[p.id]) { cierraModal(); return ph; }
+    let m0 = document.getElementById('pjmod'); let keep = 0; if (m0 && m0.dataset.pid === p.id) keep = (m0.querySelector('.pjmodbox') || {}).scrollTop || 0; else { cierraModal(); m0 = null; }
+    if (!m0) { m0 = el('div', 'fxm'); m0.id = 'pjmod'; m0.dataset.pid = p.id; document.body.appendChild(m0); m0._iv = setInterval(() => { if (state.tab !== 'perfil' || pj.sel !== p.id || pj.wiz) cierraModal(); }, 400); }
+    m0.innerHTML = ''; const box = el('div', 'pjmodbox'); const hd = el('div', 'pjmodhd', `<div><b>Crear a ${short}</b><small>${paso}</small></div>`);
+    const x = el('button', 'btn', 'Seguir más tarde ×'); x.title = 'Se guarda todo: al volver a este personaje sigues por donde ibas'; x.onclick = () => { pj.modalOff[p.id] = true; cierraModal(); renderProfile(); }; hd.appendChild(x);
+    box.appendChild(hd); box.appendChild(v); m0.appendChild(box); box.scrollTop = keep; return ph;
+  }
+  function elige9(pid, ri, n) { // se marca al instante en lo que hay en pantalla y se guarda con calma: varios clics seguidos no se pisan entre sí
+    const q = pj.list.find(x => x.id === pid); if (!q || !q.explora || !q.explora[ri]) return; q.explora[ri].sel = n ? [n] : []; pj.sel9 = { pid, ri, n }; clearTimeout(pj.sel9t);
+    pj.sel9t = setTimeout(async () => { const mio = pj.sel9; await persist_(pj.list.find(x => x.id === pid)); const ahora = pj.sel9; const z = pj.list.find(x => x.id === pid);
+      if (z && z.explora && z.explora[ahora.ri] && ahora.pid === pid) { const debe = ahora.n ? [ahora.n] : []; if (JSON.stringify(z.explora[ahora.ri].sel || []) !== JSON.stringify(debe)) { z.explora[ahora.ri].sel = debe; if (ahora !== mio) persist_(z); if (state.tab === 'perfil') renderProfile(); } } }, 500); }
   function x3cells(p, ri, onPick) { // las 9 casillas sobre la rejilla: se elige UNA
     const R = p.explora[ri]; const cells = el('div', 'pjx3cells'); const sel = (R.sel || [])[0];
-    for (let n = 1; n <= 9; n++) { const c = el('button', 'pjx3c' + (sel === n ? ' on' : ''), `<i>${n}</i>${sel === n ? '<em>✓</em>' : ''}`); c.title = sel === n ? 'Elegida' : 'Elegir la nº ' + n; c.onclick = e => { e.stopPropagation(); R.sel = sel === n ? [] : [n]; persist_(p); onPick(); }; cells.appendChild(c); }
+    for (let n = 1; n <= 9; n++) { const c = el('button', 'pjx3c' + (sel === n ? ' on' : ''), `<i>${n}</i>${sel === n ? '<em>✓</em>' : ''}`); c.title = sel === n ? 'Elegida' : 'Elegir la nº ' + n; c.onclick = e => { e.stopPropagation(); elige9(p.id, ri, sel === n ? null : n); onPick(); }; cells.appendChild(c); }
     return cells;
   }
   function x3actions(p, ri, repaint) { // botones: definitiva (rosa lleno), regenerar (marco rosa), algo que cambiar, cambiar sus datos, modelo
     const R = (p.explora || [])[ri]; const sel = (R && R.sel || [])[0]; const job = pj.jobs[p.id + ':explora']; const w = el('div', 'pjx3acts');
-    const def = el('button', 'btn acc big', sel ? `★ La nº ${sel} es la definitiva` : '★ Es la definitiva'); def.disabled = !sel || !R; def.title = sel ? 'Se recorta esa cara y con ella se crean sus fichas' : 'Pulsa primero la cara que te guste'; def.onclick = () => elegirCara(p, ri, sel); w.appendChild(def);
+    const def = el('button', 'btn acc big', sel ? `★ Esta es su cara (la nº ${sel})` : '★ Primero pulsa una cara'); def.disabled = !sel || !R; def.title = sel ? 'Se recorta esa cara y con ella se crean sus fichas' : 'Pulsa primero la cara que te guste'; def.onclick = () => elegirCara(p, ri, sel); w.appendChild(def);
     const m = modelFor((arr(p.inspo).length || 1) + refsExtra(p, 2).imgs.length); const q = GRIDQ;
-    const rg = el('button', 'btn pinkline pr', job ? `⏳ Generando… <i data-t0="${job.t0}">0 s</i>` : `↻ Regenerar la cuadrícula<i>${fmtUsd(m.usd[q])}</i>`); rg.disabled = !!job || !!pj.sending; rg.onclick = () => explorar(p); w.appendChild(rg);
+    const rg = el('button', 'btn pinkline pr', job ? `⏳ Generando… <i data-t0="${job.t0}">0 s</i>` : `↻ Otras 9 caras<i>${fmtUsd(m.usd[q])}</i>`); rg.disabled = !!job || !!pj.sending; rg.onclick = () => explorar(p); w.appendChild(rg);
     w.appendChild(modelSel('Modelo para la cuadrícula', GRIDQ));
     const ct = el('textarea', 'pjin'); ct.rows = 2; ct.placeholder = 'Algo que cambiar en las próximas · ej.: pelo más corto, más pecas, cara más redonda'; ct.value = p.cambios || ''; ct.onchange = async () => { p.cambios = ct.value.trim(); await persist_(p); }; const cw = el('div', 'stack'); cw.appendChild(el('small', 'pjk', 'Algo que cambiar')); cw.appendChild(ct); w.appendChild(cw);
     const ed = el('button', 'lnk', '✎ Cambiar sus datos (ojos, pelo, cuerpo…) y volver aquí'); ed.onclick = () => { const m0 = $('#pjx3m'); if (m0) m0.remove(); editar(p); }; w.appendChild(ed);
@@ -646,7 +668,7 @@
   }
   function panelExplorar(p) {
     const box = el('div', 'pjgrp pjexp'); const rounds = p.explora || []; const job = pj.jobs[p.id + ':explora'];
-    box.appendChild(el('h4', '', `Encuentra su cara<small>la IA dibuja 9 personas distintas con todo lo que elegiste. Elige la que más te guste o regenera la cuadrícula hasta encontrarla.</small>`));
+    box.appendChild(el('div', 'pjx3intro', rounds.length ? `<b>Elige su cara</b><p>Pulsa <b>la cara que más te guste</b> (solo una) y después «★ Esta es su cara». Si ninguna te convence, pulsa «Otras 9 caras».</p>` : `<b>Vamos a buscar su cara</b><p>Con lo que has elegido, la IA dibuja 9 personas distintas. Tú eliges la que más te guste.</p>`));
     const ri = pj.ver != null && rounds[pj.ver] ? pj.ver : rounds.length - 1; const R = rounds[ri];
     if (R || job) { const g = el('div', 'pjx3' + (job ? ' gen pjgenv' : '')); if (R) g.appendChild(Object.assign(document.createElement('img'), { src: R.file, alt: '' }));
       if (job) g.appendChild(el('div', 'pjx3gen', `<div class="bar"><i></i></div><b>Generando 9 caras</b><small data-t0="${job.t0}">0 s</small>`));
@@ -819,12 +841,12 @@
   }
   function updSide() { if (state.tab === 'perfil' && pj.wiz) renderSide(); }
 
-  const TABS_ARIA = [['ficha', '🪪', 'Fichas 360'], ['complementos', '👓', 'Complementos'], ['voz', '🎙', 'Voz', 1], ['lugares', '📍', 'Lugares']]; // Poses irá al menú de la izquierda
+  const TABS_ARIA = [['ficha', '🪪', 'Fichas 360'], ['complementos', '👓', 'Complementos'], ['lugares', '📍', 'Lugares', 0, 1], ['voz', '🎙', 'Voz', 1]];   // [id, icono, nombre, pronto (sin contenido), en desarrollo (se entra con aviso)] // Poses irá al menú de la izquierda
   const TABS_PJ = TABS_ARIA; // todos los personajes con la misma interfaz que Aria (el prompt base está en el panel de la izquierda)
   const SOON = { voz: 'Su voz para los vídeos: la voz clonada, su cadencia y sus muletillas, con muestras para escuchar y elegir.', lugares: 'Sus sitios de siempre (su habitación, su cocina, su calle…) guardados como referencias, para que sus escenas sean coherentes.' };
   pj.tabBy = pj.tabBy || {};
-  function tabsBar() { const p = pj.sel === 'aria' ? null : cur(); const creando = !!(p && stageOf(p) !== 'lista'); const list = pj.sel === 'aria' ? TABS_ARIA : TABS_PJ; let cur_ = pj.tabBy[pj.sel] || 'ficha'; if (creando) cur_ = 'ficha'; const bar = el('div', 'pjtabs');
-    list.forEach(([k, ic, n0, soon]) => { const off = creando && k !== 'ficha'; const n = n0; const b = el('button', 'pjtab' + (k === cur_ ? ' on' : '') + (soon ? ' soon' : '') + (off ? ' off' : ''), `<span>${ic}</span><b>${n}</b>${soon ? '<i>pronto</i>' : ''}`); if (off) { b.title = 'Se activa al terminar sus fichas'; b.onclick = () => toast('Primero termina sus fichas: luego se activan sus complementos y su prompt base'); bar.appendChild(b); return; } b.onclick = () => { pj.tabBy[pj.sel] = k; if (window.FB && k !== 'ficha') FB.open = false; if (window.F3 && k !== 'ficha' && !window.accPick) F3.open = false; if (window.accPick && k !== 'complementos') window.accPick = null; renderProfile(); }; bar.appendChild(b); }); return bar; }
+  function tabsBar() { const p = pj.sel === 'aria' ? null : cur(); const creando = !!(p && stageOf(p) !== 'lista'); if (!creando) cierraModal(); const list = pj.sel === 'aria' ? TABS_ARIA : TABS_PJ; let cur_ = pj.tabBy[pj.sel] || 'ficha'; if (creando) cur_ = 'ficha'; const bar = el('div', 'pjtabs');
+    list.forEach(([k, ic, n0, soon, dev]) => { const off = creando && k !== 'ficha'; const n = n0; const b = el('button', 'pjtab' + (k === cur_ ? ' on' : '') + (soon || dev ? ' soon' : '') + (off ? ' off' : ''), `<span>${ic}</span><b>${n}</b>${soon || dev ? '<i>pronto</i>' : ''}`); if (off) { b.title = 'Se activa al terminar sus fichas'; b.onclick = () => toast('Primero termina sus fichas: luego se activan sus complementos y su prompt base'); bar.appendChild(b); return; } b.onclick = () => { if (dev && !(pj.devOk || {})[k] && k !== cur_ && window.devIntro) { devIntro('Perfil · ' + n0, () => { pj.devOk = Object.assign({}, pj.devOk, { [k]: true }); b.click(); }); return; } pj.tabBy[pj.sel] = k; if (window.FB && k !== 'ficha') FB.open = false; if (window.F3 && k !== 'ficha' && !window.accPick) F3.open = false; if (window.accPick && k !== 'complementos') window.accPick = null; renderProfile(); }; bar.appendChild(b); }); return bar; }
   function tabBody(bd) { const p = pj.sel === 'aria' ? null : cur(); const tab = p && stageOf(p) !== 'lista' ? 'ficha' : pj.tabBy[pj.sel] || 'ficha'; const list = pj.sel === 'aria' ? TABS_ARIA : TABS_PJ; const def = list.find(t => t[0] === tab) || list[0];
     if (def[3]) { const s0 = el('div', 'pjsoon', `<span>${def[1]}</span><h3>${def[2]}</h3><p>${SOON[def[0]] || ''}</p><small>Próximamente</small>`); bd.appendChild(s0); return; }
     if (tab === 'ficha' && p && window.F3 && F3.open && F3.owner === p.id && window.f3Render && f3Render(bd)) return;   // «Nueva ficha» de este personaje
