@@ -490,17 +490,19 @@
     const o = p.genero === 'masc' ? 'his' : p.genero === 'fem' || !p.genero ? 'her' : 'their'; const body = bodyOf(p);
     const keep = `Keep the exact visual style of @Image1 (a photo stays a photo, a cartoon stays a cartoon). Plain neutral light-gray studio background, soft even studio light, head and upper body in a vertical 2:3 frame, simple fitted black tank top, no jewelry or accessories unless described, no text, no logos.`;
     const traits = ` Respect every trait of this description: ${descOf(p)}${body ? ` IMPORTANT: ${o} body is clearly ${body}; make it obvious as far as the frame shows it.` : ''}`;
-    if (kind === 'frente') return p.foto
-      ? `Front view of the EXACT same person as @Image1 (identical face, eyes, nose, lips, eyebrows, hair and skin): facing the camera, looking into the lens with a big joyful toothy smile (mouth slightly open, upper and lower teeth visible, anatomically correct teeth).${traits} ${keep}`
+    const imp = !p.foto && refImp(p);   // personaje importado: @Image1 es su ficha (varias vistas de la misma persona), no una foto suelta
+    if (kind === 'frente') return (p.foto || imp)
+      ? `${imp ? '@Image1 is a character sheet that shows ONE person from several angles; use it only to know exactly who that person is. ' : ''}Front view of the EXACT same person as @Image1 (identical face, eyes, nose, lips, eyebrows, hair and skin): facing the camera, looking into the lens with a big joyful toothy smile (mouth slightly open, upper and lower teeth visible, anatomically correct teeth).${traits} ${keep}`
       : `Use @Image1 only as a plain background canvas and ignore it otherwise. ${descOf(p)} Front view: facing the camera, looking into the lens with a big joyful toothy smile (upper and lower teeth visible, anatomically correct), simple black tank top, plain neutral light-gray studio background, soft even studio light, head and upper body in a vertical 2:3 frame, no text, no logos.`;
-    const same = `The EXACT same person as @Image1 (identical face, eyes, hair, skin and body${p.foto ? '; @Image2 is a close-up of the same face' : ''}),`;
+    const same = `The EXACT same person as @Image1 (identical face, eyes, hair, skin and body${p.foto ? '; @Image2 is a close-up of the same face' : imp ? '; @Image2 is a character sheet of the same person from several angles' : ''}),`;
     if (kind === 'perfil') return `${same} now in a strict side profile view: body and head turned 90 degrees so we see ${o} left profile, looking straight ahead (not at the camera), calm neutral expression, the full length and shape of ${o} hair visible from the side.${traits} ${keep}`;
     if (kind === 'tres') return `${same} now in a three-quarter view: body turned about 45 degrees, face turned toward the camera with a big joyful toothy smile (teeth visible).${traits} ${keep}`;
     return `${same} now seen from behind at a back three-quarter angle: we see the back of ${o} head and hair, ${o} shoulders and upper back, the face almost hidden.${traits} ${keep}`;
   }
   const vfile = (p, k) => p['vista_' + k];
   const vok = (p, k) => !!(p.vistasOk && p.vistasOk[k]);
-  function specVista(p, kind) { const front = clean(vfile(p, 'frente')); const foto = clean(p.foto); const nm = (VISTAS.find(v => v[0] === kind) || [kind, kind])[1];
+  const refImp = p => p.modo === 'tengo' ? clean(p.importada || p.ficha360) : '';   // la ficha que subió quien ya tenía su personaje
+  function specVista(p, kind) { const front = clean(vfile(p, 'frente')); const foto = clean(p.foto) || refImp(p); const nm = (VISTAS.find(v => v[0] === kind) || [kind, kind])[1];
     const images = kind === 'frente' ? [{ path: foto || 'assets/personajes/_lienzo.jpg' }] : [{ path: front }].concat(foto ? [{ path: foto }] : []);
     return { ask: `¿Generar la vista «${nm}» de ${p.nombre}`, name: nm, prompt: genPrompt(p, kind), images, aspect: '2:3' }; }
   function generate(p, kind) { if (kind !== 'frente' && !vok(p, 'frente')) { toast('Primero genera y aprueba el frente'); return; } genPj(p, kind, specVista(p, kind)); }
@@ -639,7 +641,7 @@
   }
   function panelVistas(p) { // su cara arriba y las 4 vistas debajo, sin scroll
     const box = el('div', 'pjv2'); const m = modelFor(2); const cost = fmtUsd(m.usd[state.quality]); const fOk = vok(p, 'frente'); const fJob = pj.jobs[p.id + ':frente'];
-    const top = el('div', 'pjv2top'); const face = el('div', 'pjv2face', `<img src="${p.foto}" alt=""><small>Su cara</small>`); face.onclick = () => lightbox(p.foto, 'Su cara · ' + p.nombre); top.appendChild(face);
+    const top = el('div', 'pjv2top'); const cara0 = p.foto || p.importada || p.ficha360; const face = el('div', 'pjv2face', `<img src="${cara0}" alt=""><small>${p.foto ? 'Su cara' : 'Tu ficha importada'}</small>`); face.onclick = () => lightbox(cara0, (p.foto ? 'Su cara · ' : 'Ficha importada · ') + p.nombre); top.appendChild(face);
     const info = el('div', 'pjv2info'); const faltan = ['perfil', 'tres', 'espalda'].filter(k => !vfile(p, k) && !pj.jobs[p.id + ':' + k]);
     info.appendChild(el('p', '', !vfile(p, 'frente') && !fJob ? '<b>Primero, su vista de frente</b> a partir de su cara. Cuando te guste, apruébala.' : !fOk ? '<b>¿Te gusta su frente?</b> Apruébalo o genera otro.' : faltan.length ? '<b>Frente aprobado.</b> Ahora genera las otras tres a la vez.' : '<b>Aprueba las que te gusten</b> o genera otra de la que no. Al aprobar las cuatro se unen en su ficha 360.'));
     info.appendChild(modelSel('Modelo para las vistas')); const ac = el('div', 'pjacts');
@@ -670,14 +672,37 @@
       const gb = el('button', 'btn pr' + (p.cuerpoCand ? ' pinkline' : ' acc big'), `${p.cuerpoCand ? '↻ Generar otro' : 'Generar su ficha de cuerpo'}<i>${fmtUsd(m.usd[state.quality])}</i>`); gb.disabled = !!pj.sending; gb.onclick = () => cuerpoGen(p); a.appendChild(gb); }
     box.appendChild(a); return box;
   }
-  function panelLista(p) { // igual que la pestaña «Fichas 360» de Aria
+  async function montarCombo(p) { const r = await fetch('/api/personaje_combo', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: p.id }) }).then(x => x.json()).catch(e => ({ error: String(e) }));
+    if (r.ok) { const i = pj.list.findIndex(x => x.id === p.id); pj.list[i] = r.p; syncChars(); toast(`Ficha principal de ${p.nombre} lista`); } else toast('No se pudo montar la ficha principal: ' + r.error); renderProfile(); renderSide(); }
+  async function empezarStd(p) { // de la ficha importada a la ficha «de la casa»: primero se guarda aparte la importada, luego sus 4 vistas (cara de cerca), después su cuerpo y, con las dos, la principal
+    if (!p.importada) { const r = await persist_(p, { copy: { importada: clean(p.ficha360) } }); if (!r || !r.ok) { toast('No se pudo guardar la ficha importada'); return; } p = pj.list.find(x => x.id === p.id) || p; }
+    pj.forceStage = Object.assign({}, pj.forceStage, { [p.id]: 'vistas' }); window.pjScrollTop = true; renderProfile(); renderSide(); }
+  function fichaReco(p) { // por qué conviene crear la ficha en el formato de ARIA STUDIO, y cómo se hace
+    let m0 = document.getElementById('recom'); if (m0) m0.remove(); m0 = el('div', 'fxm'); m0.id = 'recom'; document.body.appendChild(m0); m0.onclick = e => { if (e.target === m0) m0.remove(); };
+    const b = el('div', 'devbox bienvbox'); m0.appendChild(b); const m = modelFor(2); const total = m.usd[state.quality] * 5;
+    b.appendChild(el('div', 'devemo', '🪪')); b.appendChild(el('h3', '', 'Crea su ficha de la forma correcta'));
+    b.appendChild(el('p', '', `La ficha que has subido de <b>${esc(p.nombre)}</b> sirve para empezar, pero cada generador de imágenes lee las fichas a su manera: con algunas puede cambiarle la cara, mezclar las vistas o inventarse el cuerpo. Con la ficha en el formato de ARIA STUDIO sale igual en todos.`));
+    b.appendChild(el('div', 'clavesvid', '▶<small>Vídeo de Aria: cómo crear tu ficha · pronto</small>'));
+    const ps = el('div', 'bvpasos'); [['Cara de cerca', 'Cuatro ángulos (frente, perfil, tres cuartos y espalda), a partir de tu ficha. Se generan uno a uno y apruebas cada uno.'], ['Cuerpo completo', 'Frente, perfil y espalda, del cuello a los pies. Hace que al recrear una foto salga con su cuerpo y no con el de la foto.'], ['Ficha principal', 'Se monta sola con las dos anteriores. Es la que va en todas sus imágenes.']].forEach(([t, d], i) => ps.appendChild(el('div', 'bvpaso', `<i>${i + 1}</i><div><b>${t}</b><small>${d}</small></div>`))); b.appendChild(ps);
+    b.appendChild(el('p', 'minfopie', `Son unas 5 imágenes: alrededor de ${fmtUsd(total)} con ${esc(m.name)}. Tu ficha importada se conserva.`));
+    const ft = el('div', 'pjacts'); const go = el('button', 'btn acc big', '✨ Empezar ahora'); go.onclick = () => { m0.remove(); empezarStd(p); }; const no = el('button', 'btn', 'Más tarde'); no.onclick = () => m0.remove(); ft.appendChild(go); ft.appendChild(no); b.appendChild(ft); }
+  function panelLista(p) { // igual que la pestaña «Fichas 360» de Aria: principal a la izquierda, cara de cerca y cuerpo completo a su derecha, fichas creadas debajo
     const w = el('div', 'f3wrap'); const top = el('div', 'f3main'); const main = p.combo || p.ficha360;
-    const big = el('div', 'f3card big combo' + (p.combo ? '' : ' solo360'), `<div class="f3img"><img src="${main}" alt=""></div><b>Ficha principal</b><small>${p.combo ? 'sus cuatro vistas y su cuerpo entero de frente y de perfil, del cuello a los pies' : 'su ficha 360: es la referencia que va en todas sus imágenes'}</small>`); big.querySelector('img').onclick = () => lightbox(main, 'Ficha principal · ' + p.nombre); top.appendChild(big);
+    const imp = p.modo === 'tengo' && !p.combo; const caraOk = VISTAS.every(v => vok(p, v[0]));   // personaje importado que aún no tiene su ficha «de la casa» · sus 4 vistas ya aprobadas
     const col = el('div', 'f3sidecol'); const force = stg => { pj.forceStage = Object.assign({}, pj.forceStage, { [p.id]: stg }); window.pjScrollTop = true; renderProfile(); };
+    if (imp) { const src = p.importada || p.ficha360; const row = el('div', 'f3imp');
+      const c = el('div', 'f3card', `<div class="f3img"><img src="${src}" alt=""></div><b>Ficha importada</b><small>la que subiste: es su referencia hasta que tenga su ficha principal</small>`); c.querySelector('img').onclick = () => lightbox(src, 'Ficha importada · ' + p.nombre); row.appendChild(c);
+      const rc = el('div', 'f3reco', `<b>Recomendado: crea su ficha de la forma correcta</b><p>Según el generador de imágenes, una ficha hecha fuera puede fallar. Crea aquí su <b>cara de cerca</b> y su <b>cuerpo completo</b> a partir de la que has subido, y su ficha principal se monta sola.</p>`);
+      const ra = el('div', 'f3acts'); const g0 = el('button', 'btn acc', caraOk ? '✨ Seguir con su ficha' : '✨ Crear su ficha paso a paso'); g0.onclick = () => caraOk ? force('cuerpo') : empezarStd(p); const q0 = el('button', 'btn', '¿Por qué? · cómo se hace'); q0.onclick = () => fichaReco(p); ra.appendChild(g0); ra.appendChild(q0); rc.appendChild(ra); row.appendChild(rc); w.appendChild(row);
+      try { const K = 'am_reco_' + p.id; if (!localStorage.getItem(K)) { localStorage.setItem(K, '1'); setTimeout(() => { if (state.tab === 'perfil' && !document.getElementById('bienvm')) fichaReco(p); }, 500); } } catch (e) {} }
+    if (imp) { const listo = caraOk && p.cuerpo; const big = el('div', 'f3card big combo vacia', `<div class="f3img"><span>🪪</span><b>Ficha principal</b>${listo ? 'Ya tiene su cara de cerca y su cuerpo completo.' : 'Se monta sola cuando tenga su cara de cerca y su cuerpo completo.'}</div><b>Ficha principal</b><small>sus cuatro vistas y su cuerpo entero: la referencia que irá en todas sus imágenes</small>`);
+      if (listo) { const a = el('div', 'f3acts'); const mb = el('button', 'btn acc', '✨ Montar su ficha principal'); mb.onclick = () => montarCombo(p); a.appendChild(mb); big.appendChild(a); } top.appendChild(big); }
+    else { const big = el('div', 'f3card big combo' + (p.combo ? '' : ' solo360'), `<div class="f3img"><img src="${main}" alt=""></div><b>Ficha principal</b><small>${p.combo ? 'sus cuatro vistas y su cuerpo entero de frente y de perfil, del cuello a los pies' : 'su ficha 360: es la referencia que va en todas sus imágenes'}</small>`); big.querySelector('img').onclick = () => lightbox(main, 'Ficha principal · ' + p.nombre); top.appendChild(big); }
     const mini = (src, t, s0, stg) => { const d = el('div', 'f3card big mini', `<div class="f3img"><img src="${src}" alt=""><button class="f3edit">✎ Editar</button></div><b>${t}</b><small>${s0}</small>`); d.querySelector('img').onclick = () => lightbox(src, t + ' · ' + p.nombre); d.querySelector('.f3edit').onclick = e => { e.stopPropagation(); force(stg); }; col.appendChild(d); };
-    if (p.combo) mini(p.ficha360, 'Cara de cerca', 'cuatro ángulos: frente, perfil, tres cuartos y espalda', 'vistas');
+    if (p.combo || (imp && caraOk)) mini(p.ficha360, 'Cara de cerca', 'cuatro ángulos: frente, perfil, tres cuartos y espalda', 'vistas');
+    else if (imp) { const d = el('div', 'f3card big mini vacia', `<div class="f3img"><span>＋</span><b>Cara de cerca</b>Cuatro ángulos: frente, perfil, tres cuartos y espalda.</div>`); const a = el('div', 'f3acts'); const g = el('button', 'btn acc', '✨ Crearla a partir de tu ficha'); g.onclick = () => empezarStd(p); a.appendChild(g); d.appendChild(a); col.appendChild(d); }
     if (p.cuerpo) mini(p.cuerpo, 'Cuerpo completo', p.combo ? 'tres ángulos: frente, perfil y espalda' : 'su ficha de cuerpo: se usa al recrear fotos', 'cuerpo');
-    else { const d = el('div', 'f3card big mini pjaddb', `<div class="f3img"><span>＋</span><b>Su cuerpo completo</b><small>Opcional. Hace que al recrear una foto salga con su cuerpo y no con el de la foto.</small></div>`); const a = el('div', 'f3acts');
+    else { const d = el('div', 'f3card big mini pjaddb', `<div class="f3img"><span>＋</span><b>Su cuerpo completo</b><small>${imp ? 'Frente, perfil y espalda, del cuello a los pies.' : 'Opcional.'} Hace que al recrear una foto salga con su cuerpo y no con el de la foto.</small></div>`); const a = el('div', 'f3acts');
       const g = el('button', 'btn acc', '✨ Crearlo a partir de su ficha'); g.title = 'Genera su ficha de cuerpo usando su ficha como referencia'; g.onclick = () => force('cuerpo'); a.appendChild(g);
       const u = el('label', 'btn', 'Subir el mío'); const f = document.createElement('input'); f.type = 'file'; f.accept = 'image/*'; f.hidden = true; u.appendChild(f); f.onchange = () => { const file = f.files[0]; if (!file) return; const rd = new FileReader(); rd.onload = async () => { const r = await persist_(p, { files: { cuerpo: await shrink(rd.result, 2000) } }); toast(r && r.ok ? 'Ficha de cuerpo guardada' : 'No se pudo guardar'); renderProfile(); }; rd.readAsDataURL(file); }; a.appendChild(u);
       d.appendChild(a); col.appendChild(d); }

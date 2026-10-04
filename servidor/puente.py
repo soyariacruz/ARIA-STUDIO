@@ -37,7 +37,7 @@ MAX_CUERPO = 40 * 1024 * 1024    # tope de una petición en modo servidor
 MAX_BIBLIO = 200 * 1024 * 1024   # tope de un fichero de la biblioteca común al copiarlo
 KINDS = ('vestidor', 'hair', 'expr')   # las bibliotecas a las que una cuenta puede añadir lo suyo
 _UUID = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
-VERSION = 186
+VERSION = 187
 _ctx = threading.local()   # la cuenta del hilo: la pone cada petición (y, a mano, cada hilo de fondo)
 def uid(): return getattr(_ctx, 'uid', None)   # en local siempre None
 DUENOS = tuple(e.strip().lower() for e in (os.environ.get('ARIA_DUENOS') or 'mix1994max@gmail.com').split(',') if e.strip())   # cuentas que pueden cambiar a Aria Cruz (en la web, la de Max)
@@ -1350,7 +1350,7 @@ class H(SimpleHTTPRequestHandler):
                 if key == 'foto' or (key in ('retrato', 'vista_frente') and not P.get('foto')):   # avatar = cuadrado centrado arriba (la cara)
                     w, h = im.size; sz = min(w, int(h * 0.62)); x0 = (w - sz) // 2; y0 = max(0, int(h * 0.06))
                     im.crop((x0, y0, x0 + sz, y0 + sz)).resize((256, 256)).save(os.path.join(d, 'avatar.jpg'), quality=90); P['avatar'] = f'assets/personajes/{pid}/avatar.jpg?v={int(time.time())}'
-            OKF = ('foto', 'ficha360', 'retrato', 'vista_frente', 'vista_perfil', 'vista_tres', 'vista_espalda', 'cuerpo', 'peloRef', 'detImg', 'estiloRef', 'avatar', 'avatarSrc')
+            OKF = ('foto', 'ficha360', 'importada', 'retrato', 'vista_frente', 'vista_perfil', 'vista_tres', 'vista_espalda', 'cuerpo', 'peloRef', 'detImg', 'estiloRef', 'avatar', 'avatarSrc')
             okk = lambda k: k in OKF or bool(_re.fullmatch(r'inspo_\d{1,2}', k))
             for key, du in (body.get('files') or {}).items():
                 if okk(key) and du and ',' in du: _save(key, base64.b64decode(du.split(',', 1)[1]))

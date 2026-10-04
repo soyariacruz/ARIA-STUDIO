@@ -957,7 +957,6 @@ function biblioPanel(it) {
   side.appendChild(addBtn('biblio', 'esta imagen para recrearla')); side.appendChild(miniPreview(it)); setTimeout(syncMini, 0); side.appendChild(aiLine(it)); if (!it.group) { const wb = el('div'); wb.style.padding = '0 18px 8px'; wb.appendChild(withBtn('biblio', it)); side.appendChild(wb); }
   const box = el('div', 'stack');
   const pbx = el('div', 'promptbox scrollbox', atHtml(it.neutro || it.prompt)); box.appendChild(pbx);
-  if (!it.neutro && /glasses|hoop|ponytail|aria/i.test(it.prompt || '')) box.appendChild(el('div', 'status', 'Este es el prompt original de la imagen, hecho con Aria (por eso habla de sus gafas, sus aros o su coleta). Al crear con tu personaje no tienes que tocarlo: sus rasgos sustituyen a los de Aria automáticamente.'));
   const cp = el('button', 'btn w', 'Copiar prompt'); cp.onclick = () => { navigator.clipboard && navigator.clipboard.writeText(it.neutro || it.prompt); toast('Prompt copiado'); }; box.appendChild(cp);
   if (!it.group) { const pr = el('button', 'btn w pr', `👗 Crear prenda<i>${fmtUsd(curModel().usd.high)}</i>`); pr.title = 'Como arrastrar esta foto al Vestidor: se genera su ficha de prenda con la ropa que lleva'; pr.onclick = () => prendaDesdeImagen(it.image, it.name); box.appendChild(pr); }
   side.appendChild(sec('', box));
@@ -1121,8 +1120,12 @@ const BG_AR = {}; function bgAr(src) { // proporción de la imagen de partida (s
   const set = () => { if (state.tab === 'crear' && jobBg(cur()) === src && arOverride !== BG_AR[src]) { arOverride = BG_AR[src]; sizeMirror(); } };
   if (BG_AR[src]) return set(); const im = new Image(); im.onload = () => { BG_AR[src] = im.naturalWidth / im.naturalHeight; set(); }; im.src = src; }
 function jobBg(it) { const js = [...JOBS.values()].filter(j => !j.end && j.it === it && j.bg); return js.length ? js[js.length - 1].bg : null; }
+// El panel se repinta solo a menudo (acaba una lectura, cambia el modelo, llega un trabajo…). Si eso pasa entre pulsar y soltar el ratón, el botón que se pulsó ya no existe
+// y el navegador no da el clic por hecho: «hace un pop y no pasa nada». Por eso «Generar» se escucha en el panel entero (que no cambia): pulsar sobre el botón + soltar sobre el botón = generar.
+{ let genAbajo = 0; side.addEventListener('pointerdown', e => { const g = e.button === 0 && e.target.closest && e.target.closest('[data-gen]'); genAbajo = g && !g.disabled ? Date.now() : 0; }, true);
+  document.addEventListener('pointerup', e => { if (!genAbajo) return; const dt = Date.now() - genAbajo; genAbajo = 0; if (dt > 2000) return; const t = document.elementFromPoint(e.clientX, e.clientY); if (t && t.closest && t.closest('[data-gen]')) submitGen(); }, true); }
 async function submitGen() { // un clic = una petición: el botón se bloquea hasta que la generación ha arrancado (se ve «Generando» en la imagen principal)
-  if (state.submitting) return; state.submitting = true; renderSide();
+  if (state.submitting || Date.now() - (submitGen.t || 0) < 500) return; submitGen.t = Date.now(); state.submitting = true; renderSide();
   { const b = state.comp.biblio; if (state.tab === 'crear' && b && b._leyendo) { toast('Leyendo la foto… genero en cuanto termine'); try { await b._leyendo; } catch (e) {} } }
   try { await tryOn(false); } finally { state.submitting = false; renderSide(); } }
 function flyToNav(src, r0, tab) { // la imagen «vuela» hasta el botón del menú y el contador rojo se enciende al llegar
@@ -1433,7 +1436,7 @@ function crearPanel(it) { // todo en una sección compacta: sin scroll en el pan
   { const w = el('div'); w.appendChild(lab('Referencias')); w.appendChild(refsNode()); box.appendChild(w); }
   box.appendChild(genSettings('crear', it));
   const ex = existingImage('crear', it); const revealed = !!ex; const nJobs = [...JOBS.values()].filter(j => !j.end && j.it === it).length;
-  const foot = el('div', 'genfoot'); const b = el('button', 'btn w acc', state.submitting ? '⏳ Generando imagen…' : `${ex && revealed ? 'Generar nueva' : 'Generar imagen'} · ${fmtUsd(m.usd[state.quality])}${nJobs ? ' · ⏳ ' + nJobs : ''}`); b.disabled = !!state.submitting; b.title = 'Lanza una petición real'; b.onclick = () => submitGen(); foot.appendChild(b); box.appendChild(foot);
+  const foot = el('div', 'genfoot'); const b = el('button', 'btn w acc', state.submitting ? '⏳ Generando imagen…' : `${ex && revealed ? 'Generar nueva' : 'Generar imagen'} · ${fmtUsd(m.usd[state.quality])}${nJobs ? ' · ⏳ ' + nJobs : ''}`); b.disabled = !!state.submitting; b.title = 'Lanza una petición real'; b.dataset.gen = '1'; b.onclick = () => submitGen(); foot.appendChild(b); box.appendChild(foot);
   return sec('', box);
 }
 async function dropAny(e, dz) { const dt = e.dataTransfer; const f = dt.files && dt.files[0]; if (f) return useDrop(f);
