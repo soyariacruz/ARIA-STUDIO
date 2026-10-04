@@ -37,7 +37,7 @@ MAX_CUERPO = 40 * 1024 * 1024    # tope de una petición en modo servidor
 MAX_BIBLIO = 200 * 1024 * 1024   # tope de un fichero de la biblioteca común al copiarlo
 KINDS = ('vestidor', 'hair', 'expr')   # las bibliotecas a las que una cuenta puede añadir lo suyo
 _UUID = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
-VERSION = 200
+VERSION = 201
 _ctx = threading.local()   # la cuenta del hilo: la pone cada petición (y, a mano, cada hilo de fondo)
 def uid(): return getattr(_ctx, 'uid', None)   # en local siempre None
 DUENOS = tuple(e.strip().lower() for e in (os.environ.get('ARIA_DUENOS') or 'mix1994max@gmail.com').split(',') if e.strip())   # cuentas que pueden cambiar a Aria Cruz (en la web, la de Max)
@@ -1520,6 +1520,10 @@ class H(SimpleHTTPRequestHandler):
             for key, spec in (body.get('crops') or {}).items():   # un recorte de una imagen (la cara elegida de una rejilla 3×3)
                 if okk(key) and isinstance(spec, dict) and spec.get('path'): data, _ct = img_bytes({'path': spec['path'], 'crop': spec.get('crop')}); _save(key, data)
             if body.get('files') and any(_re.fullmatch(r'inspo_\d{1,2}', k) for k in body['files']): P['inspo'] = sorted([k for k in P if _re.fullmatch(r'inspo_\d{1,2}', k)], key=lambda k: int(k.split('_')[1]))
+            if 'privado' not in P:   # «oculto en la Comunidad» lo escribe otra petición (/api/comunidad): si la copia que llega no lo trae, se conserva
+                try:
+                    if json.load(open(os.path.join(d, 'personaje.json'), encoding='utf-8')).get('privado'): P['privado'] = True
+                except Exception: pass
             json.dump(P, open(os.path.join(d, 'personaje.json'), 'w'), ensure_ascii=False, indent=1)
             plog(f'personaje guardado {pid}'); return self._json(200, {'ok': True, 'p': P})
         if self.path == '/api/personaje_ficha':   # une las 4 vistas aprobadas (frente, perfil, tres cuartos, espalda) en la ficha 360 2x2, como la de Aria

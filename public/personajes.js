@@ -857,6 +857,8 @@
     const done = async go => { m0.remove(); const q = pj.list.find(x => x.id === p.id); if (q && !q.celebrado) { q.celebrado = true; await persist_(q); } if (go === 'crear') { if (window.setChar) setChar(p.id); setTab('crear'); return; } if (go === 'acc') pj.tabBy[p.id] = 'complementos'; renderProfile(); renderSide(); };
     m0.onclick = e => { if (e.target === m0) done(); };
     const b = el('div', 'pjcelbox', `<div class="pjcelemo">🎉</div><h3>¡Enhorabuena! ${esc(p.nombre)} ya está en ARIA STUDIO</h3><img src="${p.combo || p.ficha360}" alt="">`);
+    if (window.CUENTA && CUENTA.web && !p.privado) { const com = el('div', 'pjcelcom', `🤝 ${short} aparece en la <b>Comunidad</b>: otros creadores pueden verlo y pedirte una colaboración.<button type="button" class="lnk">Prefiero ocultarlo</button>`); const ob = com.querySelector('button');
+      ob.onclick = async () => { ob.disabled = true; try { const r = await fetch('/api/comunidad', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ accion: 'visible', pid: p.id, publico: false }) }).then(x => x.json()); if (r && r.ok) { const q = pj.list.find(x => x.id === p.id); if (q) q.privado = true; p.privado = true; com.innerHTML = '🙈 Oculto: nadie lo ve en la Comunidad. Puedes hacerlo público allí cuando quieras.'; return; } } catch (e) {} ob.disabled = false; }; b.appendChild(com); }
     const a = el('div', 'pjacts'); const g = el('button', 'btn acc big', '✨ Crear una imagen'); g.onclick = () => done('crear'); const c = el('button', 'btn big', 'Cerrar'); c.onclick = () => done(); a.appendChild(g); a.appendChild(c); b.appendChild(a); m0.appendChild(b);
   }
   function paintWiz() {
