@@ -1688,7 +1688,8 @@ async function openMonedero() { // 🎁 el saldo regalo: cuánto queda, de dónd
   const ft = el('div', 'pjacts'); if (c) { const k = el('button', 'btn acc big', 'Conectar mi propia clave'); k.onclick = () => { m0.remove(); openClaves(); }; ft.appendChild(k); } const x = el('button', 'btn' + (c ? '' : ' acc big'), 'Cerrar'); x.onclick = () => m0.remove(); ft.appendChild(x); b.appendChild(ft); }
 // Leer una imagen con IA (describir una foto, detectar personas, analizar una ficha…) también cuesta (≈$0.002): el servidor lo dice en cada respuesta y aquí se suma al gasto
 { const f0 = window.fetch; window.fetch = function (u, o) { const p = f0.apply(this, arguments);
-    try { if (typeof u === 'string' && u.startsWith('/api/') && o && o.method === 'POST') p.then(r => { if (r && r.ok && /json/.test(r.headers.get('content-type') || '')) r.clone().json().then(j => { if (j && j.usd_lectura) { state.lectUsd = (state.lectUsd || 0) + Number(j.usd_lectura); meter(); } }).catch(() => {}); }).catch(() => {}); } catch (e) {}
+    try { if (typeof u === 'string' && u.startsWith('/api/') && o && o.method === 'POST') p.then(r => { if (r && /json/.test(r.headers.get('content-type') || '')) r.clone().json().then(j => { if (r.ok && j && j.usd_lectura) { state.lectUsd = (state.lectUsd || 0) + Number(j.usd_lectura); meter(); }
+        if (j && j.error && /^\/api\/(generar|video)/.test(u)) { const cr = errCreditos(j.error); if (cr) popCreditos(cr); } }).catch(() => {}); }).catch(() => {}); } catch (e) {}
     return p; }; }
 let LIVE = false, userPhoto = null;   // userPhoto = dataURL de la foto arrastrada por el usuario
 let MODELS = [], UNAVAILABLE = [], ASPECTS = ['3:4', '1:1', '4:3', '9:16', '16:9', '2:3', '3:2'], modelKey = 'qwen';
@@ -2018,6 +2019,13 @@ function puedeCancelar(job) { return !!job && !job.end && job.status === 'queued
 async function cancelJob(job, msg) { if (job.m && job.m.prov === 'ws' && /por ti/.test(msg || '')) { toast('WaveSpeed no deja cancelar algo ya enviado: se terminará, se cobrará y aparecerá en Mis creaciones'); return; }
   try { await fetch('/api/cancelar', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: job.rid }) }); } catch (e) {} failJob(job, msg || 'cancelada'); }
 $('#errX').onclick = () => { const it = cur(); if (it) it._err = null; mirror.classList.remove('errored'); renderSide(); };
+function popCreditos(cr) { // se han acabado los créditos (de su API o del saldo regalo): se dice claro y con el enlace para recargar
+  let m0 = $('#credm'); if (m0) m0.remove(); m0 = el('div', 'fxm'); m0.id = 'credm'; document.body.appendChild(m0); m0.onclick = e => { if (e.target === m0) m0.remove(); };
+  const b = el('div', 'devbox'); m0.appendChild(b); b.appendChild(el('div', 'devemo', '💳')); b.appendChild(el('h3', '', cr.regalo ? errTitulo(cr) : `Se han acabado tus créditos de ${cr.prov}`));
+  b.appendChild(el('p', '', cr.regalo ? esc(cr.msg) : `Tu cuenta de <b>${cr.prov}</b> se ha quedado sin saldo, así que esta generación no ha salido (no se ha cobrado). Recarga y vuelve a pulsar «Generar»: no hace falta tocar nada más.`));
+  const ft = el('div', 'pjacts'); if (cr.regalo) { const k = el('button', 'btn acc big', '🔑 Conectar mi clave'); k.onclick = () => { m0.remove(); openClaves(); }; ft.appendChild(k); }
+  else { const a = el('a', 'btn acc big', `Recargar en ${cr.prov} ↗`); a.href = cr.url; a.target = '_blank'; a.rel = 'noopener'; a.style.textDecoration = 'none'; ft.appendChild(a); }
+  const x = el('button', 'btn', 'Cerrar'); x.onclick = () => m0.remove(); ft.appendChild(x); b.appendChild(ft); }
 function errTitulo(cr) { return !cr.regalo ? 'No hay suficientes créditos' : /NSFW/i.test(cr.msg) ? 'No disponible con el saldo regalo' : /pausa/i.test(cr.msg) ? 'Saldo regalo en pausa' : /no llega/i.test(cr.msg) ? 'No te llega el saldo regalo' : /no entra/i.test(cr.msg) ? 'No entra en el saldo regalo' : 'Saldo regalo agotado'; }
 function errCreditos(msg) { // ¿el error es que se ha acabado el saldo de la API? → de qué proveedor y dónde se recarga
   if (/saldo regalo/i.test(msg || '')) return { regalo: true, prov: 'saldo regalo', msg: String(msg) };
