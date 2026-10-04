@@ -590,7 +590,7 @@
     if (!forced && st === 'lista') { const mk = el('button', 'btn acc', '✨ Crear imagen con ' + esc((p.nombre || '').split(' ')[0])); mk.title = 'Ir a Crear imagen con este personaje elegido'; mk.onclick = () => { if (window.setChar) setChar(p.id); setTab('crear'); }; acts.appendChild(mk); }
     acts.appendChild(ed);
     const dl = el('button', 'btn', '🗑'); dl.title = 'Borrar personaje'; dl.style.color = '#e25555'; dl.onclick = () => del(p); acts.appendChild(dl); hd.appendChild(acts); v.appendChild(hd);
-    if (!LIVE) { v.appendChild(el('div', 'pjapi', `<div class="pjvideo">▶<small>Vídeo de Aria: cómo conectar tus APIs (demo)</small></div><div><h3>Conecta tu API</h3><p>Para crear su imagen hace falta tu clave de WaveSpeed (o de Higgsfield). Conéctala arriba, en «Conecta tu API».</p></div>`)); return v; }
+    if (!LIVE) { v.appendChild(el('div', 'pjapi', `<div class="pjvideo">▶<small>Vídeo de Aria: cómo conectar tus APIs · pronto</small></div><div><h3>Conecta tu API</h3><p>Para crear su imagen hace falta tu clave de WaveSpeed (o de Higgsfield). Conéctala arriba, en «Conecta tu API».</p></div>`)); return v; }
     if (st !== 'lista' || (pj.forceStage && pj.forceStage[p.id])) v.appendChild(stagesBar(p, st));
     if (st === 'explorar') v.appendChild(panelExplorar(p));
     else if (st === 'vistas') v.appendChild(panelVistas(p));

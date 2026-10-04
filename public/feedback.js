@@ -31,7 +31,8 @@
       t(() => window.CUENTA && CUENTA.web ? 'web' + (typeof CASA !== 'undefined' && CASA ? ' · saldo regalo' : '') : 'app local'), `pantalla ${innerWidth}×${innerHeight}`, t(() => 'escala ' + (window.ESCALA || 1)), `navegador ${navigator.userAgent.replace(/^Mozilla\/5\.0 /, '').slice(0, 90)}`].filter(Boolean).join(' · '); }
   function paint() {
     let w = document.getElementById('fbw'); if (!w) { w = el('div', ''); w.id = 'fbw'; document.body.appendChild(w); } w.innerHTML = '';
-    if (F.open) {
+    if (F.gracias) { const p = el('div', 'fbpanel fbok', `<div class="fbokc">✓</div><b>¡Gracias! Tu comentario ha llegado</b><small>${esc(F.gracias)}</small>`); w.appendChild(p); }
+    else if (F.open) {
       const p = el('div', 'fbpanel'); p.appendChild(el('div', 'fbhd', `<b>💬 Cuéntanos</b><small>estás en ${esc(donde())} · eso ya lo sabemos, no hace falta que lo expliques</small>`)); const x = el('button', 'fbx', '×'); x.title = 'Cerrar'; x.onclick = () => { F.open = false; stopMic(); paint(); }; p.appendChild(x);
       const tp = el('div', 'fbtipos'); ['🐞 Algo falla', '🧩 Falta algo', '💡 Idea', '💬 Comentario'].forEach(t => { const b = el('button', F.tipo === t ? 'on' : '', t); b.onclick = () => { F.tipo = t; paint(); }; tp.appendChild(b); }); p.appendChild(tp);
       const ta = el('textarea', 'pjin fbta'); ta.rows = 5; ta.placeholder = F.oyendo ? 'Te escucho… habla con normalidad' : 'Qué ha fallado, qué echas en falta o qué mejorarías. También puedes pulsar el micro y hablar.'; ta.value = F.texto; ta.oninput = () => { F.texto = ta.value; const s = document.querySelector('#fbw .fbrow .btn.acc'); if (s) s.disabled = !puedeEnviar(); }; p.appendChild(ta);
@@ -42,7 +43,7 @@
       const send = el('button', 'btn acc', F.enviando ? 'Enviando…' : 'Enviar'); send.disabled = F.enviando || !puedeEnviar(); send.onclick = enviar; row.appendChild(send); p.appendChild(row);
       w.appendChild(p); setTimeout(() => { const t = w.querySelector('.fbta'); if (t && !F.oyendo) { t.focus(); t.setSelectionRange(t.value.length, t.value.length); } }, 0);
     }
-    const btn = el('button', 'fbbtn' + (F.open ? ' on' : ''), F.open ? '×' : '💬'); btn.type = 'button'; btn.title = 'Feedback: cuéntanos qué falla, qué falta o qué mejorarías'; btn.setAttribute('aria-label', 'Feedback'); btn.onclick = () => { F.open = !F.open; if (!F.open) stopMic(); paint(); }; w.appendChild(btn);
+    const btn = el('button', 'fbbtn' + (F.open || F.gracias ? ' on' : ''), F.gracias ? '✓' : F.open ? '×' : '💬'); btn.type = 'button'; btn.title = 'Feedback: cuéntanos qué falla, qué falta o qué mejorarías'; btn.setAttribute('aria-label', 'Feedback'); btn.onclick = () => { if (F.gracias) { F.gracias = null; clearTimeout(F.gt); paint(); return; } F.open = !F.open; if (!F.open) stopMic(); paint(); }; w.appendChild(btn);
   }
   const puedeEnviar = () => !!(F.texto.trim() || F.audio);
   function startMic() {
@@ -66,7 +67,7 @@
   async function enviar() {
     if (F.mr) { stopMic(); await new Promise(r => setTimeout(r, 400)); } else stopMic(); const texto = F.texto.trim(); if (!texto && !F.audio) return; F.enviando = true; paint(); let r;
     try { r = await fetch('/api/feedback', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ texto, audio: F.audio || undefined, tipo: F.tipo, via: F.audio ? '🎙️ Nota de voz' : F.voz ? '🎙️ Voz' : '⌨️ Escrito', seccion: donde(), contexto: contexto() }) }).then(x => x.json()); } catch (e) { r = { error: String(e) }; }
-    F.enviando = false; if (r && r.ok) { Object.assign(F, { texto: '', voz: false, tipo: '💬 Comentario', open: false, audio: null, seg: 0 }); toast(r.local ? '¡Gracias! Guardado ' : '¡Gracias! Tu comentario ha llegado'); } else toast('No se pudo enviar: ' + (r ? r.error : 'sin respuesta'));
+    F.enviando = false; if (r && r.ok) { const voz = !!F.audio; Object.assign(F, { texto: '', voz: false, tipo: '💬 Comentario', open: false, audio: null, seg: 0, gracias: voz ? 'Hemos recibido tu nota de voz. La escuchamos y la tenemos en cuenta.' : 'Lo leemos todo y lo tenemos en cuenta para mejorar ARIA STUDIO.' }); clearTimeout(F.gt); F.gt = setTimeout(() => { F.gracias = null; paint(); }, 3500); } else toast('No se pudo enviar: ' + (r ? r.error : 'sin respuesta'));
     paint();
   }
   const arranca = () => { if (typeof state !== 'undefined' && document.body) paint(); else setTimeout(arranca, 400); }; setTimeout(arranca, 800);
