@@ -177,12 +177,12 @@
   const STEPS_FOTOS = [{ id: 'fotos', t: 'Tus fotos', h: 'Suelta fotos de personas que te gusten: la IA saca sus rasgos en común.' }].concat(STEPS.filter(s => ['rol', 'nicho', 'nombre', 'edad', 'fin'].includes(s.id)));
   const STEPS_TENGO = [{ id: 'tficha', t: 'Su ficha 360', h: 'Sube la ficha de tu personaje. La IA la mira y rellena sus rasgos por ti.' }, { id: 'tdatos', t: 'Sus datos', h: 'Lo justo para crear imágenes con tu personaje. Todo se puede cambiar después.' }];
   const STEPS_CERO = [   // v191 · crear desde cero, en corto. Después vienen «elige su cara» (9 a la vez) y la ficha automática
-    { id: 'quien', t: 'Quién es', h: 'Su nombre y lo básico. Todo se puede cambiar después.', ids: ['nombre', 'edad'], opc: ['rol', 'nicho'] },
-    { id: 'como', t: 'Cómo es', h: 'Pulsa «Sorpréndeme» y listo, o abre cada apartado y elige. No hace falta rellenarlo todo.', ids: ['cara', 'ojos', 'boca', 'pelocolor', 'peinado', 'piel', 'cuerpo', 'curvas', 'estilo'], plegado: true },
+    { id: 'quien', t: 'Quién es', h: 'Su nombre y lo básico. Todo se puede cambiar después.', ids: ['nombre', 'edad'], opc: ['rol', 'nicho', 'pers', 'voz'] },
+    { id: 'como', t: 'Cómo es', h: 'Pulsa «Sorpréndeme» y listo, o abre cada apartado y elige. No hace falta rellenarlo todo.', ids: ['cara', 'ojos', 'boca', 'pelocolor', 'peinado', 'piel', 'cuerpo', 'curvas', 'estilo'], opc: ['detalles'], plegado: true },
     STEPS.find(x => x.id === 'fin')];
-  const stepsOf = w => w.mode === 'fotos' ? STEPS_FOTOS : w.mode === 'tengo' ? STEPS_TENGO : w.editId ? STEPS : STEPS_CERO;
+  const stepsOf = w => w.mode === 'fotos' ? STEPS_FOTOS : w.mode === 'tengo' ? STEPS_TENGO : STEPS_CERO;
   const resumenDe = (id, d) => { const j = a => a.filter(Boolean).join(' · '); try { return id === 'cara' ? es('cara', d.cara) : id === 'ojos' ? j([d.ojosNombre || es('ojos', d.ojos), es('ojosForma', d.ojosForma)]) : id === 'boca' ? j([es('labios', d.labios), es('nariz', d.nariz)]) : id === 'pelocolor' ? (d.peloNombre || es('peloColor', d.peloColor)) : id === 'peinado' ? ((d.peinado && d.peinado.name) || '') : id === 'piel' ? es('piel', d.piel)
-      : id === 'cuerpo' ? j([d.altura && (d.altura / 100).toFixed(2).replace('.', ',') + ' m', es('complexion', d.complexion)]) : id === 'curvas' ? j([d.genero !== 'masc' && es('pecho', d.pecho), es('cadera', d.cadera)]) : id === 'estilo' ? (d.estilo === 'realista' ? 'Realista' : d.estilo === 'cartoon' ? 'Cartoon' : d.estilo ? 'Su propio estilo' : '') : id === 'rol' ? arr(d.rol).map(x => es('rol', x)).filter(Boolean).join(', ') : id === 'nicho' ? arr(d.nicho).map(x => es('nicho', x)).filter(Boolean).join(', ') : ''; } catch (e) { return ''; } };
+      : id === 'cuerpo' ? j([d.altura && (d.altura / 100).toFixed(2).replace('.', ',') + ' m', es('complexion', d.complexion)]) : id === 'curvas' ? j([d.genero !== 'masc' && es('pecho', d.pecho), es('cadera', d.cadera)]) : id === 'estilo' ? (d.estilo === 'realista' ? 'Realista' : d.estilo === 'cartoon' ? 'Cartoon' : d.estilo ? 'Su propio estilo' : '') : id === 'rol' ? arr(d.rol).map(x => es('rol', x)).filter(Boolean).join(', ') : id === 'nicho' ? arr(d.nicho).map(x => es('nicho', x)).filter(Boolean).join(', ') : id === 'pers' ? arr(d.pers).map(x => es('pers', x)).filter(Boolean).join(', ') : id === 'voz' ? arr(d.voz).map(x => es('voz', x)).filter(Boolean).join(', ') : id === 'detalles' ? arr(d.pielDet).map(x => es('pielDet', x)).filter(Boolean).join(', ') : ''; } catch (e) { return ''; } };
   function sorprende(d) { // rasgos al azar (sin las opciones marcadas como poco fiables): para quien no quiere pensar
     const al = a => a[Math.floor(Math.random() * a.length)]; const pick = k => { const L = (O[k] || []).filter(o => !o[5] && !o[4]); return L.length ? al(L)[0] : null; };
     ['cara', 'ojos', 'ojosForma', 'labios', 'nariz', 'peloColor', 'piel', 'complexion', 'cadera'].forEach(k => { const v = pick(k); if (v) d[k] = v; }); if (d.genero !== 'masc') { const v = pick('pecho'); if (v) d.pecho = v; }
@@ -602,7 +602,7 @@
   function modelSel(label, q) { const row = el('label', 'pjmodel'); row.appendChild(el('span', '', label || 'Modelo')); const ms = el('select', 'sel'); MODELS.forEach(x => { const o = document.createElement('option'); o.value = x.key; o.textContent = `${x.name} · ${fmtUsd(x.usd[q || (x.usd.high === x.usd.std ? 'high' : state.quality)])}`; ms.appendChild(o); }); ms.value = pjModel().key; ms.onchange = () => { pj.model = ms.value; try { localStorage.setItem(MKEY, ms.value); } catch (e) {} renderProfile(); const m0 = $('#pjx3m'); if (m0 && m0._repaint) m0._repaint(); }; row.appendChild(ms); return row; }
   function stagesBar(p, cur_) { const S = [['explorar', '1 · Su cara'], ['vistas', '2 · Sus 4 vistas'], ['cuerpo', '3 · Su cuerpo'], ['lista', '4 · Ficha principal']]; const i0 = S.findIndex(s => s[0] === cur_); const b = el('div', 'pjstages'); S.forEach(([k, n], i) => b.appendChild(el('span', i < i0 ? 'done' : i === i0 ? 'on' : '', (i < i0 ? '✓ ' : '') + n))); return b; }
   const stageOf = p => (p.combo || (p.modo === 'tengo' && p.ficha360)) ? 'lista' : p.ficha360 ? 'cuerpo' : p.foto ? 'vistas' : 'explorar';
-  function editar(p) { pj.wiz = { mode: 'cero', step: STEPS.length - 1, editId: p.id, d: Object.assign({}, p, { prompt: p.promptEditado ? p.prompt : null, promptManual: !!p.promptEditado, foto: null, ficha: null, inspo: [] }) }; saveDraft(); window.pjScrollTop = true; renderProfile(); renderSide(); }
+  function editar(p) { pj.wiz = { mode: 'cero', step: 2, editId: p.id, d: Object.assign({}, p, { prompt: p.promptEditado ? p.prompt : null, promptManual: !!p.promptEditado, foto: null, ficha: null, inspo: [] }) }; saveDraft(); window.pjScrollTop = true; renderProfile(); renderSide(); }
   function viewPersona(p) {
     const st = pj.forceStage && pj.forceStage[p.id] || stageOf(p); const v = el('div', 'pjgenwrap');
     const hd = el('div', 'pjghead'); hd.appendChild(el('div', 'pjname', `<b>${esc(p.nombre)}</b><small>${[p.usuario, arr(p.rol).map(r => es('rol', r)).join(', '), p.edad ? p.edad + ' años' : ''].filter(Boolean).join(' · ')}</small>`));
@@ -725,7 +725,7 @@
   // ---- FICHA AUTOMÁTICA (v190): cara de cerca (4 vistas) → cuerpo completo → ficha principal, de un tirón. Una sola pregunta al empezar, con el coste total.
   //      El estado va en el propio personaje (`autoFicha`), así que sobrevive a cerrar la página; cada paso lo dispara el final del trabajo anterior (onJobDone).
   const autoCola = {}; const jobsDe = pid => Object.keys(pj.jobs).filter(k => k.startsWith(pid + ':'));
-  const faltaVistas = p => VISTAS.filter(v => !vok(p, v[0])).length;
+  const faltaVistas = p => p.caraSubida ? 0 : VISTAS.filter(v => !vok(p, v[0])).length;
   function autoCoste(p) { return modelFor(2).usd[state.quality] * faltaVistas(p) + (p.cuerpo || p.cuerpoCand ? 0 : seedream().usd[state.quality]); }
   async function autoEmpieza(p) {
     if (!LIVE) { toast('Conecta primero tu API'); if (window.openClaves) openClaves(); return; }
@@ -741,11 +741,12 @@
     const P = () => pj.list.find(x => x.id === pid); const J = k => pj.jobs[pid + ':' + k]; let p = P(); if (!p || !p.autoFicha) return;
     for (const [k] of VISTAS) { p = P(); if (vfile(p, k) && !vok(p, k) && !J(k)) await approve(p, k); }   // lo que ha llegado se da por bueno (luego se puede repetir cualquier vista)
     p = P(); const lanza = async k => { await genPj(P(), k, Object.assign(specVista(P(), k), { noConfirm: true })); if (!J(k)) { await autoPara(pid, 'no se pudo enviar la vista'); return false; } return true; };
+    if (!p.caraSubida) {
     if (!vfile(p, 'frente')) { if (!J('frente')) await lanza('frente'); return; }
     if (!vok(p, 'frente')) return;
     const faltan = ['perfil', 'tres', 'espalda'].filter(k => !vfile(p, k) && !J(k));
     if (faltan.length) { for (const k of faltan) { if (!(await lanza(k))) return; } return; }
-    if (!VISTAS.every(v => vok(P(), v[0]))) return;
+    if (!VISTAS.every(v => vok(P(), v[0]))) return; }
     p = P(); if (p.cuerpoCand) await aprobarCuerpo(p);
     else if (!p.cuerpo) { if (!J('cuerpo')) { cuerpoGen(p, true); await new Promise(r => setTimeout(r, 50)); } return; }
     p = P(); if (p.cuerpo && !p.combo) await montarCombo(p);
@@ -762,8 +763,8 @@
     const ft = el('div', 'pjacts'); const go = el('button', 'btn acc big', '✨ Empezar ahora'); go.onclick = () => { m0.remove(); autoEmpieza(p); }; const no = el('button', 'btn', 'Más tarde'); no.onclick = () => m0.remove(); ft.appendChild(go); ft.appendChild(no); b.appendChild(ft); }
   function panelLista(p) { // igual que la pestaña «Fichas 360» de Aria: principal a la izquierda, cara de cerca y cuerpo completo a su derecha, fichas creadas debajo
     const w = el('div', 'f3wrap'); const top = el('div', 'f3main'); const main = p.combo || p.ficha360;
-    const imp = p.modo === 'tengo' && !p.combo; const caraOk = VISTAS.every(v => vok(p, v[0]));
-    const A = C.perfil || {}; const ej = src => src ? `<img class="f3ej" src="${src}" alt=""><em class="f3ejt">Ejemplo</em>` : '';   // en cada hueco, de fondo, la ficha de Aria: así se ve qué hay que crear   // personaje importado que aún no tiene su ficha «de la casa» · sus 4 vistas ya aprobadas
+    const imp = p.modo === 'tengo' && !p.combo; const caraOk = !!p.caraSubida || VISTAS.every(v => vok(p, v[0]));
+    const A = C.perfil || {}; const ej = (src, pos) => src ? `<img class="f3ej" src="${src}" alt="" style="object-position:${pos || '50% 50%'}"><em class="f3ejt">Ejemplo</em>` : '';   // en cada hueco, de fondo, la ficha de Aria: así se ve qué hay que crear   // personaje importado que aún no tiene su ficha «de la casa» · sus 4 vistas ya aprobadas
     const col = el('div', 'f3sidecol'); const force = stg => { pj.forceStage = Object.assign({}, pj.forceStage, { [p.id]: stg }); window.pjScrollTop = true; renderProfile(); };
     const enMarcha = !!p.autoFicha; const corriendo = jobsDe(p.id).length > 0; const clic = d => { d.classList.add('clic'); d.title = 'Crear su ficha de forma automática'; d.onclick = () => autoEmpieza(p); return d; };
     if (imp) { const src = p.importada || p.ficha360; const row = el('div', 'f3imp');
@@ -780,7 +781,11 @@
     else { const big = el('div', 'f3card big combo' + (p.combo ? '' : ' solo360'), `<div class="f3img"><img src="${main}" alt=""></div><b>Ficha principal</b><small>${p.combo ? 'sus cuatro vistas y su cuerpo entero de frente y de perfil, del cuello a los pies' : 'su ficha 360: es la referencia que va en todas sus imágenes'}</small>`); big.querySelector('img').onclick = () => lightbox(main, 'Ficha principal · ' + p.nombre); top.appendChild(big); }
     const mini = (src, t, s0, stg) => { const d = el('div', 'f3card big mini', `<div class="f3img"><img src="${src}" alt=""><button class="f3edit">✎ Editar</button></div><b>${t}</b><small>${s0}</small>`); d.querySelector('img').onclick = () => lightbox(src, t + ' · ' + p.nombre); d.querySelector('.f3edit').onclick = e => { e.stopPropagation(); force(stg); }; col.appendChild(d); };
     if (p.combo || (imp && caraOk)) mini(p.ficha360, 'Cara de cerca', 'cuatro ángulos: frente, perfil, tres cuartos y espalda', 'vistas');
-    else if (imp) { const nG = VISTAS.filter(v => pj.jobs[p.id + ':' + v[0]]).length; const d = el('div', 'f3card big mini vacia', `<div class="f3img">${ej(A.ficha)}${nG ? `<span class="f3busy"><i class="spin"></i>Generando</span>` : ''}<span>＋</span><b>Cara de cerca</b>Cuatro ángulos: frente, perfil, tres cuartos y espalda.</div>`); if (!enMarcha || !corriendo) clic(d); col.appendChild(d); }
+    else if (imp) { const nG = VISTAS.filter(v => pj.jobs[p.id + ':' + v[0]]).length; const d = el('div', 'f3card big mini vacia', `<div class="f3img">${ej(A.ficha, '50% 14%')}${nG ? `<span class="f3busy"><i class="spin"></i>Generando</span>` : ''}<span>＋</span><b>Cara de cerca</b>Cuatro ángulos: frente, perfil, tres cuartos y espalda.</div>`); if (!enMarcha || !corriendo) clic(d);
+      { const u = el('label', 'f3sub', 'Subir la mía'); const fi = document.createElement('input'); fi.type = 'file'; fi.accept = 'image/*'; fi.hidden = true; u.appendChild(fi); u.onclick = e => e.stopPropagation(); u.title = 'Si ya tienes su ficha de cuatro ángulos hecha';
+        fi.onchange = () => { const file = fi.files[0]; if (!file) return; const rd = new FileReader(); rd.onload = async () => { let q = pj.list.find(x => x.id === p.id); if (q.modo === 'tengo' && !q.importada) { const r0 = await persist_(q, { copy: { importada: clean(q.ficha360) } }); if (!r0 || !r0.ok) { toast('No se pudo guardar'); return; } q = pj.list.find(x => x.id === p.id); }
+          q.caraSubida = true; const r = await persist_(q, { files: { ficha360: await shrink(rd.result, 2400) } }); toast(r && r.ok ? 'Cara de cerca guardada' : 'No se pudo guardar'); renderProfile(); }; rd.readAsDataURL(file); }; d.appendChild(u); }
+      col.appendChild(d); }
     if (p.cuerpo) mini(p.cuerpo, 'Cuerpo completo', p.combo ? 'tres ángulos: frente, perfil y espalda' : 'su ficha de cuerpo: se usa al recrear fotos', 'cuerpo');
     else { const d = el('div', 'f3card big mini pjaddb' + (imp ? ' vacia' : ''), `<div class="f3img">${ej(A.cuerpo)}${gen('cuerpo', 'Generando')}<span>＋</span><b>Su cuerpo completo</b><small>${imp ? 'Frente, perfil y espalda, del cuello a los pies.' : 'Opcional.'} Hace que al recrear una foto salga con su cuerpo y no con el de la foto.</small></div>`);
       const subir = cls => { const u = el('label', cls, 'Subir el mío'); const f = document.createElement('input'); f.type = 'file'; f.accept = 'image/*'; f.hidden = true; u.appendChild(f); u.onclick = e => e.stopPropagation(); f.onchange = () => { const file = f.files[0]; if (!file) return; const rd = new FileReader(); rd.onload = async () => { const r = await persist_(p, { files: { cuerpo: await shrink(rd.result, 2000) } }); toast(r && r.ok ? 'Ficha de cuerpo guardada' : 'No se pudo guardar'); renderProfile(); }; rd.readAsDataURL(file); }; return u; };
