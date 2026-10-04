@@ -19,6 +19,20 @@
   const list = (owner = (window.CH ? CH().id : 'aria')) =>   // sin dueño explícito = el personaje activo de Crear imagen
     owner === 'aria' ? (C.perfil.complementos || []) : (((window.PJ && PJ.list) || []).find(p => p.id === owner) || {}).complementos || [];
   function setList(owner, L) { if (owner === 'aria') C.perfil.complementos = L; else { const p = PJ.list.find(x => x.id === owner); if (p) p.complementos = L; } }
+  const cajaOk = b => { if (!Array.isArray(b) || b.length !== 4 || !b.every(v => typeof v === 'number')) return null; if (Math.max(...b) > 1.5) b = b.map(v => v / 1000); b = b.map(v => Math.max(0, Math.min(1, v))); return (b[2] - b[0] > 0.01 && b[3] - b[1] > 0.01) ? b : null; };
+  const recorte = (src, box) => new Promise(res => { const b = cajaOk(box); if (!b || !src) return res(null); const im = new Image(); if (!String(src).startsWith('data:')) im.crossOrigin = 'anonymous';
+    im.onload = () => { try { const W = im.naturalWidth, H = im.naturalHeight; const cx = (b[0] + b[2]) / 2 * W, cy = (b[1] + b[3]) / 2 * H; let z = Math.max((b[2] - b[0]) * W, (b[3] - b[1]) * H) * 1.35; z = Math.min(Math.max(z, Math.min(W, H) * 0.09), W, H);
+        const sx = Math.max(0, Math.min(W - z, cx - z / 2)), sy = Math.max(0, Math.min(H - z, cy - z / 2)); const cv = document.createElement('canvas'); cv.width = cv.height = 480; cv.getContext('2d').drawImage(im, sx, sy, z, z, 0, 0, 480, 480); res(cv.toDataURL('image/jpeg', 0.9)); } catch (e) { res(null); } };
+    im.onerror = () => res(null); im.src = src; });
+  window.accRecorte = recorte;
+  async function portadas(owner) { // los complementos que solo están descritos: se buscan en la ficha del personaje (una lectura) y se les pone de portada su recorte
+    const L = list(owner).slice(); const sin = L.filter(c => !(c.thumb || c.cover || c.img)); const p = owner === 'aria' ? null : ((window.PJ && PJ.list) || []).find(q => q.id === owner); const ficha = String(owner === 'aria' ? (C.perfil.ficha || '') : ((p && p.ficha360) || '')).split('?')[0];
+    if (!sin.length || !ficha) { toast('No hay ficha del personaje de la que recortar'); return; } toast('Buscando sus complementos en la ficha…');
+    let r; try { r = await fetch('/api/acc_cajas', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ image: { path: ficha }, items: sin.map(c => ({ id: c.id, nombre: c.nombre, desc: c.desc || '' })) }) }).then(x => x.json()); } catch (e) { r = { error: String(e) }; }
+    if (!r || !r.ok) { toast(/WaveSpeed no está conectado|WS_API_KEY/i.test(String(r && r.error)) ? 'Para leer la ficha hace falta tu clave de WaveSpeed' : 'No se ha podido leer la ficha: ' + (r ? r.error : 'sin respuesta')); return; }
+    const files = {}; for (const c of sin) { const t = r.cajas && r.cajas[c.id] && await recorte(ficha, r.cajas[c.id]); if (t) files[c.id + '__thumb'] = t; }
+    const n = Object.keys(files).length; if (!n) { toast('No los he encontrado en la ficha: puedes ponerles su foto a mano'); return; }
+    if (await save(owner, L, files)) { toast(`${n} portada${n > 1 ? 's' : ''} puesta${n > 1 ? 's' : ''} desde su ficha`); renderProfile(); renderSide(); } }
   async function save(owner, L, files) {
     let r; try { r = await fetch('/api/complementos', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ owner, list: L, files: files || {} }) }).then(x => x.json()); } catch (e) { r = { error: String(e) }; }
     if (!r || !r.ok) { toast('No se pudo guardar: ' + (r ? r.error : 'sin respuesta')); return false; } setList(owner, r.list); return true;
@@ -96,6 +110,7 @@
     const add = el('button', 'btn acc', '＋ Añadir complemento'); add.onclick = () => openEditor(owner, null);
     const srcs = [['aria', (C.perfil && C.perfil.name) || 'Aria', C.perfil && C.perfil.avatar]].concat(((window.PJ && PJ.list) || []).map(q => [q.id, q.nombre, q.avatar])).filter(([id]) => id !== owner && list(id).length);
     if (owner !== 'aria' && srcs.length) { const bb = el('div', 'accheadbtns'); bb.appendChild(add); const im = el('button', 'btn pinkline', '⇩ Importar de otro personaje'); im.onclick = () => importar(owner, srcs); bb.appendChild(im); hd.appendChild(bb); } else hd.appendChild(add);
+    { const nSin = L.filter(c => !(c.thumb || c.cover || c.img)).length; const fijaA = owner === 'aria' && typeof WEBM === 'function' && WEBM(); if (nSin && !fijaA) { const pb = el('button', 'btn pinkline', `🖼 Portadas desde su ficha (${nSin})`); pb.title = 'Busca en su ficha los complementos que solo están descritos y les pone de portada su recorte. Usa una lectura de foto.'; pb.onclick = () => { pb.disabled = true; pb.textContent = 'Buscando…'; portadas(owner).finally(() => { if (pb.isConnected) renderProfile(); }); }; (hd.querySelector('.accheadbtns') || hd).appendChild(pb); } }
     box.appendChild(hd);
     Object.values(PEND).filter(E => E.owner === owner && (E.job || E.nuevas.length) && E.idx == null).forEach(E => { const d = el('div', 'accpend', `${E.job ? '<span class="spin"></span>' : '🧩'}<b>${E.job ? 'Generando la ficha de producto de' : 'Ficha de producto lista, sin guardar:'} «${esc(E.c.nombre || 'complemento nuevo')}»</b><button class="btn">Abrir</button>`); d.querySelector('button').onclick = () => openEditor(owner, null); box.appendChild(d); });
     REGLAS.forEach(([rk, rn]) => {
@@ -107,9 +122,8 @@
       idx.forEach(([c, i]) => {
         const t = tipoOf(c.tipo); const d = el('div', 'acccard'); d.draggable = true; d.ondragstart = e => { e.dataTransfer.setData('text/acc', String(i)); d.classList.add('drag'); }; d.ondragend = () => d.classList.remove('drag');
         const pic = c.thumb || c.cover || c.img; const busy = PEND[owner + ':' + c.id] && PEND[owner + ':' + c.id].job; d.appendChild(el('div', 'accimg' + (busy ? ' busy' : ''), (pic ? `<img src="${pic}" alt="">` : `<span>${t.emo}</span>`) + (busy ? '<i class="spin"></i>' : '')));
-        const inf = el('div', 'accinf'); inf.appendChild(el('b', '', c.nombre)); inf.appendChild(el('small', '', `${t.es} · ${asRef(c) ? '📷 su foto va como referencia' : '✍️ descrito en el prompt'}`));
-        inf.appendChild(el('small', 'accdesc', c.desc || '')); d.appendChild(inf);
-        d.onclick = () => openEditor(owner, i); d.title = 'Clic para editar · arrastra para cambiar de grupo';
+        const inf = el('div', 'accinf'); inf.appendChild(el('b', '', c.nombre)); inf.appendChild(el('small', '', asRef(c) ? '📷 su foto como referencia' : '✍️ descrito en el prompt')); d.appendChild(inf);
+        d.onclick = () => openEditor(owner, i); d.title = `${c.nombre} · ${t.es}${c.desc ? ' · ' + c.desc : ''}\nClic para editar · arrastra para cambiar de grupo`;
         grid.appendChild(d);
       });
       { const at = el('button', 'accaddtile', `<span>＋</span><b>Añadir nuevo</b><small>${rn.toLowerCase()}</small>`); at.title = `Complemento nuevo en «${rn}»`; at.onclick = () => openEditor(owner, null, rk); grid.appendChild(at); } // cuadrado de añadir en cada grupo, con su regla ya elegida

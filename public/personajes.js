@@ -109,7 +109,8 @@
   function webChar() {   // miembro: en Crear imagen el personaje principal es SIEMPRE uno suyo (el primero con ficha, o el que elija entre los suyos); Aria solo se añade como segunda persona. Sin personaje propio todavía, se crea con Aria
     if (!WEBM || !window.setChar) return; const p0 = pj.list.find(p => p.ficha360); if (!p0) return;
     let ch = state.char; if (ch === undefined) { try { ch = localStorage.getItem('am_charsel') || 'aria'; } catch (e) { ch = 'aria'; } }
-    if (ch === 'aria' || !pj.list.some(p => p.id === ch)) setChar(p0.id, true); }
+    let elegido = state.char !== undefined; if (!elegido) { try { elegido = !!localStorage.getItem('am_charsel'); } catch (e) {} }
+    if ((ch === 'aria' && !elegido) || (ch !== 'aria' && !pj.list.some(p => p.id === ch))) setChar(p0.id, true); }   // de partida, uno suyo; si elige a Aria, se respeta (v178)
   async function recuperar() { // trabajos de personajes que se lanzaron antes de recargar: si ya están, se recogen; si no, se siguen esperando
     let r; try { r = await fetch('/api/pendientes').then(x => x.json()); } catch (e) { return; }
     for (const j of (r.jobs || [])) { const pid = j.meta.personaje, kind = j.meta.pjKind; if (!pid || !kind || !pj.list.some(p => p.id === pid) || pj.jobs[pid + ':' + kind]) continue;
@@ -220,7 +221,7 @@
     if (a.edad) d.edad = Math.max(18, Math.min(70, Math.round(+a.edad) || 25)); if (a.altura) d.altura = Math.max(145, Math.min(200, Math.round(+a.altura) || 168));
     if (a.peloNombre && !a.peloColor) d.peloNombre = a.peloNombre; if (Array.isArray(a.pielDet)) d.pielDet = a.pielDet.filter(x => opt('pielDet', x));
     if (a.peinado_en) d.peinado = { id: 'suyo', name: a.peinado_es || 'Su peinado', desc: a.peinado_en };
-    d.accAuto = (Array.isArray(a.accesorios) ? a.accesorios : []).filter(x => x && x.nombre && x.desc).slice(0, 4).map(x => ({ tipo: TIPOS_ACC.includes(x.tipo) ? x.tipo : 'otro', nombre: String(x.nombre).slice(0, 40), desc: String(x.desc).slice(0, 160) }));
+    d.accAuto = (Array.isArray(a.accesorios) ? a.accesorios : []).filter(x => x && x.nombre && x.desc).slice(0, 4).map(x => ({ tipo: TIPOS_ACC.includes(x.tipo) ? x.tipo : 'otro', nombre: String(x.nombre).slice(0, 40), desc: String(x.desc).slice(0, 160), caja: (Array.isArray(x.box_2d) && x.box_2d.length === 4 && x.box_2d.every(v => typeof v === 'number')) ? [x.box_2d[1] / 1000, x.box_2d[0] / 1000, x.box_2d[3] / 1000, x.box_2d[2] / 1000] : null }));   // box_2d llega como [ymin, xmin, ymax, xmax] de 0 a 1000
     d.layout = a.layout === '2x2' ? '2x2' : 'otro'; d.frontal = okBox(a.frontal) ? a.frontal : null; d.analisis = a.resumen || 'Ficha analizada'; d.prompt = null;
   }
   async function analizarFicha(d) { // no genera ninguna imagen: solo lee la ficha
@@ -408,7 +409,8 @@
     if (!r || !r.ok) { toast('No se pudo guardar: ' + (r ? r.error : 'sin respuesta')); return; }
     if (tengo && arr(d.accAuto).length) { // lo que lleva siempre pasa a ser sus complementos fijos (descritos; luego puede añadirles foto)
       const L = d.accAuto.map((x, i) => ({ id: x.tipo + '-' + Date.now().toString(36) + i, nombre: x.nombre, tipo: x.tipo, regla: 'siempre', modo: 'prompt', desc: x.desc }));
-      try { const r2 = await fetch('/api/complementos', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ owner: r.p.id, list: L, files: {} }) }).then(x => x.json()); if (r2 && r2.ok) r.p.complementos = r2.list; } catch (e) {} }
+      const files = {}; if (window.accRecorte && d.ficha) { for (let i = 0; i < L.length; i++) { const t = d.accAuto[i].caja && await accRecorte(d.ficha, d.accAuto[i].caja); if (t) files[L[i].id + '__thumb'] = t; } }   // su portada: el recorte de la ficha donde se ve
+      try { const r2 = await fetch('/api/complementos', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ owner: r.p.id, list: L, files }) }).then(x => x.json()); if (r2 && r2.ok) r.p.complementos = r2.list; } catch (e) {} }
     const k = pj.list.findIndex(x => x.id === r.p.id); if (k >= 0) pj.list[k] = r.p; else pj.list.push(r.p);
     syncChars(); pj.sel = r.p.id; pj.tabBy[r.p.id] = 'ficha'; pj.wiz = null; saveDraft(); toast(tengo ? `«${r.p.nombre}» ya está en ARIA STUDIO` : w.editId ? 'Cambios guardados' : `«${r.p.nombre}» guardada. Ahora, a por su cara.`); window.pjScrollTop = true; renderProfile(); renderSide();
   }
@@ -544,7 +546,7 @@
   function top() {
     const t = el('div', 'pjtop'); t.appendChild(el('small', 'pjk', 'Mis personajes'));
     const row = el('div', 'pjcircles');
-    const add = (id, name, img) => { const c = el('button', 'pjc' + (!pj.wiz && pj.sel === id ? ' on' : ''), `<span class="pjav">${img ? `<img src="${img}" alt="">` : `<i>${(name || '?')[0]}</i>`}</span><small>${name}</small>`); c.onclick = () => { pj.wiz = null; if (window.FB) FB.open = false; if (window.F3) F3.open = false; saveDraft(); pj.sel = id; if (window.setChar && window.CH && CH().id !== id && (id === 'aria' ? !(WEBM && pj.list.some(p => p.ficha360)) : pj.list.some(p => p.id === id && p.ficha360))) setChar(id, true);   // el principal va a la par del Perfil (Aria no, si el miembro tiene personaje propio)
+    const add = (id, name, img) => { const c = el('button', 'pjc' + (!pj.wiz && pj.sel === id ? ' on' : ''), `<span class="pjav">${img ? `<img src="${img}" alt="">` : `<i>${(name || '?')[0]}</i>`}</span><small>${name}</small>`); c.onclick = () => { pj.wiz = null; if (window.FB) FB.open = false; if (window.F3) F3.open = false; saveDraft(); pj.sel = id; if (window.setChar && window.CH && CH().id !== id && (id === 'aria' || pj.list.some(p => p.id === id && p.ficha360))) setChar(id, true);   // el principal va a la par del Perfil
       renderProfile(); renderSide(); };
       if (id !== 'aria') { c.draggable = true; c.title = 'Arrástralo para cambiar el orden'; c.ondragstart = e => { pj.dragId = id; e.dataTransfer.effectAllowed = 'move'; try { e.dataTransfer.setData('text/plain', id); } catch (x) {} setTimeout(() => c.classList.add('drag'), 0); }; c.ondragend = () => { pj.dragId = null; row.querySelectorAll('.pjc').forEach(x => x.classList.remove('drag', 'dropL', 'dropR')); }; }
       c.dataset.pid = id;

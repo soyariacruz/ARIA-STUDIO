@@ -656,7 +656,7 @@ _ASK_FICHA = ('This image is the character reference sheet of ONE AI influencer:
               '"peloNombre": Spanish name of the hair color if none of those fits (else null); "peinado_es": short Spanish name of the hairstyle (max 5 words); "peinado_en": one English sentence describing the hairstyle precisely (length, cut, bangs, how it is tied); '
               '"piel": muyclara|clara|media|morena|oscura|ebano; "complexion": menuda|delgada|atletica|media|curvy|musculosa|grande; "pecho": peq|medio|grande|muy (or null for men); "cadera": estrecha|media|ancha|muy; "estilo": realista|cartoon; '
               '"pielDet": array of hoyuelos|tatuajes|cicatriz (only what is clearly visible); '
-              '"accesorios": array (max 4) of the accessories the person wears in ALL the views (glasses, earrings, necklace, piercing, hat...), each one as {"tipo": gafas|gafassol|pendientes|collar|reloj|gorra|otro, "nombre": short Spanish name, "desc": precise English description such as "thin round metal glasses"}; empty array if none; '
+              '"accesorios": array (max 4) of the accessories the person wears in ALL the views (glasses, earrings, necklace, piercing, hat...), each one as {"tipo": gafas|gafassol|pendientes|collar|reloj|gorra|otro, "nombre": short Spanish name, "desc": precise English description such as "thin round metal glasses", "box_2d": [ymin, xmin, ymax, xmax] = the tight bounding box of that accessory in the view where it is seen biggest and clearest, normalized to 0-1000}; empty array if none; '
               '"layout": "2x2" if the image is a grid of exactly four panels (two rows, two columns), else "otro"; "frontal": [x0, y0, x1, y1] as fractions between 0 and 1 of the image area that contains the FRONT-facing head-and-shoulders view; '
               '"resumen": one short Spanish sentence describing the person.')
 def _capa():   # la capa de la cuenta sobre el catálogo común (su casa/capa.json): perfil, lo propio de vestidor/hair/expr, favoritas, lo común que ha ocultado
@@ -720,7 +720,7 @@ _ASK_ESTILO = {   # leer un peinado o una expresión de una foto cualquiera (dos
                'If SEVERAL people appear, use up to 160 words and describe EVERY one of them by position ("the person on the left", "the person in the middle", "the person on the right"): what each one is doing, the exact pose, and how they touch or look at each other; in that case never say whether each one is a man or a woman, always "the person on the ...". '
                'NEVER describe who the person is: no face, no eye color, no hair color or hairstyle, no skin tone, no age, no ethnicity, no body shape, no glasses, no earrings, no jewelry. '
                'If the image is not a real photograph of a real person (a toy, vinyl collectible, doll, figurine, plush, cartoon, 3D render, illustration), describe in Line 2 that medium too: materials, finish, proportions and the look of the whole image. '
-               'Line 3: one English phrase, 8-30 words, with ONLY the clothing and shoes she wears (colors, fabrics, fit); with several people, up to 60 words: the clothing of each one, by position. '
+               'Line 3: one English phrase, 8-30 words, with ONLY the clothing and shoes she wears (colors, fabrics, fit), never glasses, earrings, jewelry, hats or any other accessory; with several people, up to 60 words: the clothing of each one, by position. '
                'Line 4: the single word REAL if the main figure is a real photographed human; otherwise 3-10 English words naming exactly what kind of figure it is (e.g. "vinyl collectible toy figure with an oversized head", "3D cartoon character", "anime illustration").'),
     'hair': ('Look ONLY at the HAIRSTYLE of the person in this image (ignore the face, the clothes and the background). Answer with EXACTLY two lines and nothing else. '
              'Line 1: a short hairstyle name in Spanish, 2-5 words, like a salon catalog (e.g. "Trenza Francesa Lateral", "Moño Bajo Despeinado"). '
@@ -1573,6 +1573,37 @@ class H(SimpleHTTPRequestHandler):
                 if ck and people: _PPL[ck] = people; _ppl_save()
             except Exception as e: return self._json(400, {'error': str(e)})
             plog(f'personas_img ok · {len(people)} persona(s)'); return self._json(200, {'ok': True, 'people': people, 'person': (people[0] if pt and people else None)})
+        if self.path == '/api/acc_cajas':   # dónde está cada complemento en la ficha del personaje, para recortar de ahí su portada
+            n = int(self.headers.get('Content-Length') or 0); body = json.loads(self.rfile.read(n) or b'{}')
+            try:
+                img = body['image'] if isinstance(body.get('image'), dict) else {'path': body.get('image')}
+                items = [x for x in (body.get('items') or []) if isinstance(x, dict) and x.get('id')][:8]
+                if not items: raise RuntimeError('faltan los complementos')
+                url = resolve_ws(img)
+                ask = ('This image is the reference sheet of ONE character (several views of the same person). Find each of these accessories on the person: '
+                       + '; '.join(f'{i + 1}) {str(x.get("nombre") or "")[:40]} ({str(x.get("desc") or "")[:160]})' for i, x in enumerate(items))
+                       + '. Answer with ONLY a JSON array and nothing else: one object per accessory that is clearly visible, as {"n": its number, "box_2d": [ymin, xmin, ymax, xmax]}, '
+                       'where box_2d is the tight bounding box of that accessory in the view where it is seen biggest and clearest (prefer a close-up of the face for glasses, earrings and necklaces), normalized to 0-1000. Skip the ones you cannot see.')
+                r = ws('POST', '/api/v3/wavespeed-ai/any-llm/vision', {'prompt': ask, 'images': [url], 'model': 'google/gemini-2.5-flash', 'temperature': 0.1, 'max_tokens': 700, 'priority': 'latency'})
+                rid = (r.get('data') or {}).get('id'); txt = ''
+                for _ in range(50):
+                    time.sleep(1.5); w = ws('GET', f'/api/v3/predictions/{rid}/result').get('data') or {}
+                    if w.get('status') == 'completed': o = w.get('outputs') or []; txt = (o[0] if o else '') if isinstance(o, list) else str(o); break
+                    if w.get('status') == 'failed': raise RuntimeError(w.get('error') or 'falló')
+                m = re.search(r'\[.*\]', str(txt), re.S)
+                if not m: raise RuntimeError('respuesta sin datos')
+                cajas = {}
+                for q in json.loads(m.group(0)):
+                    b = q.get('box_2d') if isinstance(q, dict) else None
+                    try: k = int(q.get('n')) - 1
+                    except Exception: continue
+                    if not (0 <= k < len(items)) or not (isinstance(b, list) and len(b) == 4 and all(isinstance(v, (int, float)) for v in b)): continue
+                    if max(b) > 1.5: b = [v / 1000.0 for v in b]
+                    y0, x0, y1, x1 = [max(0.0, min(1.0, float(v))) for v in b]   # el lector contesta [ymin, xmin, ymax, xmax]
+                    if x1 - x0 < 0.005 or y1 - y0 < 0.005: continue
+                    cajas[items[k]['id']] = [round(x0, 4), round(y0, 4), round(x1, 4), round(y1, 4)]
+            except Exception as e: return self._json(400, {'error': str(e)})
+            plog(f'acc_cajas ok · {len(cajas)} de {len(items)}'); return self._json(200, {'ok': True, 'cajas': cajas})
         if self.path == '/api/describir':   # descripción profesional de un objeto para el prompt (lee la foto con Gemini 2.5 Flash por WaveSpeed)
             n = int(self.headers.get('Content-Length') or 0); body = json.loads(self.rfile.read(n) or b'{}')
             try:
