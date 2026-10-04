@@ -1,4 +1,4 @@
-/* PRUEBA DE HUMO de ARIA STUDIO (v179). No genera nada ni gasta saldo.
+/* PRUEBA DE HUMO de ARIA STUDIO (v199). No genera nada ni gasta saldo.
    Se pega en la consola de la página ya arrancada (local :8767, o la web de pruebas :3000 con una cuenta local) y devuelve la lista de fallos.
    Recorre todas las pestañas y las combinaciones típicas de Crear imagen llamando a lo mismo que pinta la app; lo que reviente, sale aquí
    y no delante de un usuario. Antes de publicar tiene que devolver `fallos: []`. */
@@ -29,6 +29,16 @@
   const cr = TABS.creaciones.items.find(x => !x.pending && x.kind !== 'video' && x.meta);
   if (cr) { paso('popup de una creación', () => openGal(cr)); await w(250); paso('cerrar popup', () => document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))); paso('recrear', () => recrear(cr)); await w(250); pinta('tras recrear'); plan('tras recrear'); }
   paso('imagen encogida', () => { setK(1); setK(0); });
+  // 4) editor de ficha (v198): abre, pasa por todas sus piezas y cierra
+  const hecha = ((window.PJ && PJ.list) || []).find(p => p.ficha360 && p.cuerpo);
+  if (hecha && window.pjEdFicha) { paso('editor de ficha · abrir', () => { pjEdFicha(hecha.id, 'frente'); if (!document.getElementById('edf')) throw new Error('no se abre'); }); for (let i = 0; i < 7; i++) paso('editor de ficha · pieza ' + i, () => pjEdMueve(1)); paso('editor de ficha · cerrar', () => { pjEdCierra(); if (document.getElementById('edf')) throw new Error('no se cierra'); }); }
+  // 5) Comunidad (v199): la página, sus tres apartados, la ficha de un personaje, y que se cierre al ir a otra sección
+  if (window.comAbre) { try { COM.visto = true; await comAbre('dir'); if (!document.getElementById('compage') || !COM.D) throw new Error('la página no se pinta'); hecho.push('comunidad · abrir');
+      for (const v of ['sol', 'msg', 'dir']) { COM.vista = v; COM.arg = null; COM.M = []; comPinta(); hecho.push('comunidad · ' + v); }
+      const cc = COM.D.cuentas.find(x => x.personajes.length); if (cc) { COM.pz = { cid: cc.cid, pid: cc.personajes[0].pid }; comPinta(); if (!document.querySelector('#compage .cpdrawer')) throw new Error('no sale la ficha del personaje'); COM.pz = null; hecho.push('comunidad · ficha'); }
+      for (const v of ['dir', 'sol', 'msg']) { COM.vista = v; comPinta(); if (/[\w.+-]+@[\w-]+\.[a-z]{2,}/i.test(document.getElementById('compage').innerText)) throw new Error('aparece algo con forma de correo en ' + v); } COM.vista = 'dir'; hecho.push('comunidad · sin correos');
+      setTab(guard.tab); if (COM.on || document.getElementById('compage')) throw new Error('no se cierra al cambiar de sección'); hecho.push('comunidad · cerrar');
+    } catch (e) { fallos.push('comunidad → ' + String((e && e.stack) || e).split('\n').slice(0, 2).join(' | ').slice(0, 260)); if (window.comCierra) comCierra(true); } }
   // dejarlo como estaba
   paso('restaurar', () => { state.comp = guard.comp; state.compBy = guard.compBy; state.extras = guard.extras; saveExtras(); state.nsfw = guard.nsfw; setChar(guard.ch, true); setTab(guard.tab); });
   return { fallos, pasos: hecho.length, cuenta: window.CUENTA && CUENTA.web ? (WEBM() ? 'web · miembro' : 'web · dueño') : 'local', escala: window.ESCALA, ventana: innerWidth + '×' + innerHeight };
