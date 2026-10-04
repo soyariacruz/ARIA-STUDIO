@@ -463,6 +463,7 @@ def _jobs_restore(hours=2):   # al arrancar: vuelven los trabajos lanzados en la
         if vivos: plog(f'{len(vivos)} trabajo(s) recuperados tras reiniciar el puente')
     except Exception as e: plog('jobs_restore ✕ ' + str(e))
 jobs = _Jobs()
+_ERR_N = {}   # errores de página recibidos por cuenta en la última hora (tope)
 _PPL_F = os.path.join(DATOS or RAIZ, 'personas_cache.json')   # personas ya detectadas en cada imagen: la misma foto no se vuelve a leer (ni a pagar)
 try: _PPL = json.load(open(_PPL_F, encoding='utf-8'))
 except Exception: _PPL = {}
@@ -940,7 +941,7 @@ class H(SimpleHTTPRequestHandler):
                     try:
                         if os.path.getmtime(fp) > desde: t.add(fp, arcname=os.path.relpath(fp, DATOS), recursive=False)
                     except OSError: pass
-            for f in ('jobs.jsonl', 'feedback.jsonl'):
+            for f in ('jobs.jsonl', 'feedback.jsonl', 'errores.jsonl'):
                 fp = os.path.join(DATOS, f)
                 if os.path.isfile(fp) and os.path.getmtime(fp) > desde: t.add(fp, arcname=f)
     def do_GET(self): return self._pasa(self._get)
@@ -1340,6 +1341,19 @@ class H(SimpleHTTPRequestHandler):
             n = int(self.headers.get('Content-Length') or 0); body = json.loads(self.rfile.read(n) or b'{}')
             for rid in ([body.get('claim')] if body.get('claim') else []) + list(body.get('claims') or []):
                 if _mio(rid): jobs[rid]['claimed'] = True
+            return self._json(200, {'ok': True})
+        if self.path == '/api/errores':   # lo que revienta en la página de alguien: una línea por error en errores.jsonl (baja con la copia de cada noche)
+            n = int(self.headers.get('Content-Length') or 0); body = json.loads(self.rfile.read(min(n, 20000)) or b'{}')
+            try:
+                quien = uid() or 'local'; ahora = time.time(); L = _ERR_N.setdefault(quien, []); L[:] = [t for t in L if ahora - t < 3600]
+                if len(L) < 40 and isinstance(body, dict):
+                    L.append(ahora); fp = os.path.join(DATOS or RAIZ, 'errores.jsonl')
+                    if os.path.isfile(fp) and os.path.getsize(fp) > 3000000: os.replace(fp, fp + '.1')
+                    reg = {'t': time.strftime('%Y-%m-%d %H:%M:%S'), 'cuenta': quien}
+                    for k in ('tipo', 'msg', 'donde', 'pila', 'tab', 'web', 'ua', 'w', 'h', 'z'): 
+                        if k in body: reg[k] = body[k] if not isinstance(body[k], str) else body[k][:1500]
+                    with open(fp, 'a', encoding='utf-8') as fh: fh.write(json.dumps(reg, ensure_ascii=False) + '\n')
+            except Exception: pass
             return self._json(200, {'ok': True})
         if self.path == '/api/feedback':   # feedback de las secciones en desarrollo → base «💬 Feedback de ARIA STUDIO» de Notion (+ copia en assets/feedback)
             n = int(self.headers.get('Content-Length') or 0); body = json.loads(self.rfile.read(n) or b'{}')

@@ -14,6 +14,7 @@ const now = () => { const d = new Date(); return `${pad(d.getHours())}:${pad(d.g
 const rid = () => 'req_' + Math.random().toString(16).slice(2, 10);
 
 const tipos = [...new Set(C.expr.map(i => i.tipo).filter(Boolean))];
+C.lugar = C.lugar || [];   // 📍 Lugares (v180): {id, name, tags, desc, files: {main, thumb}}
 const TABS = {
   perfil:   { label: 'Perfil',    icon: '👤', shape: 'round', ar: 9 / 16 + 3 / 4, items: C.perfil.views, base: 'Ficha 360', sub: i => i.sub || 'vista', video: true },
   hair:     { label: 'Peinados',  icon: '💇‍♀️', shape: 'wide', ar: 16 / 9, items: C.hair,     filters: ['Trenzas', 'Moños/Recogidos', 'Coletas', 'Ondas/Rizos', 'Liso', 'Corto'], fkey: 'tags', base: 'Hair Styles', sub: i => (i.tags || []).join(' · ') || 'peinado' },
@@ -22,6 +23,7 @@ const TABS = {
   cartoon:  { label: 'Cartoon',   icon: '🎨', shape: 'wide',  ar: 16 / 9, items: C.cartoon,  base: 'Cartoon Art Styles', sub: () => 'estilo de dibujo' },
   photo:    { label: 'Efectos',   icon: '📷', shape: 'wide',  ar: 16 / 9, items: C.photo,    base: 'Photography Styles', sub: () => 'estilo fotográfico' },
   movie:    { label: 'Movie looks', icon: '🎬', shape: 'wide',  ar: 16 / 9, items: C.movie,    base: 'Movie Looks', sub: () => 'movie look' },
+  lugar:    { label: 'Lugares',   icon: '📍', shape: 'wide',  ar: 16 / 9, items: C.lugar,    filters: ['Interior', 'Exterior'], fkey: 'tags', base: 'Lugares', sub: i => (i.tags || []).join(' · ') || 'lugar' },
   videoteca: { label: 'Filmoteca', icon: '🎞', shape: 'tall', ar: 9 / 16, items: (C.videoteca || []).map(v => Object.assign(v, { kind: 'video', src: v.video, thumb: v.poster })), filters: ['Cinematic', 'UGC'], fkey: 'tags', base: 'Prompts de Vídeo (pago)', sub: i => (i.ai || []).join(' · ') || 'vídeo' },
   biblio:   { label: 'Fototeca',  icon: '🖼️', shape: 'tall', ar: 3 / 4,  items: C.biblio || [], filters: ['Individual', 'Carrousel'], fkey: 'tags', base: 'Prompts de Imágenes (pago)', sub: i => (i.ai || []).join(' · ') || 'prompt' },
   crear:    { label: 'Crear imagen', icon: '📸', shape: 'tall', ar: 3 / 4, items: C.crear,    base: 'Tu creación', sub: i => i.sub || (i.custom ? 'combina lo que añadas' : 'receta') },
@@ -30,11 +32,11 @@ const TABS = {
 };
 // Vestidor: la prenda base de Aria (tank top y leggings negros, n82) siempre primera; el resto de más nueva a más antigua
 (function () { const base = C.vestidor.find(v => v.id === 'n82'); const rest = C.vestidor.filter(v => v !== base).sort((a, b) => ((b.date || '') > (a.date || '') ? 1 : (b.date || '') < (a.date || '') ? -1 : (b.num || 0) - (a.num || 0))); C.vestidor.length = 0; if (base) C.vestidor.push(base); rest.forEach(v => C.vestidor.push(v)); })();
-const GALLERY_TABS = new Set(['creaciones', 'biblio', 'videoteca', 'vestidor', 'photo', 'movie', 'cartoon', 'expr', 'hair']); // sin imagen grande: la cuadrícula ocupa todo y la vista previa va en el panel izquierdo
-const ORDER = ['perfil', 'creaciones', 'crear', 'video', '|', 'biblio', 'videoteca', '|', 'vestidor', 'photo', 'movie', 'cartoon', 'expr', 'hair'];
+const GALLERY_TABS = new Set(['creaciones', 'biblio', 'videoteca', 'vestidor', 'photo', 'movie', 'cartoon', 'expr', 'hair', 'lugar']); // sin imagen grande: la cuadrícula ocupa todo y la vista previa va en el panel izquierdo
+const ORDER = ['perfil', 'creaciones', 'crear', 'video', '|', 'biblio', 'videoteca', '|', 'vestidor', 'lugar', 'photo', 'movie', 'cartoon', 'expr', 'hair'];
 const TABKEYS = ORDER.filter(k => k !== '|');
-const LIBS = ['vestidor', 'photo', 'movie', 'cartoon', 'expr', 'hair'];   // bibliotecas: en el menú solo se ve una (la última usada) y el resto sale en «Más»
-const COMP = { biblio: 'Fototeca', vestidor: 'Prenda', photo: 'Efecto', movie: 'Movie look', cartoon: 'Cartoon', expr: 'Expresión', hair: 'Peinado' };
+const LIBS = ['vestidor', 'lugar', 'photo', 'movie', 'cartoon', 'expr', 'hair'];   // bibliotecas: en el menú solo se ve una (la última usada) y el resto sale en «Más»
+const COMP = { biblio: 'Fototeca', vestidor: 'Prenda', photo: 'Efecto', movie: 'Movie look', cartoon: 'Cartoon', expr: 'Expresión', hair: 'Peinado', lugar: 'Lugar' };
 const CONVERT = new Set(['cartoon', 'photo', 'movie']);
 const state = { tab: 'hair', sel: {}, filter: {}, search: {}, pose: {}, done: new Set(), added: new Set(), comp: {}, fold: {}, nGen: 0, spent: 0, spinning: false, busy: false, ready: false, quality: 'std', aspect: '3:4', vdur: 5, vres: '720p', vmode: 'i2v', vaspect: '3:4', vaudio: false };
 try { state.quality = localStorage.getItem('am_quality') || 'std'; state.aspect = localStorage.getItem('am_aspect') || '3:4'; state.aspectV = localStorage.getItem('am_aspect_v') || '1:1'; state.vdur = +(localStorage.getItem('am_vdur') || 5); state.vres = localStorage.getItem('am_vres') || '720p'; state.vmode = localStorage.getItem('am_vmode') || 'i2v'; state.vaspect = localStorage.getItem('am_vaspect') || '3:4'; state.vaudio = localStorage.getItem('am_vaudio') !== '0'; state.vprov = localStorage.getItem('am_vprov') || 'hf'; state.vmodel = localStorage.getItem('am_vmodel') || '2.0'; } catch (e) {}
@@ -111,7 +113,7 @@ function buildNav() {
   let host = nav; const main = el('div', 'navmain');
   ORDER.forEach(k => { if (LIBS.includes(k) && k !== state.lib) return; if (k === '|') { nav.appendChild(el('div', 'nav-sep')); host = nav; return; } if (k === 'crear') { nav.appendChild(main); host = main; } if (k === 'creaciones') host = nav; const t = TABS[k]; const i = TABKEYS.indexOf(k); const b = el('button', (k === state.tab ? 'on' : '') + (k === 'perfil' ? ' story' : ''), k === 'perfil' ? `<span class="ring">${navAvatar() ? `<img src="${navAvatar()}" alt="">` : '<i class="ringv">👤</i>'}</span>${t.label}` : `<span>${t.icon}</span>${t.label}`); b.dataset.tab = k; b.title = `${t.label} (${i + 1})`; b.onclick = () => { if (state.tab === k) { state.filter[k === 'crear' ? 'crearG' : k] = null; state.cfilt = null; state.bibGroup = null; state.vtGroup = null; } setTab(k); }; if (k === 'crear' || k === 'video') b.appendChild(el('span', 'bd', '0'));
     if (k === 'video') { b.classList.add('soon'); b.insertAdjacentHTML('beforeend', '<i>pronto</i>'); b.title = 'Crear vídeo: próximamente'; b.onclick = () => { if (state.tab === 'video') return; const go = () => setTab('video'); if (window.devIntro) devIntro('Crear vídeo', go); else go(); }; } // en el MVP, Crear vídeo va como «pronto» (se puede entrar igualmente)
-    if (LIBS.includes(k)) { const w = el('div', 'navlib'); w.appendChild(b); const mb = el('button', 'more', 'Más <span>▾</span>'); mb.title = 'Vestidor, Efectos, Movie looks, Cartoon, Expresiones, Peinados y Poses'; mb.onclick = () => navMore(w, LIBS.map(q => [TABS[q].icon, TABS[q].label, () => setTab(q), '', q === state.tab]).concat([['🤸', 'Poses', () => toast('Poses: próximamente'), 'pronto']])); w.appendChild(mb); host.appendChild(w); }
+    if (LIBS.includes(k)) { const w = el('div', 'navlib'); w.appendChild(b); const mb = el('button', 'more', 'Más <span>▾</span>'); mb.title = 'Vestidor, Lugares, Efectos, Movie looks, Cartoon, Expresiones, Peinados y Poses'; mb.onclick = () => navMore(w, LIBS.map(q => [TABS[q].icon, TABS[q].label, () => setTab(q), '', q === state.tab]).concat([['🤸', 'Poses', () => toast('Poses: próximamente'), 'pronto']])); w.appendChild(mb); host.appendChild(w); }
     else host.appendChild(b); });
   if (state.interno) { nav.appendChild(el('div', 'nav-sep')); const wb = el('button', 'more', '<span>🧰</span>Workflows'); wb.title = 'Programas internos del equipo (solo cuentas autorizadas)'; wb.onclick = () => navMore(wb, [['🥊', 'Duelos', () => { location.href = 'liga.html'; }, 'interno']]); nav.appendChild(wb); }
   nav.appendChild(el('div', 'sp'));
@@ -151,6 +153,9 @@ function vestSort(v) { // favoritas primero; después, las prendas a las que se 
 function isNew(it) { if (!it) return false; if (it.date) { const t = Date.parse(it.date); return isFinite(t) && (Date.now() - t) < NEW_DAYS * 864e5; } return !!it.new; }
 function renderRail() { // cuadrícula vertical con scroll (estilo Freepik)
   const t = TABS[state.tab]; const v = view(); rail.innerHTML = ''; rail.className = 'grid ' + (t.shape === 'round' ? '' : t.shape) + ' t-' + state.tab + ' sz-' + gsize();
+  if (!v.length && (t === TABS.creaciones || t === TABS.crear) && hydrateLive._ya && !TABS.creaciones.items.length) {   // cuenta sin ninguna creación todavía
+    const d = el('div', 'vacio', t === TABS.creaciones ? '<span>✨</span><b>Aquí aparecerán tus creaciones</b><small>Elige una foto de la Fototeca o arrastra una, y tu personaje la recrea.</small><button type="button" class="btn acc big">Crea tu primera imagen</button>' : '<span>✨</span><b>Tu primera imagen aparecerá aquí</b><small>Elige arriba una foto a recrear y pulsa «Generar imagen».</small>');
+    const b = d.querySelector('button'); if (b) b.onclick = () => setTab('crear'); rail.appendChild(d); return; }
   const mk = it => {
     const d = el('div', 'cell'); const src = t === TABS.vestidor ? it.card : (t === TABS.crear || t === TABS.perfil || t === TABS.video || t === TABS.biblio || t === TABS.creaciones || t === TABS.videoteca) ? it.thumb : ((t === TABS.hair || t === TABS.expr) ? it.files.main : it.files.thumb);
     if (it === cur() && t === TABS.perfil) {}
@@ -184,7 +189,7 @@ function renderRail() { // cuadrícula vertical con scroll (estilo Freepik)
   more(first); renderChips(); centerOn(cur(), false);
 }
 rail.addEventListener('scroll', () => { if (rail._more && rail.scrollTop + rail.clientHeight > rail.scrollHeight - 1200) rail._more(); }, { passive: true });
-const SIZE_TABS = new Set(['biblio', 'videoteca', 'vestidor', 'photo', 'movie', 'cartoon', 'expr', 'hair', 'creaciones', 'video', 'crear']);
+const SIZE_TABS = new Set(['biblio', 'videoteca', 'vestidor', 'photo', 'movie', 'cartoon', 'expr', 'hair', 'lugar', 'creaciones', 'video', 'crear']);
 state.gsize = state.gsize || {}; try { Object.assign(state.gsize, JSON.parse(localStorage.getItem('am_gsize') || '{}')); } catch (e) {}
 function gsize() { return state.gsize[state.tab] || 'm'; }
 function firstVisibleCell() { const top = rail.getBoundingClientRect().top + 4; return [...rail.querySelectorAll('.cell')].find(c => c.getBoundingClientRect().bottom > top) || null; }
@@ -228,7 +233,7 @@ function paint(it, fast) {
   mirror.classList.toggle('video', t === TABS.perfil);
   if (t === TABS.perfil) { mirror.classList.remove('cached'); $('#plName').textContent = C.perfil.name; if (!fast && it.angle != null) turnTo(it.angle, true); }
   else if (t === TABS.video) { /* modo cine: el reproductor enseña los vídeos */ }
-  else if (t === TABS.creaciones || t === TABS.videoteca) { /* galería: el popup / la mini enseñan el elemento */ }
+  else if (t === TABS.creaciones || t === TABS.videoteca || t === TABS.lugar) { /* galería: el popup / la mini enseñan el elemento */ }
   else if (t === TABS.biblio) { mirror.classList.remove('vidmode'); mirror.classList.add('cached', 'bib'); mirror.querySelector('.tag').textContent = 'biblioteca · para recrear'; fitAr(it, it.image); showImage(it.image, fast); }
   else if (LIVE && t === TABS.crear && it.custom && jobBg(it)) { // generando: debajo del «Generando» se ve la imagen que se está recreando, no el resultado anterior
     const bg = jobBg(it); mirror.classList.remove('cached'); if (arOverride !== null) { arOverride = null; sizeMirror(); } bgAr(bg); showImage(bg, fast);
@@ -361,6 +366,7 @@ function crearRefs() { // referencias de Crear imagen en el orden elegido (arras
   const accs = window.accActive ? accActive().filter(a => window.accAsRef ? accAsRef(a) : a.img) : []; const accAt = all.length; // complementos del personaje con foto (su móvil, etc.): se colocan después de contar el resto
   if (ch.cuerpo && (bib || state.nsfw)) all.push({ key: 'cuerpo', name: 'Cuerpo de ' + ch.short, thumb: ch.cuerpo, img: { path: ch.cuerpo.split('?')[0] }, fixed: true }); // su cuerpo real: al recrear una foto no se hereda el cuerpo de la otra persona
   if (v && !state.nsfw) all.push({ key: 'vestidor', name: v.name, thumb: v.card, img: v.pending ? { data: v.ficha } : { path: v.ficha }, comp: 'vestidor' });
+  if (c.lugar) { const lm = c.lugar.files.main; all.push({ key: 'lugar', name: 'Lugar · ' + c.lugar.name, thumb: compThumb('lugar', c.lugar), img: lm.startsWith('data:') ? { data: lm } : { path: lm.split('?')[0] }, comp: 'lugar' }); }
   if (h && ch.aria) { const hv = hairVarColor(h); all.push({ key: 'hair',   /* con otro personaje el peinado va descrito en el prompt: la imagen enseña a Aria y arrastra su cara */ name: h.name + (hv ? ' · ' + hv : ''), thumb: state.hairVar || h.files.thumb, img: h.pending ? { data: h.files.main } : { path: (state.hairVar || h.files.main).split('?')[0] }, comp: 'hair' }); }
   if (e && ch.aria) all.push({ key: 'expr', name: e.name, thumb: e.files.thumb, img: e.pending ? { data: e.files.main } : { path: e.files.main }, comp: 'expr' });
   xs.forEach(x => { all.push({ key: 'ficha:' + x.id, name: 'Ficha 360 de ' + x.short, thumb: x.ficha, img: { path: x.ficha }, fixed: true }); const m = state.compBy[x.id] || {};
@@ -614,7 +620,7 @@ function planMulti() { // varios personajes en la misma imagen: cada uno con su 
   const where = (x, i) => { const p = ppl.find(q => q.char === x.id); return p ? p.desc : `the ${ord[i] || 'next'} person from the left`; };
   const base = bib ? `Edit ${I('canvas')}. Keep its scene, background, camera framing, poses, lighting and composition exactly as they are. Change ONLY who these people are: ${L.map((x, i) => `${where(x, i)} must become ${x.name}, the ${noun(x)} of ${I(fk(x))} (character sheet): ${ident(x)}`).join('; ')}. Anyone else in the image stays exactly as they are. This is a FULL BODY swap, not a face swap: each replaced person is redrawn from head to toe as the character, with the build, height, skin, shoulders, chest, waist, hips, arms, hands, legs and feet of their own character sheet and the clothes refitted to that body; from the original person keep only the pose, the action and the place in the frame${L.map((x, i) => { const d = where(x, i); const h = /\b(man|boy|guy|gentleman|male|father|husband|mestre|master)\b/i.test(d), w = /\b(woman|girl|lady|female|mother|wife)\b/i.test(d); return (noun(x) === 'woman' && h && !w) ? `. ${x.name} replaces a man: that figure becomes a WOMAN, with ${x.name}'s own female body from ${I(fk(x))}; nothing of the man's body, arms, hands, legs or feet remains` : (noun(x) === 'man' && w && !h) ? `. ${x.name} replaces a woman: that figure becomes a MAN, with ${x.name}'s own male body from ${I(fk(x))}; nothing of the woman's body remains` : ''; }).join('')}`
     : nuevo ? `Create ONE new ${fig ? 'image' : 'photograph'} of this scene: ${scene}.${full.drop && full.ropa ? ' Clothing seen in the scene: ' + full.ropa.replace(/[.\s]+$/, '') + '.' : ''} The people in it are these characters: ${L.map((x, i) => `${x.name} takes the place of ${where(x, i)}: ${x.name} is the ${noun(x)} of ${I(fk(x))} (character sheet): ${ident(x)}`).join('; ')}. Each character keeps the gender, body, face and hair of their own character sheet, even where the scene describes that person differently (a woman stays a woman in a man's place, and the other way round); only the place, the pose, the action and the framing come from the scene. Anyone else described in the scene stays as described${fig ? `. Every figure is a ${fig}: each character appears as a ${fig} version of themselves, never a photorealistic human` : ''}`
-    : `Create ONE photograph of ${L.length} people together, side by side, natural relaxed poses, plain white studio backdrop, soft even lighting: ${L.map(x => `${x.name} is the ${noun(x)} of ${I(fk(x))} (character sheet): ${ident(x)}`).join('; ')}`;
+    : `Create ONE photograph of ${L.length} people together, side by side, natural relaxed poses${n('lugar') ? '' : ', plain white studio backdrop, soft even lighting'}: ${L.map(x => `${x.name} is the ${noun(x)} of ${I(fk(x))} (character sheet): ${ident(x)}`).join('; ')}`;
   const parts = [];
   L.forEach(x => { const m = cmp(x);
     { const bk = x.id === main.id ? 'cuerpo' : 'cuerpo:' + x.id; const hb = n(bk); if (x.body || hb) parts.push(`${x.name}'s body is their own${x.body ? ': ' + x.body : ''}${hb ? `, exactly as in ${I(bk)} (${x.name}'s body reference sheet: take only the build and the proportions from it, never its underwear or its pose)` : `, as in ${I(fk(x))}`}; never the body of the person they replace or of another character`); }   // el cuerpo de cada uno: lo que dice su perfil y, si la tiene, su ficha de cuerpo
@@ -626,12 +632,14 @@ function planMulti() { // varios personajes en la misma imagen: cada uno con su 
     else if (full && !full.double && (!x.aria || full.drop)) { const hh = x.hair || {}; parts.push(`${x.name} keeps their own hair, exactly as in ${I(fk(x))}${hh.color ? ': ' + hh.color + ' hair' : ''}${hh.style ? ', ' + hh.style.replace(/\.$/, '') : ''} (same color, length and cut), not the hair ${bib ? 'of the person they replace' : 'described in the scene'}`); }   // sin peinado elegido: manda el pelo de su ficha, no el de la foto
     if (m.expr && n(ck(x, 'expr'))) parts.push(`${x.name}'s facial expression and gesture are exactly those of ${I(ck(x, 'expr'))}: ${m.expr.name}; the person in that image only shows the expression`);
     else if (m.expr) parts.push(`${x.name}'s facial expression and gesture: ${(m.expr.desc || m.expr.name).replace(/\.$/, '')} (${m.expr.name})`); });
+  if (n('lugar')) parts.push(lugarTxt(I('lugar'), true, !!full));
   if (c.cartoon) parts.push(`render the whole image in this art style: ${deAria(c.cartoon.desc || c.cartoon.name)}`);
   if (c.photo) parts.push(`photographic style: ${c.photo.desc || c.photo.name}`);
   if (c.movie) parts.push(`cinematic color grading and look of ${c.movie.name}${c.movie.desc ? ': ' + c.movie.desc : ''}`);
   R.filter(r => r.key.startsWith('pool:')).forEach(r => parts.push(`use ${I(r.key)} (${r.name}) as a reference where the prompt mentions @Image${n(r.key)}`));
   parts.push('each person keeps their own identity: never mix their faces, hair or accessories with each other or with the people shown in the outfit, hairstyle or expression references');
-  return { multi: true, images: R.map(r => r.img), aspect: '3:4', prompt: `${base}. ${parts.map(x => x[0].toUpperCase() + x.slice(1)).join('. ')}. ${(c.cartoon || fig) ? 'No text, no logos.' : 'Photoreal, no text, no logos.'}` };
+  const base2 = (n('lugar') && bib) ? base.replace('Keep its scene, background, camera framing, poses, lighting and composition exactly as they are', 'Keep its camera framing, poses and composition exactly as they are, but MOVE the scene to another place (below)') : base;
+  return { multi: true, images: R.map(r => r.img), aspect: '3:4', prompt: `${base2}. ${parts.map(x => x[0].toUpperCase() + x.slice(1)).join('. ')}. ${(c.cartoon || fig) ? 'No text, no logos.' : 'Photoreal, no text, no logos.'}` };
 }
 // --- «¿Quién es quién?»: en una foto con varias personas, se elige qué personaje sustituye a cada una
 const PCOL = ['#2ecc71', '#e74c3c', '#3498db', '#f1c40f', '#9b59b6', '#e67e22'];
@@ -1306,6 +1314,11 @@ function renderSide() {
     videotecaPanel(it);
   } else if (state.tab === 'biblio') {
     biblioPanel(it);
+  } else if (state.tab === 'lugar') {   // un lugar: su foto, qué es y «Añadir»
+    side.appendChild(addBtn('lugar', 'lugar'));
+    { const mp = el('div', 'mini'); mp.innerHTML = `<img src="${it.files.main}" alt="">`; mp.onclick = () => lightbox(it.files.main, it.name); side.appendChild(mp); }
+    side.appendChild(sec('', el('div', 'status', 'El lugar va como imagen de referencia: tu personaje aparece dentro de él. Si hay varios personajes, comparten el mismo sitio.')));
+    if (it.desc) { const box = el('div', 'stack'); box.appendChild(el('div', 'promptbox', esc(it.desc))); side.appendChild(sec('Cómo se describe', box)); }
   } else if (LIVE && state.tab === 'crear') {
     side.appendChild(crearPanel(it));
   } else if (LIVE) { // secciones de componentes: primero Añadir, luego la preview con los ajustes plegados
@@ -1398,6 +1411,7 @@ function crearPanel(it) { // todo en una sección compacta: sin scroll en el pan
   box.appendChild(charSel('crear'));
   box.appendChild(tray());
   if (window.accChips) { const ac = accChips(); if (ac) box.appendChild(ac); }
+  box.appendChild(lugarRow());
   { // un solo recuadro: la imagen a recrear (de la Fototeca o tuya). Soltar otra encima la sustituye, sin tener que quitar antes la que hay
     const bib = state.comp.biblio; const row = el('div', 'bibrow bibone' + (bib ? ' on' : ' bibdrop'));
     if (bib) { if ((bib.drop || depRefs(bib)) && modoDrop(bib) === 'prompt') leerEscena(bib);
@@ -1422,6 +1436,19 @@ async function dropAny(e, dz) { const dt = e.dataTransfer; const f = dt.files &&
   catch (err) { toast('No se pudo descargar esa imagen: guárdala y arrástrala desde el ordenador'); }
 }
 function useDrop(f) { if (!f || !f.type.startsWith('image/')) return; const r = new FileReader(); r.onload = () => { state.comp.biblio = { id: 'drop-' + Date.now(), name: f.name.replace(/\.[a-z0-9]+$/i, ''), image: r.result, thumb: r.result, prompt: '', drop: true, tags: 'Tu foto' }; modeloPorModo(state.comp.biblio); badge(); state.flash = 'biblio'; renderSide(); paint(cur(), true); toast('Tu foto es ahora la imagen a recrear'); }; r.readAsDataURL(f); }
+function lugarRow() { // el sitio de la imagen: uno solo, compartido por todos los personajes
+  const L = state.comp.lugar; const w = el('div', 'accsel lugarsel' + (L ? ' on' : ''));
+  w.innerHTML = `<small>Lugar</small>${L ? `<span class="accmini"><img src="${compThumb('lugar', L)}" alt=""></span>` : ''}<span class="cnt">${L ? esc(L.name) : 'ninguno · el de la foto'}</span>${L ? '<span class="x" title="Quitar el lugar">×</span>' : '<span class="caret">▸</span>'}`;
+  w.title = L ? 'Cambiar de lugar' : 'Elegir un lugar de la biblioteca, o suelta aquí la foto de un sitio';
+  w.onclick = e => { if (e.target.classList.contains('x')) { delete state.comp.lugar; badge(); renderSide(); paint(cur(), true); return; } state.back = 'crear'; setTab('lugar'); if (L && !L.drop) { const v = view(); if (v.includes(L)) select(L, false, true); } };
+  ['dragenter', 'dragover'].forEach(ev => w.addEventListener(ev, e => { e.preventDefault(); e.stopPropagation(); w.classList.add('over'); })); w.addEventListener('dragleave', () => w.classList.remove('over'));
+  w.addEventListener('drop', async e => { e.preventDefault(); e.stopPropagation(); w.classList.remove('over'); const data = window.dropData ? await dropData(e) : null; if (!data) { toast('No he podido leer esa imagen'); return; }
+    state.comp.lugar = { id: 'lugar-drop-' + Date.now(), name: 'Tu lugar', drop: true, desc: '', tags: [], files: { main: data, thumb: data } }; badge(); renderSide(); paint(cur(), true); toast('Ese sitio es ahora el lugar de la imagen'); });
+  if (state.flash === 'lugar') { w.classList.add('flash'); setTimeout(() => { w.classList.remove('flash'); if (state.flash === 'lugar') state.flash = null; }, 1200); }
+  return w; }
+function lugarTxt(I, plural, conFoto) { // la frase del lugar para el prompt (I = cómo se llama su imagen)
+  const L = state.comp.lugar; if (!L) return ''; const d = (L.desc || '').replace(/[.\s]+$/, '');
+  return `the place is exactly the location shown in ${I} (location reference${d ? ': ' + d : ''}): the same setting, architecture, furniture, colours and light; ${plural ? 'everyone is' : 'she is'} naturally inside it, at a believable scale and lit by its light${conFoto ? '; the pose and the action come from the scene, but the background and the surroundings are those of ' + I : ''}. If any person appears in ${I}, ignore them: it is only a location reference`; }
 function tray() { const w = el('div', 'stack'); w.appendChild(trayGroup(['vestidor', 'hair', 'expr'])); w.appendChild(trayGroup(['photo', 'movie', 'cartoon'])); return w; }
 function dropRecrear() { // arrastra cualquier imagen del escritorio: se usa como lienzo a recrear (sin prompt de la Fototeca)
   const d = el('div', 'dz', `<img src="" alt="" style="width:54px;height:54px;border-radius:10px;background:#f3efe8"><div class="t"><b>O arrastra aquí una foto tuya</b>Se usa como imagen a recrear en vez de una de la Fototeca (sin su prompt). También vale hacer clic.</div>`);
@@ -1577,8 +1604,16 @@ function fitPlan(tab, it, plan, m) { // si el modelo admite menos referencias de
   log(`<span class="q">      ${m.name} solo admite ${m.refs} referencia(s): se manda${m.refs > 1 ? 'n las primeras' : ' la primera'} y el resto va descrito en el prompt</span>`);
   return Object.assign({}, plan, { images: plan.images.slice(0, m.refs), prompt: plan.prompt + extra });
 }
-fetch('/api/ping').then(r => r.json()).then(j => { if (j && j.interno && !state.interno) { state.interno = true; buildNav(); badge(); } if (j && j.ok && (j.key || j.ws)) { LIVE = true; ARK = !!j.ark; WS = !!j.ws; if (ARK) log(`<span class="ok">● ByteDance directo</span> <span class="g">· clave de BytePlus encontrada · disponible en Crear vídeo</span>`); $('#livedot').classList.add('on'); setupModels(j); hydrateLive(); const m = curModel(); log(`<span class="ok">● API en vivo</span> <span class="g">· puente local → api.higgsfield.ai · modelo ${m.name} (${m.ep}) · ${MODELS.length} modelos disponibles</span>`); if (state.ready) { try { renderRail(); renderSide(); paint(cur(), true); } catch (e) { console.error('[repintar tras conectar]', e); } } } else if (j && j.ok) { log(`<span class="q">falta conectar tu API: pulsa «Conecta tu API» arriba</span>`); const d = $('#livedot'); d.classList.add('on', 'nokey'); d.innerHTML = '<i style="background:#e0a23a"></i> Conecta tu API'; setTimeout(openClaves, 600); } }).catch(() => { const d = $('#livedot'); d.classList.add('on'); d.style.cssText = 'color:#b3261e;background:#fdeceb;border-color:#f3c2be'; d.innerHTML = '<i style="background:#e0443a;box-shadow:0 0 0 3px rgba(224,68,58,.25)"></i> Sin conexión con el servidor · recarga la página'; d.title = 'No se ha podido conectar con el servidor de ARIA STUDIO. Recarga la página en un momento.'; log(`<span class="pr">✕ puente apagado: doble clic en «ARIA MIRROR.command» y recarga</span>`); });
+fetch('/api/ping').then(r => r.json()).then(j => { if (j && j.interno && !state.interno) { state.interno = true; buildNav(); badge(); } if (j && j.ok && (j.key || j.ws)) { LIVE = true; ARK = !!j.ark; WS = !!j.ws; if (ARK) log(`<span class="ok">● ByteDance directo</span> <span class="g">· clave de BytePlus encontrada · disponible en Crear vídeo</span>`); $('#livedot').classList.add('on'); setupModels(j); hydrateLive(); const m = curModel(); log(`<span class="ok">● API en vivo</span> <span class="g">· puente local → api.higgsfield.ai · modelo ${m.name} (${m.ep}) · ${MODELS.length} modelos disponibles</span>`); if (state.ready) { try { renderRail(); renderSide(); paint(cur(), true); } catch (e) { avisaError('repintar tras conectar', e); } } } else if (j && j.ok) { log(`<span class="q">falta conectar tu API: pulsa «Conecta tu API» arriba</span>`); const d = $('#livedot'); d.classList.add('on', 'nokey'); d.innerHTML = '<i style="background:#e0a23a"></i> Conecta tu API'; setTimeout(openClaves, 600); } }).catch(() => { const d = $('#livedot'); d.classList.add('on'); d.style.cssText = 'color:#b3261e;background:#fdeceb;border-color:#f3c2be'; d.innerHTML = '<i style="background:#e0443a;box-shadow:0 0 0 3px rgba(224,68,58,.25)"></i> Sin conexión con el servidor · recarga la página'; d.title = 'No se ha podido conectar con el servidor de ARIA STUDIO. Recarga la página en un momento.'; log(`<span class="pr">✕ puente apagado: doble clic en «ARIA MIRROR.command» y recarga</span>`); });
 function ariaBody() { const v = (C.vestidor || []).find(x => x.looks && x.looks[0]); return { path: v ? v.looks[0] : C.base.photo }; } // Aria de cuerpo entero (tank top + leggings)
+(function () { // registro de errores (v179)
+  let n = 0; const vistos = new Set();
+  const manda = (tipo, msg, extra) => { try { msg = String(msg || '').slice(0, 500); if (!msg || n >= 12 || vistos.has(msg) || /ResizeObserver loop/.test(msg)) return; vistos.add(msg); n++;
+      fetch('/api/errores', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(Object.assign({ tipo, msg, tab: (typeof state !== 'undefined' && state.tab) || '', web: !!(window.CUENTA && CUENTA.web), ua: navigator.userAgent.slice(0, 160), w: innerWidth, h: innerHeight, z: window.ESCALA || 1 }, extra || {})) }).catch(() => {}); } catch (e) {} };
+  window.addEventListener('error', e => { if (e && e.message) manda('error', e.message, { donde: String(e.filename || '').split('/').pop() + ':' + e.lineno + ':' + e.colno, pila: e.error ? String(e.error.stack || '').slice(0, 1200) : '' }); });
+  window.addEventListener('unhandledrejection', e => { const r = e && e.reason; manda('promesa', (r && (r.message || r)) || 'rechazo', { pila: r ? String(r.stack || '').slice(0, 1200) : '' }); });
+  window.avisaError = (donde, e) => { try { console.error('[' + donde + ']', e); } catch (x) {} manda('capturado', donde + ': ' + ((e && (e.message || e)) || ''), { pila: e ? String(e.stack || '').slice(0, 1200) : '' }); };
+})();
 function guiaInicio() { // web: tres pasos hasta la primera imagen. Se quita sola al completarlos (o con la ×) y no vuelve a salir en esa cuenta
   if (!(window.CUENTA && CUENTA.web) || guiaInicio._on) return; const uid = (CUENTA.user && CUENTA.user.id) || ''; const K = 'am_guia_ok';
   try { if (localStorage.getItem(K) === uid + ':1') return; } catch (e) {}
@@ -1678,7 +1713,8 @@ function livePlanRaw(tab, it) { // qué mandar a la API según la pestaña · im
     let base;
     if (bib && dbl) base = `${fig ? `Create a new image whose main figure is a ${fig}: a ${fig} VERSION of the woman of ${I('ficha')} (her 360 character sheet), with her features, hair and colors translated into that exact style, material, finish and proportions; never a photorealistic human` : `Create a new photograph. The woman is the woman of ${I('ficha')} (her 360 character sheet)`}: ${window.accIdent ? accIdent(I) : 'same face, green eyes, thin round metal glasses, silver hoop earrings'}. Scene: ${sinRefs(sceneTxt(bib))}${bib.ropa && !n('vestidor') ? ' She wears ' + bib.ropa.replace(/\.$/, '') + '.' : ''}`;
     else if (bib) base = `Edit ${I('canvas')}. Keep its scene, background, camera framing, pose, lighting and composition exactly as they are. The woman must be the woman of ${I('ficha')} (her 360 character sheet): ${window.accIdent ? accIdent(I) : 'same face, green eyes, thin round metal glasses, silver hoop earrings'}${(extras || !(bib.neutro || bib.prompt)) ? '' : '. Scene, for reference: ' + sceneTxt(bib)}`;
-    else base = `Portrait of the woman in ${I('canvas')}, whose face must match ${I('ficha')} (her 360 character sheet), natural pose, plain white studio backdrop, soft even lighting`;
+    else base = `Portrait of the woman in ${I('canvas')}, whose face must match ${I('ficha')} (her 360 character sheet), ${n('lugar') ? 'natural relaxed pose' : 'natural pose, plain white studio backdrop, soft even lighting'}`;
+    if (n('lugar')) { if (bib && !dbl) base = base.replace('Keep its scene, background, camera framing, pose, lighting and composition exactly as they are', 'Keep its camera framing, pose and composition exactly as they are, but MOVE the scene to another place (below)'); parts.push(lugarTxt(I('lugar'), false, !!bib)); }
     if (n('vestidor')) parts.push(`REPLACE her clothing completely: she wears EXACTLY the outfit and shoes of ${I('vestidor')} (${v.name}), every piece, same colors and fabrics; nothing of the original clothing remains${NOTME('vestidor', 'a mannequin for the outfit')}`);
     const hh = ch.hair || {};   // su pelo de siempre (el de su ficha)
     if (n('hair')) parts.push(`REPLACE her hairstyle with exactly the hairstyle of ${I('hair')}: ${h.desc || h.name}${hairVarColor(h) ? ` Hair color: ${hairVarColor(h)}${state.hairCol ? '' : `, exactly as in ${I('hair')}`}.` : (!ch.aria && hh.color ? ` Hair color: ${hh.color}, her own, exactly as in ${I('ficha')}.` : '')}; do not keep the original hairstyle${NOTME('hair', 'a model for the hairstyle (copy only the cut and the styling)')}`);

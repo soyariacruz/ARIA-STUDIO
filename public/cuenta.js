@@ -23,7 +23,19 @@
 html.gate body>*:not(#gate){visibility:hidden!important}
 #gate{position:fixed;inset:0;z-index:99999;background:var(--bg);display:none;align-items:center;justify-content:center;padding:16px;overflow:auto}
 html.gate #gate{display:flex}
-#gate .gcard{width:100%;max-width:400px;background:var(--panel);border:1px solid var(--line);border-radius:24px;padding:44px 34px 36px;text-align:center;display:flex;flex-direction:column;gap:20px;box-shadow:0 24px 60px rgba(0,0,0,.18)}
+#gate .gwrap{display:flex;align-items:center;justify-content:center;gap:44px;width:100%;max-width:1040px}
+#gate .gfotos{display:none;gap:14px;align-items:center;flex:1;min-width:0;justify-content:flex-end}
+#gate.entrar .gfotos{display:flex}
+#gate .gfotos img{width:30%;max-width:200px;aspect-ratio:3/4;object-fit:cover;border-radius:20px;box-shadow:0 0 0 4px #fff,0 0 0 5px #cfa966,0 22px 50px rgba(0,0,0,.35);background:var(--panel)}
+#gate .gfotos img:nth-child(2){transform:translateY(-26px) scale(1.06)}
+#gate .gpts{display:none;list-style:none;margin:0;padding:0;text-align:left;flex-direction:column;gap:12px}
+#gate.entrar .gpts{display:flex}
+#gate .gpts li{font-size:13px;line-height:1.45;color:var(--mut);padding-left:26px;position:relative}
+#gate .gpts li::before{content:'✓';position:absolute;left:0;top:0;width:18px;height:18px;border-radius:50%;background:var(--acc);color:#fff;font-size:11px;font-weight:800;line-height:18px;text-align:center}
+#gate .gpts b{display:block;color:var(--ink);font-size:14px}
+#gate .gnota{font-size:11.5px;color:var(--mut);opacity:.8}
+@media (max-width:900px){#gate .gfotos{display:none!important}}
+#gate .gcard{width:100%;max-width:400px;flex:none;background:var(--panel);border:1px solid var(--line);border-radius:24px;padding:44px 34px 36px;text-align:center;display:flex;flex-direction:column;gap:20px;box-shadow:0 24px 60px rgba(0,0,0,.18)}
 #gate h1{font-family:var(--serif);font-weight:500;font-size:32px;letter-spacing:.06em;color:var(--ink)}
 #gate h1 i{font-style:normal;color:var(--acc);margin-left:.3em}
 #gate p{color:var(--mut);font-size:14px;line-height:1.55}
@@ -51,17 +63,19 @@ html.sinapi #livedot,html.sinapi .meter{display:none!important}
 
   const gate = document.createElement('div');
   gate.id = 'gate';
-  gate.innerHTML = '<div class="gcard"><h1>ARIA<i>STUDIO</i></h1>' +
+  gate.innerHTML = '<div class="gwrap"><div class="gfotos"><img src="/assets/biblio/p269-5.jpg" alt=""><img src="/assets/biblio/p269-6.jpg" alt=""><img src="/assets/biblio/p269-8.jpg" alt=""></div>' +
+    '<div class="gcard"><h1>ARIA<i>STUDIO</i></h1>' +
     '<p id="gateMsg"></p>' +
+    '<ul class="gpts"><li><b>Tu personaje, siempre el mismo</b>Crea su ficha una vez y sale igual en todas sus fotos.</li><li><b>Recrea cualquier foto con él</b>Elige una de la Fototeca o arrastra la tuya.</li><li><b>Pagas solo lo que generas</b>Unos 5 céntimos por imagen, con tu propia API. Sin suscripción.</li></ul>' +
     '<button class="gin" id="gateIn" hidden>Entrar con Google</button>' +
     '<button id="gateOut" hidden>Cerrar sesión</button>' +
-    '<p class="gerr" id="gateErr" hidden></p></div>';
+    '<p class="gerr" id="gateErr" hidden></p><p class="gnota" id="gateNota" hidden>Acceso por invitación · comunidad de Aria Cruz</p></div></div>';
   document.body.prepend(gate);
   const G = (id) => gate.querySelector('#' + id);
   // La portada tiene cuatro caras: esperando, entrar, abriendo el estudio y «sin acceso».
   function cara(msg, o = {}) {
     G('gateMsg').textContent = msg || ''; G('gateMsg').hidden = !msg;
-    G('gateIn').hidden = !o.entrar; G('gateIn').disabled = false;
+    G('gateIn').hidden = !o.entrar; G('gateIn').disabled = false; gate.classList.toggle('entrar', !!o.entrar); G('gateNota').hidden = !o.entrar;
     G('gateOut').hidden = !o.salir;
     G('gateErr').textContent = o.error || ''; G('gateErr').hidden = !o.error;
     root.classList.add('gate');
@@ -128,12 +142,22 @@ html.sinapi #livedot,html.sinapi .meter{display:none!important}
     avisoEl.style.cssText = 'position:fixed;top:10px;left:50%;transform:translateX(-50%);z-index:100000;background:var(--acc);color:#fff;font:600 12.5px var(--sans);padding:9px 16px;border-radius:999px;box-shadow:0 8px 24px rgba(0,0,0,.3)';
     document.body.appendChild(avisoEl);
   }
+  let renovando = null;
+  function renueva() {   // una sola renovación a la vez, aunque fallen varias peticiones juntas
+    if (!renovando) renovando = (async () => { try { const { data, error } = await CU.sb.auth.refreshSession(); if (error || !data || !data.session) return false; sesion(data.session); return true; } catch (e) { return false; } })().finally(() => { setTimeout(() => { renovando = null; }, 3000); });
+    return renovando;
+  }
+  function caducada() { dentro = null; cara('Tu sesión ha caducado. Vuelve a entrar y sigues donde estabas.', { entrar: true }); }
   async function conReintento(input, init) {
     const lectura = !init.method || init.method === 'GET';
     const esperas = lectura ? [2000, 4000, 8000, 12000, 16000, 20000] : [];
     for (let i = 0; ; i++) {
       try {
-        const r = await fetch0(input, init);
+        let r = await (CU._fetch0 || fetch0)(input, init);
+        if (r.status === 401 && CU.sb && CU.user) {   // la sesión se quedó vieja (portátil dormido, pestaña horas abierta)
+          if (await renueva()) { init.headers.set('Authorization', 'Bearer ' + CU.token); r = await (CU._fetch0 || fetch0)(input, init); }
+          if (r.status === 401) { aviso(false); caducada(); return r; }
+        }
         if (!(lectura && [502, 503, 504].includes(r.status)) || i >= esperas.length) { aviso(false); return r; }
       } catch (e) { if (i >= esperas.length) { aviso(false); throw e; } }
       aviso(true); await new Promise((ok) => setTimeout(ok, esperas[i]));
