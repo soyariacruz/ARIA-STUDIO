@@ -37,7 +37,7 @@ MAX_CUERPO = 40 * 1024 * 1024    # tope de una petición en modo servidor
 MAX_BIBLIO = 200 * 1024 * 1024   # tope de un fichero de la biblioteca común al copiarlo
 KINDS = ('vestidor', 'hair', 'expr')   # las bibliotecas a las que una cuenta puede añadir lo suyo
 _UUID = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
-VERSION = 188
+VERSION = 195
 _ctx = threading.local()   # la cuenta del hilo: la pone cada petición (y, a mano, cada hilo de fondo)
 def uid(): return getattr(_ctx, 'uid', None)   # en local siempre None
 DUENOS = tuple(e.strip().lower() for e in (os.environ.get('ARIA_DUENOS') or 'mix1994max@gmail.com').split(',') if e.strip())   # cuentas que pueden cambiar a Aria Cruz (en la web, la de Max)
@@ -1048,6 +1048,57 @@ def _estado(rid):   # estado de un trabajo; si ha terminado, lo descarga a la ca
         except Exception: pass
     out['file'] = j.get('file'); out['kind'] = j.get('kind', 'image'); out['prenda'] = j.get('prenda'); out['nf'] = j.get('nf_item'); out['estilo'] = j.get('estilo'); out['raw'] = {k: st.get(k) for k in ('status', 'request_id')}
     return 200, out
+# ---- 🤝 COMUNIDAD (v195): el directorio de influencers IA de todas las cuentas, las solicitudes de colaboración y los mensajes.
+#      Privacidad: de una cuenta solo se enseña su identificador opaco (`cid`, no reversible), el nombre de creador que ella ponga y sus personajes PÚBLICOS
+#      (nombre, usuario, edad, descripción, Instagram, nicho y su avatar). Nunca el correo, ni sus fichas, ni sus creaciones.
+COM_F = os.path.join(DATOS or RAIZ, 'comunidad.json'); _com_l = threading.Lock(); _COM_N = {}
+def _cid(u='__yo__'):
+    if u == '__yo__': u = uid()
+    sal = SECRETO if isinstance(SECRETO, bytes) else str(SECRETO or '').encode()
+    return 'c' + hashlib.sha256((str(u or 'local') + '|comunidad|').encode() + sal).hexdigest()[:14]
+def _com_lee():
+    try: d = json.load(open(COM_F, encoding='utf-8'))
+    except Exception: d = {}
+    if not isinstance(d, dict): d = {}
+    for k, v in (('sol', []), ('msgs', {}), ('alias', {}), ('visto', {})):
+        if not isinstance(d.get(k), type(v)): d[k] = v
+    return d
+def _com_guarda(d):
+    with open(COM_F + '.tmp', 'w', encoding='utf-8') as fh: json.dump(d, fh, ensure_ascii=False)
+    os.replace(COM_F + '.tmp', COM_F)
+def _com_cuentas():   # cid → uid de cada cuenta con carpeta (en local, una sola)
+    if not SERVIDOR: return {_cid(None): None}
+    try: L = os.listdir(os.path.join(DATOS, 'usuarios'))
+    except OSError: L = []
+    return {_cid(x): x for x in L if _UUID.fullmatch(x)}
+def _com_personajes(u, con_ocultos=False):   # los personajes de una cuenta tal como se ven en la comunidad (los ocultos, solo para su dueña)
+    out = []
+    try:
+        with como(u): pd = pers_dir()
+        for d0 in sorted(os.listdir(pd)):
+            fp = os.path.join(pd, d0, 'personaje.json')
+            if d0.startswith(('_', '.')) or not os.path.isfile(fp): continue
+            try: p = json.load(open(fp, encoding='utf-8'))
+            except Exception: continue
+            if not p.get('ficha360') or (p.get('privado') and not con_ocultos): continue   # solo personajes con su ficha; los ocultos no salen
+            ig = p.get('ig') if isinstance(p.get('ig'), dict) else {}; url = str(ig.get('url') or '')
+            out.append({'pid': d0, 'nombre': str(p.get('nombre') or d0)[:60], 'usuario': str(p.get('usuario') or '')[:60], 'edad': p.get('edad') if isinstance(p.get('edad'), (int, float)) else None,
+                        'bio': str(p.get('bio') or '')[:600], 'ig': url[:200] if url.startswith('https://') else '', 'nicho': [str(x)[:30] for x in p.get('nicho')[:6]] if isinstance(p.get('nicho'), list) else [],
+                        'avatar': bool(p.get('avatar') or p.get('foto')), 'oculto': bool(p.get('privado')), 'orden': p.get('orden') if isinstance(p.get('orden'), int) else 999})
+    except Exception as e: plog('comunidad: personajes ✕ ' + str(e))
+    out.sort(key=lambda x: x['orden']); return out
+def _com_par(a, b): return '|'.join(sorted([a, b]))
+def _com_tope(que, n):   # freno por cuenta y hora (solicitudes, mensajes)
+    k = (uid() or 'local', que); ahora = time.time(); L = _COM_N.setdefault(k, []); L[:] = [t for t in L if ahora - t < 3600]
+    if len(L) >= n: return False
+    L.append(ahora); return True
+def _com_avisos(d, yo):
+    n = sum(1 for x in d['sol'] if x.get('para') == yo and x.get('estado') == 'pendiente')
+    for k, M in d['msgs'].items():
+        if yo in k.split('|'):
+            otra = [c for c in k.split('|') if c != yo]; visto = (d['visto'].get(yo) or {}).get(otra[0] if otra else '', 0)
+            n += sum(1 for m in M if m.get('de') != yo and m.get('t', 0) > visto)
+    return n
 class H(SimpleHTTPRequestHandler):
     timeout = 120 if SERVIDOR else None   # en servidor, una conexión que no dice nada se corta
     def __init__(self, *a, **k): super().__init__(*a, directory=ROOT, **k)
@@ -1249,6 +1300,35 @@ class H(SimpleHTTPRequestHandler):
             except Exception: return self._json(502, {'error': 'no se ha podido buscar ahora'})
             if len(_PEX) > 600: _PEX.clear()
             _PEX[ck] = (time.time(), fotos); return self._json(200, {'ok': True, 'prov': prov, 'fotos': fotos})
+        if u.path == '/api/comunidad':   # el directorio + lo mío (solicitudes, conversaciones, avisos)
+            yo = _cid(); d = _com_lee(); cuentas = []
+            for cid, uu in _com_cuentas().items():
+                pjs = _com_personajes(uu, cid == yo)
+                if pjs or cid == yo: cuentas.append({'cid': cid, 'alias': str(d['alias'].get(cid) or '')[:40], 'yo': cid == yo, 'personajes': pjs})
+            cuentas.sort(key=lambda c: (not c['yo'], (c['alias'] or 'zzz').lower()))
+            chats = []
+            for k, M in d['msgs'].items():
+                par = k.split('|')
+                if yo not in par or not M: continue
+                otra = [c for c in par if c != yo]; otra = otra[0] if otra else yo; visto = (d['visto'].get(yo) or {}).get(otra, 0)
+                chats.append({'con': otra, 'ultimo': M[-1], 'sin_leer': sum(1 for m in M if m.get('de') != yo and m.get('t', 0) > visto)})
+            chats.sort(key=lambda c: -c['ultimo'].get('t', 0))
+            return self._json(200, {'ok': True, 'yo': yo, 'alias': str(d['alias'].get(yo) or ''), 'cuentas': cuentas, 'solicitudes': [x for x in d['sol'] if yo in (x.get('de'), x.get('para'))][-200:], 'chats': chats, 'avisos': _com_avisos(d, yo)})
+        if u.path == '/api/comunidad/avisos': return self._json(200, {'ok': True, 'n': _com_avisos(_com_lee(), _cid())})
+        if u.path == '/api/comunidad/chat':   # la conversación con otra cuenta (y se da por leída)
+            yo = _cid(); con = (q.get('con') or [''])[0]
+            if not re.fullmatch(r'c[0-9a-f]{14}', con) or con == yo: return self._json(400, {'error': 'conversación no válida'})
+            with _com_l:
+                d = _com_lee(); M = d['msgs'].get(_com_par(yo, con)) or []
+                if M and (d['visto'].get(yo) or {}).get(con, 0) < M[-1].get('t', 0): d['visto'].setdefault(yo, {})[con] = time.time(); _com_guarda(d)
+            return self._json(200, {'ok': True, 'mensajes': M[-300:]})
+        if u.path == '/api/comunidad/avatar':   # el avatar de un personaje PÚBLICO de otra cuenta (lo único suyo que se sirve)
+            cid = (q.get('c') or [''])[0]; pid = (q.get('p') or [''])[0]; uu = _com_cuentas().get(cid, '__no__')
+            if uu == '__no__' or not _pid_ok(pid) or not any(x['pid'] == pid for x in _com_personajes(uu, cid == _cid())): return self._corta(404)
+            with como(uu): base = os.path.join(pers_dir(), pid)
+            fp = next((os.path.join(base, n) for n in ('avatar.jpg', 'foto.jpg') if os.path.isfile(os.path.join(base, n))), None)
+            if not fp: return self._corta(404)
+            b = open(fp, 'rb').read(); self.send_response(200); self.send_header('Content-Type', 'image/jpeg'); self.send_header('Content-Length', str(len(b))); self.send_header('Cache-Control', 'private, max-age=600'); self.end_headers(); self.wfile.write(b); return
         if u.path == '/api/papelera':   # lo borrado de Mis creaciones que aún se puede recuperar (30 días), lo más reciente primero
             trash = papelera(); out = []; ahora = time.time()
             for fn in os.listdir(trash):
@@ -1339,6 +1419,42 @@ class H(SimpleHTTPRequestHandler):
                     try: os.utime(os.path.join(trash, fn), None)
                     except OSError: pass
             plog('borrar → papelera ' + rel); return self._json(200, {'ok': True})
+        if self.path == '/api/comunidad':   # nombre de creador · ocultar/enseñar un personaje · pedir, responder o terminar una colaboración · mandar un mensaje
+            n = int(self.headers.get('Content-Length') or 0); body = json.loads(self.rfile.read(n) or b'{}'); ac = body.get('accion'); yo = _cid(); CU = _com_cuentas()
+            if ac == 'visible':   # el interruptor «público / oculto» de un personaje mío
+                pid = body.get('pid', ''); fp = os.path.join(pers_dir(), pid, 'personaje.json') if _pid_ok(pid) else ''
+                if not fp or not os.path.isfile(fp): return self._json(404, {'error': 'personaje no encontrado'})
+                with _cerrojo('pj'):
+                    p = json.load(open(fp, encoding='utf-8')); p['privado'] = not bool(body.get('publico')); json.dump(p, open(fp, 'w', encoding='utf-8'), ensure_ascii=False)
+                return self._json(200, {'ok': True, 'oculto': p['privado']})
+            with _com_l:
+                d = _com_lee()
+                if ac == 'alias':
+                    d['alias'][yo] = re.sub(r'\s+', ' ', str(body.get('nombre') or '')).strip()[:40]; _com_guarda(d); return self._json(200, {'ok': True, 'alias': d['alias'][yo]})
+                if ac == 'solicitar':
+                    para = body.get('para', ''); pid = body.get('pid') or None; msg = str(body.get('msg') or '').strip()[:500]
+                    if para not in CU or para == yo: return self._json(400, {'error': 'esa cuenta no existe'})
+                    if pid and not any(x['pid'] == pid for x in _com_personajes(CU[para])): return self._json(400, {'error': 'ese personaje ya no está público'})
+                    if any(x for x in d['sol'] if {x.get('de'), x.get('para')} == {yo, para} and (x.get('pid') or None) == pid and x.get('estado') in ('pendiente', 'aceptada')): return self._json(400, {'error': 'ya hay una solicitud o una colaboración con ese personaje'})
+                    if not _com_tope('sol', 20): return self._json(429, {'error': 'demasiadas solicitudes seguidas: prueba dentro de un rato'})
+                    x = {'id': 's' + hashlib.sha1(os.urandom(12)).hexdigest()[:12], 'de': yo, 'para': para, 'pid': pid, 'msg': msg, 'estado': 'pendiente', 't': time.time()}; d['sol'].append(x)
+                    if msg: d['msgs'].setdefault(_com_par(yo, para), []).append({'de': yo, 'x': msg, 't': time.time(), 'sol': x['id']})
+                    _com_guarda(d); return self._json(200, {'ok': True, 'solicitud': x})
+                if ac in ('responder', 'terminar'):
+                    x = next((x for x in d['sol'] if x.get('id') == body.get('id') and yo in (x.get('de'), x.get('para'))), None)
+                    if not x: return self._json(404, {'error': 'solicitud no encontrada'})
+                    if ac == 'responder':
+                        if x.get('para') != yo or x.get('estado') != 'pendiente': return self._json(400, {'error': 'esa solicitud no está esperando tu respuesta'})
+                        x['estado'] = 'aceptada' if body.get('aceptar') else 'rechazada'
+                    else: x['estado'] = 'cancelada' if x.get('estado') == 'pendiente' and x.get('de') == yo else 'terminada'   # cualquiera de las dos partes puede retirar el permiso
+                    x['t2'] = time.time(); _com_guarda(d); return self._json(200, {'ok': True, 'solicitud': x})
+                if ac == 'mensaje':
+                    con = body.get('con', ''); txt = str(body.get('texto') or '').strip()[:2000]
+                    if con not in CU or con == yo or not txt: return self._json(400, {'error': 'mensaje no válido'})
+                    if not any(x for x in d['sol'] if {x.get('de'), x.get('para')} == {yo, con} and x.get('estado') in ('pendiente', 'aceptada')): return self._json(403, {'error': 'para escribirle, primero pídele una colaboración'})
+                    if not _com_tope('msg', 120): return self._json(429, {'error': 'demasiados mensajes seguidos: prueba dentro de un rato'})
+                    M = d['msgs'].setdefault(_com_par(yo, con), []); M.append({'de': yo, 'x': txt, 't': time.time()}); del M[:-500]; _com_guarda(d); return self._json(200, {'ok': True})
+            return self._json(400, {'error': 'acción desconocida'})
         if self.path == '/api/restaurar':   # saca una creación de la papelera y la devuelve a Mis creaciones
             n = int(self.headers.get('Content-Length') or 0); body = json.loads(self.rfile.read(n) or b'{}'); fn = os.path.basename(str(body.get('file') or ''))
             trash = papelera(); src = os.path.join(trash, fn)
