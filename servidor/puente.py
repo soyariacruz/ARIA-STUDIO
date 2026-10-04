@@ -37,7 +37,7 @@ MAX_CUERPO = 40 * 1024 * 1024    # tope de una petición en modo servidor
 MAX_BIBLIO = 200 * 1024 * 1024   # tope de un fichero de la biblioteca común al copiarlo
 KINDS = ('vestidor', 'hair', 'expr')   # las bibliotecas a las que una cuenta puede añadir lo suyo
 _UUID = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
-VERSION = 185
+VERSION = 186
 _ctx = threading.local()   # la cuenta del hilo: la pone cada petición (y, a mano, cada hilo de fondo)
 def uid(): return getattr(_ctx, 'uid', None)   # en local siempre None
 DUENOS = tuple(e.strip().lower() for e in (os.environ.get('ARIA_DUENOS') or 'mix1994max@gmail.com').split(',') if e.strip())   # cuentas que pueden cambiar a Aria Cruz (en la web, la de Max)
@@ -374,6 +374,19 @@ BIENVENIDA = 1.0; LECTURA_USD = 0.002   # cada lectura de una imagen con IA (des
 SIN_SALDO = 'Saldo regalo agotado. Se repone el día 1; para seguir ahora, conecta tu propia clave en «API en vivo».'
 _NSFW_RE = re.compile(r"\b(nsfw|topless|nipples?|areolas?|genitals?|genitalia|pubic|vagina|vulva|penis|no clothes|(?:is|are|she'?s|he'?s|fully|completely|totally|stark) naked|naked (?:woman|women|man|men|girl|boy|body|person|people|figure|torso|chest|skin)|(?:fully|completely|totally) nude|nude body|bare breasts?|no underwear|sexually explicit|explicit nud)", re.I)
 def _es_nsfw(prompt): return bool(_NSFW_RE.search(re.split(r'negative prompt\s*:', str(prompt or ''), flags=re.I)[0]))   # lo que va detrás de «Negative prompt:» es justo lo que NO se quiere en la imagen
+_lect_l = threading.Lock()
+def _lecturas(): 
+    try: d = json.load(open(os.path.join(casa(), 'lecturas.json')))
+    except Exception: d = {}
+    return {'usd': float(d.get('usd') or 0), 'n': int(d.get('n') or 0)} if isinstance(d, dict) else {'usd': 0.0, 'n': 0}
+def _lectura_apunta():   # una lectura de imagen con IA (≈0,002 $): al total de la cuenta y a la respuesta de esta petición
+    try:
+        _ctx.lectura = getattr(_ctx, 'lectura', 0) + LECTURA_USD
+        with _lect_l:
+            d = _lecturas(); d = {'usd': round(d['usd'] + LECTURA_USD, 4), 'n': d['n'] + 1}; fp = os.path.join(casa(), 'lecturas.json')
+            with open(fp + '.tmp', 'w') as f: json.dump(d, f)
+            os.replace(fp + '.tmp', fp)
+    except Exception: pass
 def _casa_base(): return bool(SERVIDOR and CASA_KEY and uid() and not getattr(_ctx, 'sin_casa', False))
 def casa_on(): return _casa_base() and not load_ws()   # esta cuenta va con el saldo regalo (no tiene clave propia conectada)
 def _regalo_mes(p):   # 4 → 0,50 · 5 → 0,50 · 6 → 1 · 19 → 2 · 49 → 5 · 296 al año → 2,50
@@ -424,7 +437,7 @@ def casa_puede(usd):   # ¿llega el saldo regalo para esto? Si no, error claro
     c = casa_info()
     if not c: raise RuntimeError('WaveSpeed no está conectado: conéctalo en «API en vivo»')
     if c['saldo'] + 1e-6 >= usd: return
-    raise RuntimeError(SIN_SALDO if c['saldo'] < c['imagen'] else f"Tu saldo regalo ({c['saldo']:.2f} $) no llega para esta imagen ({usd:.3f} $). Prueba con {WS_MODELS[CASA_DEF]['name']} o conecta tu propia clave en «API en vivo».")
+    raise RuntimeError(SIN_SALDO if c['saldo'] < c['imagen'] else f"Tu saldo regalo (${c['saldo']:.2f}) no llega para esta imagen (${usd:.3f}). Prueba con {WS_MODELS[CASA_DEF]['name']} o conecta tu propia clave en «API en vivo».")
 def casa_cobra(usd, que, rid=None, modelo=None):   # descuenta del monedero (primero lo del mes, que caduca; luego la bienvenida) y lo apunta en su historial
     usd = round(float(usd or 0), 4)
     if usd <= 0: return
@@ -451,7 +464,9 @@ def ws(method, path, body=None, raw=None, ctype=None):
     req = urllib.request.Request('https://api.wavespeed.ai' + path, data=raw if raw is not None else (json.dumps(body).encode() if body is not None else None), method=method)
     req.add_header('Authorization', 'Bearer ' + k); req.add_header('Content-Type', ctype or 'application/json'); req.add_header('User-Agent', UA)
     try:
-        with urllib.request.urlopen(req, timeout=180) as r: return json.loads(r.read() or b'{}')
+        with urllib.request.urlopen(req, timeout=180) as r: res = json.loads(r.read() or b'{}')
+        if method == 'POST' and '/any-llm' in path: _lectura_apunta()
+        return res
     except urllib.error.HTTPError as e:
         raise RuntimeError(f'WaveSpeed {method} {path} → {e.code}: {e.read().decode()[:300]}')
 _ws_uploads = {}   # (cuenta, sha1) → URL: lo subido con la clave de una cuenta no lo reutiliza otra
@@ -1048,7 +1063,7 @@ class H(SimpleHTTPRequestHandler):
         if self.command != 'HEAD': return self._json(code, {'error': msg})
         self.send_response(code); self.send_header('Content-Length', '0'); self.end_headers()
     def _pasa(self, fn):   # TODA petición (GET, POST y HEAD) entra por aquí: guarda de origen y, en servidor, tope de tamaño + sesión + cuenta del hilo
-        self._cc = self._fijo = None
+        self._cc = self._fijo = None; _ctx.lectura = 0
         if not self._guard(): return self._corta(403, 'origen no permitido')
         if not SERVIDOR: return fn()
         if self.command == 'GET' and self.path.startswith('/api/admin/copia'): return self._copia()
@@ -1104,6 +1119,8 @@ class H(SimpleHTTPRequestHandler):
             self._cc = 'private, max-age=3600'; self.send_response(302); self.send_header('Location', _biblio_url(rel)); self.send_header('Content-Length', '0'); self.end_headers(); return
         return self._corta(404)
     def _json(self, code, obj):
+        lec = getattr(_ctx, 'lectura', 0)
+        if lec and isinstance(obj, dict): obj = dict(obj, usd_lectura=round(lec, 4)); _ctx.lectura = 0   # lo que han costado las lecturas de imagen de esta petición
         b = json.dumps(obj, ensure_ascii=False).encode(); self.send_response(code)
         self.send_header('Content-Type', 'application/json; charset=utf-8'); self.send_header('Content-Length', str(len(b))); self.end_headers(); self.wfile.write(b)
     def _guard(self):   # solo el propio navegador en localhost: ni otra web (CSRF) ni un dominio que apunte a 127.0.0.1 (DNS rebinding)
@@ -1142,7 +1159,7 @@ class H(SimpleHTTPRequestHandler):
             for fn in sorted(os.listdir(vd), key=lambda f: os.path.getmtime(os.path.join(vd, f))):
                 if fn.startswith('.') or '__' not in fn or not fn.lower().endswith(('.mp4', '.mov', '.webm')) or os.path.splitext(fn)[0].endswith('_lo'): continue
                 videos[fn.split('__')[0]] = 'assets/video/' + fn        # el vídeo más reciente de cada imagen
-            return self._json(200, {'files': files, 'n': len(files), 'all': allf[::-1], 'videos': videos, 'creations': creations()})
+            return self._json(200, {'files': files, 'n': len(files), 'all': allf[::-1], 'videos': videos, 'creations': creations(), 'lecturas': _lecturas()})
         if u.path == '/api/personajes':   # personajes creados en la app (assets/personajes/<id>/personaje.json)
             out = []; pd = pers_dir()   # solo los de la cuenta
             for d in sorted(os.listdir(pd)):
