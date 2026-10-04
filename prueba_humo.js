@@ -1,4 +1,4 @@
-/* PRUEBA DE HUMO de ARIA STUDIO (v199). No genera nada ni gasta saldo.
+/* PRUEBA DE HUMO de ARIA STUDIO (v200). No genera nada ni gasta saldo.
    Se pega en la consola de la página ya arrancada (local :8767, o la web de pruebas :3000 con una cuenta local) y devuelve la lista de fallos.
    Recorre todas las pestañas y las combinaciones típicas de Crear imagen llamando a lo mismo que pinta la app; lo que reviente, sale aquí
    y no delante de un usuario. Antes de publicar tiene que devolver `fallos: []`. */
@@ -36,6 +36,8 @@
   if (window.comAbre) { try { COM.visto = true; await comAbre('dir'); if (!document.getElementById('compage') || !COM.D) throw new Error('la página no se pinta'); hecho.push('comunidad · abrir');
       for (const v of ['sol', 'msg', 'dir']) { COM.vista = v; COM.arg = null; COM.M = []; comPinta(); hecho.push('comunidad · ' + v); }
       const cc = COM.D.cuentas.find(x => x.personajes.length); if (cc) { COM.pz = { cid: cc.cid, pid: cc.personajes[0].pid }; comPinta(); if (!document.querySelector('#compage .cpdrawer')) throw new Error('no sale la ficha del personaje'); COM.pz = null; hecho.push('comunidad · ficha'); }
+      comNombre(); if (!document.querySelector('#compide input')) throw new Error('la ventana del nombre de creador sale sin su campo'); document.getElementById('compide').remove(); hecho.push('comunidad · nombre');
+      if (cc) { comPide(cc, cc.personajes[0]); if (!document.querySelector('#compide textarea') || !document.querySelector('#compide button')) throw new Error('la ventana de pedir colaboración sale incompleta'); document.getElementById('compide').remove(); hecho.push('comunidad · pedir'); }
       for (const v of ['dir', 'sol', 'msg']) { COM.vista = v; comPinta(); if (/[\w.+-]+@[\w-]+\.[a-z]{2,}/i.test(document.getElementById('compage').innerText)) throw new Error('aparece algo con forma de correo en ' + v); } COM.vista = 'dir'; hecho.push('comunidad · sin correos');
       setTab(guard.tab); if (COM.on || document.getElementById('compage')) throw new Error('no se cierra al cambiar de sección'); hecho.push('comunidad · cerrar');
     } catch (e) { fallos.push('comunidad → ' + String((e && e.stack) || e).split('\n').slice(0, 2).join(' | ').slice(0, 260)); if (window.comCierra) comCierra(true); } }
