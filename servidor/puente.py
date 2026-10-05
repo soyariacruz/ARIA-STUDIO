@@ -38,7 +38,7 @@ MAX_CUERPO = 40 * 1024 * 1024    # tope de una petición en modo servidor
 MAX_BIBLIO = 200 * 1024 * 1024   # tope de un fichero de la biblioteca común al copiarlo
 KINDS = ('vestidor', 'hair', 'expr')   # las bibliotecas a las que una cuenta puede añadir lo suyo
 _UUID = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
-VERSION = 250
+VERSION = 251
 _ctx = threading.local()   # la cuenta del hilo: la pone cada petición (y, a mano, cada hilo de fondo)
 def uid(): return getattr(_ctx, 'uid', None)   # en local siempre None
 DUENOS = tuple(e.strip().lower() for e in (os.environ.get('ARIA_DUENOS') or 'mix1994max@gmail.com').split(',') if e.strip())   # cuentas que pueden cambiar a Aria Cruz (en la web, la de Max)
@@ -1856,6 +1856,7 @@ class H(SimpleHTTPRequestHandler):
         if not self._guard(): return self._corta(403, 'origen no permitido')
         if not SERVIDOR: return fn()
         if self.command == 'GET' and self.path.startswith('/api/admin/copia'): return self._copia()
+        if self.command in ('GET', 'POST') and self.path.startswith('/api/admin/importar'): return self._importar()
         if self.command in ('GET', 'HEAD') and self.path == '/salud': return self._json(200, {'ok': True, 'v': VERSION}) if self.command == 'GET' else self._corta(200)   # el alojamiento pregunta aquí si el servidor está vivo (sin sesión, sin datos)
         if self.command == 'POST':
             try: n = int(self.headers.get('Content-Length') or 0)
@@ -1871,6 +1872,31 @@ class H(SimpleHTTPRequestHandler):
                 plog(f'{self.command} {self.path[:80]} ✕ {type(e).__name__}: {e}')
                 try: return self._corta(500, 'error interno')
                 except Exception: return
+    def _importar(self):   # v251 · volcar creaciones a UNA cuenta (solo con ARIA_ADMIN). GET ?uid= → qué tiene esa cuenta · POST {uid, file, data(b64), meta} → la guarda si no existe
+        adm = os.environ.get('ARIA_ADMIN') or ''
+        if len(adm) < 32 or not hmac.compare_digest((self.headers.get('X-Admin') or '').encode(), adm.encode()): return self._corta(404)
+        if self.command == 'GET':
+            u = (urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query).get('uid') or [''])[0]
+            if not _UUID.fullmatch(u) or not os.path.isdir(os.path.join(DATOS, 'usuarios', u)): return self._json(404, {'error': 'esa cuenta no existe'})
+            b = os.path.join(DATOS, 'usuarios', u); ld = os.path.join(b, 'assets', 'live'); pd = os.path.join(b, 'assets', 'personajes')
+            return self._json(200, {'ok': True, 'personajes': sorted(x for x in os.listdir(pd) if not x.startswith(('.', '_'))) if os.path.isdir(pd) else [], 'live': sorted(x for x in os.listdir(ld) if not x.startswith('.') and not x.endswith('.json')) if os.path.isdir(ld) else []})
+        n = int(self.headers.get('Content-Length') or 0)
+        if n > 40_000_000: return self._json(413, {'error': 'demasiado grande'})
+        try: body = json.loads(self.rfile.read(n) or b'{}')
+        except Exception: return self._json(400, {'error': 'no es JSON'})
+        u = str(body.get('uid') or ''); fn = os.path.basename(str(body.get('file') or ''))
+        if not _UUID.fullmatch(u) or not os.path.isdir(os.path.join(DATOS, 'usuarios', u)): return self._json(404, {'error': 'esa cuenta no existe'})
+        if not re.fullmatch(r'[A-Za-z0-9._-]{1,180}\.(png|jpe?g|webp)', fn, re.I): return self._json(400, {'error': 'nombre no válido'})
+        ld = os.path.join(DATOS, 'usuarios', u, 'assets', 'live'); os.makedirs(ld, exist_ok=True); dst = os.path.join(ld, fn)
+        if os.path.exists(dst): return self._json(200, {'ok': True, 'ya': True})
+        try: data = base64.b64decode(str(body.get('data') or ''))
+        except Exception: return self._json(400, {'error': 'imagen no válida'})
+        if len(data) < 100: return self._json(400, {'error': 'imagen vacía'})
+        open(dst + '.tmp', 'wb').write(data); os.replace(dst + '.tmp', dst)
+        meta = body.get('meta') if isinstance(body.get('meta'), dict) else {}
+        meta = dict(meta, file='assets/live/' + fn); meta.pop('hidden', None)
+        json.dump(meta, open(dst + '.json', 'w'), ensure_ascii=False, indent=1); _peso.pop(u, None)
+        return self._json(200, {'ok': True})
     def _copia(self):   # copia de seguridad: un tar con todo lo de las cuentas cambiado desde «desde» (segundos). Solo con la llave de administración (ARIA_ADMIN, cabecera X-Admin); sin ella, como si no existiera
         adm = os.environ.get('ARIA_ADMIN') or ''
         if len(adm) < 32 or not hmac.compare_digest((self.headers.get('X-Admin') or '').encode(), adm.encode()): return self._corta(404)
