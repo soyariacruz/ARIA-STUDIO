@@ -38,14 +38,18 @@ MAX_CUERPO = 40 * 1024 * 1024    # tope de una petición en modo servidor
 MAX_BIBLIO = 200 * 1024 * 1024   # tope de un fichero de la biblioteca común al copiarlo
 KINDS = ('vestidor', 'hair', 'expr')   # las bibliotecas a las que una cuenta puede añadir lo suyo
 _UUID = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
-VERSION = 212
+VERSION = 213
 _ctx = threading.local()   # la cuenta del hilo: la pone cada petición (y, a mano, cada hilo de fondo)
 def uid(): return getattr(_ctx, 'uid', None)   # en local siempre None
 DUENOS = tuple(e.strip().lower() for e in (os.environ.get('ARIA_DUENOS') or 'mix1994max@gmail.com').split(',') if e.strip())   # cuentas que pueden cambiar a Aria Cruz (en la web, la de Max)
 ARIA_UID = (os.environ.get('ARIA_UID') or '1e9592c3-a0be-420a-ae93-77b0434bf471').strip().lower()   # la cuenta principal de Aria (soyariacruz@gmail.com): ahí vive la Aria de equipo
 ARIA_PUBLICAN = DUENOS + tuple(e.strip().lower() for e in (os.environ.get('ARIA_PUBLICAN') or 'soyariacruz@gmail.com').split(',') if e.strip())   # quién pulsa «Publicar para todos»
 NSFW_OK = tuple(e.strip().lower() for e in (os.environ.get('ARIA_NSFW') or 'mix1994max@gmail.com,soyariacruz@gmail.com').split(',') if e.strip())   # las ÚNICAS cuentas con NSFW en la web (Max, 5 oct 2026)
-def nsfw_ok(): return (not SERVIDOR) or ((getattr(_ctx, 'email', '') or '').lower() in NSFW_OK and not getattr(_ctx, 'ver_miembro', False))
+def nsfw_ok(): return (not SERVIDOR) or ((getattr(_ctx, 'email', '') or '').lower() in NSFW_OK and not getattr(_ctx, 'ver_miembro', False))   # NSFW CON ARIA CRUZ
+def _con_aria(body):   # ¿sale Aria Cruz? (por lo que dice la página o porque va su ficha: assets/perfil/…)
+    m = body.get('meta') or {}; chars = m.get('chars') if isinstance(m.get('chars'), list) else [m.get('char')]
+    imgs = [i for i in (body.get('images') or []) + (body.get('refs') or []) + [body.get('image')] if isinstance(i, dict)]
+    return 'aria' in chars or any(str(i.get('path') or '').startswith('assets/perfil/') for i in imgs)
 def aria_fija():   # para los miembros Aria es un personaje fijo: se ve y se usa, no se edita. La editan Max, el equipo (cuentas internas) y la propia cuenta de Aria
     return SERVIDOR and (getattr(_ctx, 'ver_miembro', False) or not ((getattr(_ctx, 'email', '') or '').lower() in DUENOS or getattr(_ctx, 'interno', False) or getattr(_ctx, 'uid', None) == ARIA_UID))
 def _aria_casa():   # la carpeta de la Aria de equipo, para quien puede editarla (si no, None)
@@ -2710,7 +2714,7 @@ class H(SimpleHTTPRequestHandler):
             return self._json(200, {'ok': True, 'raw': r})
         if self.path != '/api/generar': return self._json(404, {'error': 'no'})
         n = int(self.headers.get('Content-Length') or 0); body = json.loads(self.rfile.read(n) or b'{}')
-        if not nsfw_ok() and ((body.get('meta') or {}).get('nsfw') or body.get('nsfw') or _es_nsfw(body.get('prompt'))): return self._json(400, {'error': 'El contenido NSFW no está disponible en esta cuenta.'})
+        if not nsfw_ok() and _con_aria(body) and ((body.get('meta') or {}).get('nsfw') or body.get('nsfw') or _es_nsfw(body.get('prompt'))): return self._json(400, {'error': 'El contenido NSFW con Aria Cruz no está disponible en esta cuenta.'})
         prest = sorted({tuple(str(i.get('path')).split('?')[0].split('/')[2:4]) for i in (body.get('images') or []) if isinstance(i, dict) and str(i.get('path') or '').startswith('assets/prestamo/')})
         if prest and ((body.get('meta') or {}).get('nsfw') or body.get('nsfw') or _es_nsfw(body.get('prompt'))): return self._json(400, {'error': 'Con el personaje de otro creador no se puede generar contenido NSFW.'})
         _ctx.prestamo_ok = bool(prest); _ctx.prest = [p for p in prest if len(p) == 2]
@@ -2757,7 +2761,7 @@ class H(SimpleHTTPRequestHandler):
 
     def do_video(self):   # {mode:i2v|r2v, prompt, image:{path|data}, refs:[{path}], duration, resolution, aspect, audio, item, usd}
         n = int(self.headers.get('Content-Length') or 0); body = json.loads(self.rfile.read(n) or b'{}')
-        if not nsfw_ok() and ((body.get('meta') or {}).get('nsfw') or body.get('nsfw') or _es_nsfw(body.get('prompt'))): return self._json(400, {'error': 'El contenido NSFW no está disponible en esta cuenta.'})
+        if not nsfw_ok() and _con_aria(body) and ((body.get('meta') or {}).get('nsfw') or body.get('nsfw') or _es_nsfw(body.get('prompt'))): return self._json(400, {'error': 'El contenido NSFW con Aria Cruz no está disponible en esta cuenta.'})
         try:
             mode = body.get('mode') if body.get('mode') in VIDEO_MODELS else 'i2v'; M = VIDEO_MODELS[mode]
             if body.get('provider') == 'ws':   # WaveSpeed: Seedance 2.0 (0,12 $/s a 480p; 720p ×2, 1080p ×5, 4K ×10)
