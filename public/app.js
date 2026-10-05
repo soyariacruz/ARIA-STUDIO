@@ -35,6 +35,7 @@ const TABS = {
 const GALLERY_TABS = new Set(['creaciones', 'biblio', 'videoteca', 'vestidor', 'photo', 'movie', 'cartoon', 'expr', 'hair', 'lugar']); // sin imagen grande: la cuadrícula ocupa todo y la vista previa va en el panel izquierdo
 const ORDER = ['perfil', 'creaciones', 'crear', 'video', '|', 'biblio', 'videoteca', '|', 'vestidor', 'lugar', 'photo', 'movie', 'cartoon', 'expr', 'hair'];
 const TABKEYS = ORDER.filter(k => k !== '|');
+const LUGARES_ON = false;   // Lugares, apagado hasta que Max lo termine (true lo vuelve a abrir en todas partes)
 const LIBS = ['vestidor', 'lugar', 'photo', 'movie', 'cartoon', 'expr', 'hair'];   // bibliotecas: en el menú solo se ve una (la última usada) y el resto sale en «Más»
 const COMP = { biblio: 'Fototeca', vestidor: 'Prenda', photo: 'Efecto', movie: 'Movie look', cartoon: 'Cartoon', expr: 'Expresión', hair: 'Peinado', lugar: 'Lugar' };
 const CONVERT = new Set(['cartoon', 'photo', 'movie']);
@@ -110,11 +111,11 @@ function navMore(btn, items) { // desplegable que sale a la derecha del menú
 var COM = { on: false, vista: 'dir', arg: null, D: null, M: [], borr: '', busca: '', firma: '', iv: 0, n: 0, pz: null, visto: false };   // 🤝 Comunidad: página abierta o no, apartado, datos y avisos sin leer
 function buildNav() {
   const nav = $('#nav'); nav.innerHTML = ''; { const old = $('#navmore'); if (old) old.remove(); }
-  if (state.lib === undefined) { try { state.lib = localStorage.getItem('am_lib'); } catch (e) {} if (!LIBS.includes(state.lib)) state.lib = 'vestidor'; }
+  if (state.lib === undefined) { try { state.lib = localStorage.getItem('am_lib'); } catch (e) {} if (!LIBS.includes(state.lib) || (state.lib === 'lugar' && !LUGARES_ON)) state.lib = 'vestidor'; if (!LUGARES_ON && state.comp && state.comp.lugar) delete state.comp.lugar; }
   let host = nav; const main = el('div', 'navmain');
   ORDER.forEach(k => { if (LIBS.includes(k) && k !== state.lib) return; if (k === '|') { nav.appendChild(el('div', 'nav-sep')); host = nav; return; } if (k === 'crear') { nav.appendChild(main); host = main; } if (k === 'creaciones') host = nav; const t = TABS[k]; const i = TABKEYS.indexOf(k); const b = el('button', (k === state.tab && !(COM && COM.on) ? 'on' : '') + (k === 'perfil' ? ' story' : ''), k === 'perfil' ? `<span class="ring">${navAvatar() ? `<img src="${navAvatar()}" alt="">` : '<i class="ringv">👤</i>'}</span>${t.label}` : `<span>${t.icon}</span>${t.label}`); b.dataset.tab = k; b.title = `${t.label} (${i + 1})`; b.onclick = () => { if (state.tab === k) { state.filter[k === 'crear' ? 'crearG' : k] = null; state.cfilt = null; state.bibGroup = null; state.vtGroup = null; } setTab(k); }; if (k === 'crear' || k === 'video') b.appendChild(el('span', 'bd', '0'));
     if (k === 'video') { b.classList.add('soon'); b.insertAdjacentHTML('beforeend', '<i>pronto</i>'); b.title = 'Crear vídeo: próximamente'; b.onclick = () => { if (state.tab === 'video') { if (COM.on) setTab('video'); return; } const go = () => setTab('video'); if (window.devIntro) devIntro('Crear vídeo', go); else go(); }; } // en el MVP, Crear vídeo va como «pronto» (se puede entrar igualmente)
-    if (LIBS.includes(k)) { const w = el('div', 'navlib'); w.appendChild(b); const mb = el('button', 'more', 'Más <span>▾</span>'); mb.title = 'Vestidor, Lugares, Efectos, Movie looks, Cartoon, Expresiones, Peinados y Poses'; mb.onclick = () => navMore(w, LIBS.map(q => [TABS[q].icon, TABS[q].label, () => setTab(q), '', q === state.tab]).concat([['🤸', 'Poses', () => toast('Poses: próximamente'), 'pronto']])); w.appendChild(mb); host.appendChild(w); }
+    if (LIBS.includes(k)) { const w = el('div', 'navlib'); w.appendChild(b); const mb = el('button', 'more', 'Más <span>▾</span>'); mb.title = 'Vestidor, Efectos, Movie looks, Cartoon, Expresiones y Peinados (Lugares y Poses, pronto)'; mb.onclick = () => navMore(w, LIBS.filter(q => LUGARES_ON || q !== 'lugar').map(q => [TABS[q].icon, TABS[q].label, () => setTab(q), '', q === state.tab]).concat(LUGARES_ON ? [] : [['📍', 'Lugares', () => toast('Lugares: próximamente'), 'pronto']]).concat([['🤸', 'Poses', () => toast('Poses: próximamente'), 'pronto']])); w.appendChild(mb); host.appendChild(w); }
     else host.appendChild(b); });
   { nav.appendChild(el('div', 'nav-sep')); const cb = el('button', 'more soon combtn' + (COM && COM.on ? ' on' : ''), '<span>🤝</span>Comunidad<i>pronto</i>'); cb.title = 'Comunidad: los creadores y sus personajes, colaboraciones y mensajes';
       cb.onclick = () => { if (COM.on) return; if (!COM.visto && window.devIntro) { devIntro('Comunidad', () => { COM.visto = true; comAbre(); }); return; } comAbre(); }; nav.appendChild(cb); }
@@ -123,6 +124,7 @@ function buildNav() {
   nav.appendChild(el('div', 'sp')); comPonAvisos();
 }
 function setTab(k) {
+  if (k === 'lugar' && !LUGARES_ON) k = 'vestidor';   // Lugares, pronto
   if (COM && COM.on) comCierra();   // cualquier sección del menú cierra la página de la Comunidad
   if (state.spinning || state.busy) return;
   if (state.pick && k !== state.pick.tab) { state.pick = null; pickNav(); }
@@ -1549,6 +1551,7 @@ window.lugPanel = function (owner) { // Perfil › Lugares: los sitios de ESE pe
   if (fija && !L.length) g.appendChild(el('div', 'status', 'Aria aún no tiene lugares guardados.'));
   box.appendChild(g); return box; };
 function lugarRow() { // el sitio de la imagen: uno solo, compartido por todos los personajes
+  if (!LUGARES_ON) { const w = el('div', 'accsel lugarsel off', '<small>Lugar</small><span class="cnt">Próximamente</span><i class="pronto">pronto</i>'); w.title = 'Lugares: próximamente'; return w; }
   const L = state.comp.lugar; const w = el('div', 'accsel lugarsel' + (L ? ' on' : ''));
   w.innerHTML = `<small>Lugar</small>${L ? `<span class="accmini"><img src="${compThumb('lugar', L)}" alt=""></span>` : ''}<span class="cnt">${L ? esc(L.name) : 'ninguno · el de la foto'}</span>${L ? '<span class="x" title="Quitar el lugar">×</span>' : '<span class="caret">▸</span>'}`;
   w.title = L ? 'Cambiar de lugar' : 'Elegir un lugar de la biblioteca, o suelta aquí la foto de un sitio';
