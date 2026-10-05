@@ -38,7 +38,7 @@ MAX_CUERPO = 40 * 1024 * 1024    # tope de una petición en modo servidor
 MAX_BIBLIO = 200 * 1024 * 1024   # tope de un fichero de la biblioteca común al copiarlo
 KINDS = ('vestidor', 'hair', 'expr')   # las bibliotecas a las que una cuenta puede añadir lo suyo
 _UUID = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
-VERSION = 237
+VERSION = 238
 _ctx = threading.local()   # la cuenta del hilo: la pone cada petición (y, a mano, cada hilo de fondo)
 def uid(): return getattr(_ctx, 'uid', None)   # en local siempre None
 DUENOS = tuple(e.strip().lower() for e in (os.environ.get('ARIA_DUENOS') or 'mix1994max@gmail.com').split(',') if e.strip())   # cuentas que pueden cambiar a Aria Cruz (en la web, la de Max)
@@ -1892,7 +1892,19 @@ class H(SimpleHTTPRequestHandler):
         if fa: self._cc = 'private, no-cache'; self._fijo = fa; return super().do_HEAD() if cabeza else super().do_GET()
         if rel.startswith('assets/publica/'):   # v237: una creación publicada en la Fototeca/Filmoteca de la comunidad
             full = _publica(rel)
+            if not full and not aria_fija():   # el equipo puede ver lo denunciado, para revisarlo
+                L_ = rel.split('/'); u_ = _com_cuentas().get(L_[2]) if len(L_) == 5 else None
+                if u_ and '/'.join(L_[2:]) in (_com_lee().get('den') or {}) and L_[3] in ('live', 'video') and not L_[4].startswith('.'):
+                    c_ = os.path.join(DATOS, 'usuarios', u_, 'assets', L_[3], L_[4]); full = c_ if os.path.isfile(c_) else None
             if not full: return self._corta(404)
+            if 'm=1' in (urllib.parse.urlparse(self.path).query or '') and '/live/' in full:   # v238: miniatura (560 px) si ya está hecha; si no, se hace ahora
+                mini = os.path.join(os.path.dirname(full), '.mini', os.path.basename(full) + '.jpg')
+                if not os.path.isfile(mini):
+                    try:
+                        from PIL import Image
+                        os.makedirs(os.path.dirname(mini), exist_ok=True); im = Image.open(full).convert('RGB'); im.thumbnail((560, 560)); im.save(mini + '.tmp', 'JPEG', quality=80); os.replace(mini + '.tmp', mini)
+                    except Exception: mini = None
+                if mini: full = mini
             self._cc = 'private, max-age=600'; self._fijo = full
             return super().do_HEAD() if cabeza else super().do_GET()
         if rel.startswith('assets/compartida/'):   # v220: una creación de una carpeta que otro creador me ha compartido
@@ -2078,7 +2090,7 @@ class H(SimpleHTTPRequestHandler):
                 otra = [c for c in par if c != yo]; otra = otra[0] if otra else yo; visto = (d['visto'].get(yo) or {}).get(otra, 0)
                 chats.append({'con': otra, 'ultimo': M[-1], 'sin_leer': sum(1 for m in M if m.get('de') != yo and m.get('t', 0) > visto)})
             chats.sort(key=lambda c: -c['ultimo'].get('t', 0))
-            return self._json(200, {'ok': True, 'yo': yo, 'alias': str(d['alias'].get(yo) or ''), 'cuentas': cuentas, 'solicitudes': [x for x in d['sol'] if yo in (x.get('de'), x.get('para'))][-200:], 'chats': chats, 'avisos': _com_avisos(d, yo), 'siguiendo': [x for x in d['sig'].get(yo) or [] if isinstance(x, str)], 'carpetas': _comp_lista(d, yo), 'prestados': _prest_lista(d, yo)})
+            return self._json(200, {'ok': True, 'yo': yo, 'alias': str(d['alias'].get(yo) or ''), 'cuentas': cuentas, 'solicitudes': [x for x in d['sol'] if yo in (x.get('de'), x.get('para'))][-200:], 'chats': chats, 'avisos': _com_avisos(d, yo), 'denuncias': (0 if aria_fija() else sum(1 for v in (d.get('den') or {}).values() if not (isinstance(v, dict) and v.get('vista')))), 'siguiendo': [x for x in d['sig'].get(yo) or [] if isinstance(x, str)], 'carpetas': _comp_lista(d, yo), 'prestados': _prest_lista(d, yo)})
         if u.path == '/api/comunidad/avisos':   # (la solicitud de ejemplo de Aria nace aquí también: así el aviso sale sin haber abierto la comunidad)
             yo = _cid()
             with _com_l:
@@ -2119,6 +2131,13 @@ class H(SimpleHTTPRequestHandler):
                 fp = fg
             b = open(fp, 'rb').read(); self.send_response(200); self.send_header('Content-Type', 'image/jpeg'); self.send_header('Content-Length', str(len(b))); self.send_header('Cache-Control', 'private, max-age=600'); self.end_headers(); self.wfile.write(b); return
         if u.path == '/api/carpetas': return self._json(200, {'carpetas': _carp_lee(), 'compartidas': _comp_lista(_com_lee(), _cid()) if SERVIDOR else []})   # las mías · y las que me comparten (para la Fototeca)
+        if u.path == '/api/denuncias':   # v238: lo denunciado, para que el equipo lo revise (restaurar o dejarlo retirado)
+            if aria_fija(): return self._json(403, {'error': 'solo el equipo'})
+            d = _com_lee(); den = d.get('den') if isinstance(d.get('den'), dict) else {}; out = []
+            for k, v in sorted(den.items(), key=lambda kv: -((kv[1] or {}).get('t') or 0)):
+                P = k.split('/'); v = v if isinstance(v, dict) else {}
+                out.append({'k': k, 'f': 'assets/publica/' + k, 'kind': 'video' if len(P) == 3 and P[1] == 'video' else 'image', 'autor': str(d['alias'].get(P[0]) or 'Creador sin nombre')[:40], 'por': str(d['alias'].get(v.get('por')) or 'Creador sin nombre')[:40], 't': v.get('t') or 0, 'vista': bool(v.get('vista'))})
+            return self._json(200, {'ok': True, 'items': out})
         if u.path == '/api/publicas':   # v237: la Fototeca / Filmoteca de la comunidad (tipo=image|video · cid=un creador · sig=1 solo de quien sigo)
             q = urllib.parse.parse_qs(u.query); tipo = (q.get('tipo') or [''])[0]; de = (q.get('cid') or [''])[0]; yo = _cid(); L = _pub_lista()
             if tipo in ('image', 'video'): L = [x for x in L if x['kind'] == tipo]
@@ -2260,6 +2279,13 @@ class H(SimpleHTTPRequestHandler):
                         im.crop(((w - m) // 2, (h - m) // 2, (w - m) // 2 + m, (h - m) // 2 + m)).resize((320, 320), Image.LANCZOS).save(fp, 'JPEG', quality=88)
                     except Exception: return self._json(400, {'error': 'No se ha podido leer esa imagen.'})
                     d['foto'][yo] = int(time.time()); _com_guarda(d); return self._json(200, {'ok': True, 'foto': d['foto'][yo]})
+                if ac == 'denuncia':   # v238 (equipo): restaurar una creación denunciada, o dejarla retirada y darla por revisada
+                    if aria_fija(): return self._json(403, {'error': 'solo el equipo'})
+                    k = str(body.get('k') or ''); den = d.get('den') if isinstance(d.get('den'), dict) else {}
+                    if k not in den: return self._json(404, {'error': 'esa denuncia ya no existe'})
+                    if body.get('restaurar'): den.pop(k)
+                    else: den[k] = dict(den[k] if isinstance(den[k], dict) else {}, vista=True)
+                    d['den'] = den; _com_guarda(d); _pub_reset(); return self._json(200, {'ok': True})
                 if ac == 'denunciar':   # v237: una creación publicada deja de verse para todos al instante (queda apuntado quién y cuándo, para revisarlo)
                     rel = str(body.get('f') or '').split('?')[0]
                     if not rel.startswith('assets/publica/') or not any(x['f'] == rel for x in _pub_lista()): return self._json(404, {'error': 'Esa creación ya no está publicada.'})
