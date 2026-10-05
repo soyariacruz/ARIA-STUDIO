@@ -31,7 +31,7 @@ try:
         P._conjunta({'model': 'qwen', 'prest': [[cV, 'vera-demo'], [cV, 'vera-demo'], ['c00000000000000', 'x'], [cL, 'luna-demo']]}, rel, RID)
     ok('la copia está en las creaciones de la dueña del personaje', os.path.isfile(suyo))
     m = json.load(open(suyo + '.json')) if os.path.isfile(suyo + '.json') else {}
-    ok('su ficha es mínima: sin prompt, referencias ni combinación', m and not any(k in m for k in ('prompt', 'canvasRef', 'compIds')) and 'SECRETO' not in json.dumps(m), m)
+    ok('su ficha lleva el prompt (v222) pero no las referencias ni la combinación', m and m.get('prompt') == 'PROMPT SECRETO DE LUNA' and not any(k in m for k in ('canvasRef', 'compIds')), m)
     ok('no le cuesta nada y dice con quién', m.get('usd') == 0 and (m.get('colab') or {}).get('con') == cL and (m.get('colab') or {}).get('pid') == 'vera-demo' and m['colab'].get('mia') is False, m)
     mm = json.load(open(os.path.join(ll, mio) + '.json'))
     ok('la mía queda marcada como conjunta y conserva lo suyo', (mm.get('colab') or {}).get('con') == cV and mm['colab'].get('mia') is True and mm.get('prompt') == 'PROMPT SECRETO DE LUNA', mm)

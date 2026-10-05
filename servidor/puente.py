@@ -38,7 +38,7 @@ MAX_CUERPO = 40 * 1024 * 1024    # tope de una petición en modo servidor
 MAX_BIBLIO = 200 * 1024 * 1024   # tope de un fichero de la biblioteca común al copiarlo
 KINDS = ('vestidor', 'hair', 'expr')   # las bibliotecas a las que una cuenta puede añadir lo suyo
 _UUID = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
-VERSION = 221
+VERSION = 222
 _ctx = threading.local()   # la cuenta del hilo: la pone cada petición (y, a mano, cada hilo de fondo)
 def uid(): return getattr(_ctx, 'uid', None)   # en local siempre None
 DUENOS = tuple(e.strip().lower() for e in (os.environ.get('ARIA_DUENOS') or 'mix1994max@gmail.com').split(',') if e.strip())   # cuentas que pueden cambiar a Aria Cruz (en la web, la de Max)
@@ -1417,6 +1417,14 @@ def _comp_items(u, c):   # lo que hay de verdad en una carpeta compartida, como 
         full = os.path.join(base, *L)
         if _dentro(base, full) and os.path.isfile(full): out.append(L)
     return out
+def _comp_ficha(u, L):   # de la ficha de una creación compartida, lo que viaja con ella: su prompt y su descripción de escena (nunca rutas ni referencias)
+    try: m = json.load(open(os.path.join(DATOS, 'usuarios', u, *L) + '.json'))
+    except Exception: return {}
+    o = {}; e = m.get('escena') if isinstance(m.get('escena'), dict) else {}
+    if isinstance(m.get('prompt'), str) and m['prompt'].strip(): o['prompt'] = m['prompt'][:8000]
+    e = {k: e[k][:4000] for k in ('d', 'r', 'f') if isinstance(e.get(k), str) and e[k].strip()}
+    if e: o['escena'] = e
+    return o
 def _compartida(rel):   # 'assets/compartida/<cid>/<carpeta>/<live|video>/<fichero>' → el fichero real en la casa de su dueña, o None. ÚNICA puerta a lo de otra cuenta.
     L = rel.split('/')
     if len(L) != 6 or L[4] not in ('live', 'video') or L[5].startswith('.'): return None
@@ -1461,8 +1469,8 @@ def _conjunta(j, rel, rid):   # v219: la imagen recién guardada (rel, en la cas
             ld = os.path.join(base, 'assets', 'live'); os.makedirs(ld, exist_ok=True); fn = f"colab_{re.sub(r'[^a-z0-9]', '', str(j.get('model') or 'qwen'))}-{rid[:8]}{ext}"; dst = os.path.join(ld, fn)
             if not os.path.exists(dst):
                 shutil.copyfile(src, dst)
-                # su ficha lleva lo justo: ni las referencias ni la combinación de quien la creó (son de SU biblioteca)
-                meta = {'file': 'assets/live/' + fn, 'kind': 'image', 'item': 'colab', 'name': 'Con ' + (mi_alias or 'otro creador'), 'request_id': rid, 'usd': 0, 't': time.time(), 'model_key': j.get('model'), 'model': mia.get('model'), 'width': mia.get('width'), 'height': mia.get('height'),
+                # su ficha lleva lo justo: el prompt sí (v222), pero ni las referencias ni la combinación de quien la creó (son de SU biblioteca)
+                meta = {'file': 'assets/live/' + fn, 'kind': 'image', 'item': 'colab', 'name': 'Con ' + (mi_alias or 'otro creador'), 'request_id': rid, 'usd': 0, 't': time.time(), 'model_key': j.get('model'), 'model': mia.get('model'), 'width': mia.get('width'), 'height': mia.get('height'), 'prompt': mia.get('prompt') if isinstance(mia.get('prompt'), str) else None,
                         'colab': {'con': yo, 'alias': mi_alias, 'pid': pid, 'personaje': nombre, 'mia': False}}
                 json.dump({k: v for k, v in meta.items() if v is not None}, open(dst + '.json', 'w'), ensure_ascii=False, indent=1)
             _carp_auto(u, base, yo, mi_alias, 'assets/live/' + fn); _peso.pop(u, None)
@@ -1994,7 +2002,7 @@ class H(SimpleHTTPRequestHandler):
             q = urllib.parse.parse_qs(u.query); cid = (q.get('cid') or [''])[0]; kid = (q.get('id') or [''])[0]
             uu, cs = _comp_carpetas(cid); c = next((x for x in cs if x['id'] == kid), None)
             if not c: return self._json(404, {'error': 'Esa carpeta ya no está compartida contigo.'})
-            return self._json(200, {'ok': True, 'nombre': str(c.get('nombre') or 'Carpeta')[:40], 'alias': str(_com_lee()['alias'].get(cid) or '')[:40], 'items': [{'f': f'assets/compartida/{cid}/{kid}/{L[1]}/{L[2]}', 'kind': 'video' if L[1] == 'video' else 'image'} for L in _comp_items(uu, c)]})   # las carpetas de Mis creaciones de la cuenta
+            return self._json(200, {'ok': True, 'nombre': str(c.get('nombre') or 'Carpeta')[:40], 'alias': str(_com_lee()['alias'].get(cid) or '')[:40], 'items': [dict(_comp_ficha(uu, L), f=f'assets/compartida/{cid}/{kid}/{L[1]}/{L[2]}', kind='video' if L[1] == 'video' else 'image') for L in _comp_items(uu, c)]})   # las carpetas de Mis creaciones de la cuenta
         if u.path == '/api/papelera':   # lo borrado de Mis creaciones que aún se puede recuperar (30 días), lo más reciente primero
             trash = papelera(); out = []; ahora = time.time()
             for fn in os.listdir(trash):
