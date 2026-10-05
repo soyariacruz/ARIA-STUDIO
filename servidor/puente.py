@@ -38,7 +38,7 @@ MAX_CUERPO = 40 * 1024 * 1024    # tope de una petición en modo servidor
 MAX_BIBLIO = 200 * 1024 * 1024   # tope de un fichero de la biblioteca común al copiarlo
 KINDS = ('vestidor', 'hair', 'expr')   # las bibliotecas a las que una cuenta puede añadir lo suyo
 _UUID = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
-VERSION = 217
+VERSION = 218
 _ctx = threading.local()   # la cuenta del hilo: la pone cada petición (y, a mano, cada hilo de fondo)
 def uid(): return getattr(_ctx, 'uid', None)   # en local siempre None
 DUENOS = tuple(e.strip().lower() for e in (os.environ.get('ARIA_DUENOS') or 'mix1994max@gmail.com').split(',') if e.strip())   # cuentas que pueden cambiar a Aria Cruz (en la web, la de Max)
@@ -1349,6 +1349,38 @@ def _apis_estado():   # qué APIs hay conectadas (nunca la clave: solo sus 4 úl
 def _creacion(rel):   # una creación DE LA CUENTA (assets/live o assets/video) → su fichero, o None
     full = busca(rel, propio=True)
     return full if full and (_dentro(live_dir(), full) or _dentro(video_dir(), full)) else None
+# ---- CARPETAS de Mis creaciones (v218): <casa>/carpetas.json → [{id, nombre, t, items: [ruta de la creación…]}]. Son referencias: nada se copia ni se borra.
+CARP_MAX, CARP_ITEMS = 60, 3000
+def _carp_fp(): return os.path.join(_dir(), 'carpetas.json')
+def _carp_lee():
+    try: L = json.load(open(_carp_fp(), encoding='utf-8')).get('carpetas') or []
+    except Exception: L = []
+    return [{'id': c['id'], 'nombre': str(c.get('nombre') or 'Carpeta')[:40], 't': c.get('t') or 0, 'items': [x for x in c.get('items') or [] if isinstance(x, str)]} for c in L if isinstance(c, dict) and isinstance(c.get('id'), str)]
+def _carp_haz(b):   # crear · renombrar · borrar · meter · sacar → la lista entera, ya guardada
+    ac = str(b.get('accion') or ''); nombre = ' '.join(str(b.get('nombre') or '').split())[:40]
+    files = list(dict.fromkeys(x.split('?')[0] for x in (b.get('files') or []) if isinstance(x, str)))[:CARP_ITEMS]
+    with _cerrojo('carp'):
+        L = _carp_lee(); c = next((x for x in L if x['id'] == b.get('id')), None)
+        if ac == 'crear':
+            if not nombre: raise ValueError('Ponle un nombre a la carpeta.')
+            if any(x['nombre'].lower() == nombre.lower() for x in L): raise ValueError('Ya tienes una carpeta con ese nombre.')
+            if len(L) >= CARP_MAX: raise ValueError(f'Has llegado al máximo de {CARP_MAX} carpetas.')
+            c = {'id': 'k' + hashlib.sha1(os.urandom(12)).hexdigest()[:12], 'nombre': nombre, 't': int(time.time()), 'items': []}; L.append(c); ac = 'meter'
+        elif not c: raise ValueError('Esa carpeta ya no existe.')
+        if ac == 'renombrar':
+            if not nombre: raise ValueError('Ponle un nombre a la carpeta.')
+            if any(x is not c and x['nombre'].lower() == nombre.lower() for x in L): raise ValueError('Ya tienes una carpeta con ese nombre.')
+            c['nombre'] = nombre
+        elif ac == 'borrar': L.remove(c)
+        elif ac == 'meter':
+            ya = set(c['items']); nuevos = [x for x in files if x not in ya and _creacion(x)]   # solo creaciones DE LA CUENTA
+            if len(c['items']) + len(nuevos) > CARP_ITEMS: raise ValueError(f'Una carpeta admite hasta {CARP_ITEMS} creaciones.')
+            c['items'] = nuevos + c['items']
+        elif ac == 'sacar': q = set(files); c['items'] = [x for x in c['items'] if x not in q]
+        else: raise ValueError('acción desconocida')
+        fp = _carp_fp(); tmp = f'{fp}.tmp{threading.get_ident()}'
+        json.dump({'carpetas': L}, open(tmp, 'w', encoding='utf-8'), ensure_ascii=False, indent=1); os.replace(tmp, fp)
+        return L
 def poster_for(path):   # fotograma del vídeo para la galería (ffmpeg si está)
     out = os.path.splitext(path)[0] + '.jpg'
     if os.path.exists(out): return out
@@ -1862,6 +1894,7 @@ class H(SimpleHTTPRequestHandler):
                     except Exception: fg = fp
                 fp = fg
             b = open(fp, 'rb').read(); self.send_response(200); self.send_header('Content-Type', 'image/jpeg'); self.send_header('Content-Length', str(len(b))); self.send_header('Cache-Control', 'private, max-age=600'); self.end_headers(); self.wfile.write(b); return
+        if u.path == '/api/carpetas': return self._json(200, {'carpetas': _carp_lee()})   # las carpetas de Mis creaciones de la cuenta
         if u.path == '/api/papelera':   # lo borrado de Mis creaciones que aún se puede recuperar (30 días), lo más reciente primero
             trash = papelera(); out = []; ahora = time.time()
             for fn in os.listdir(trash):
@@ -1942,6 +1975,10 @@ class H(SimpleHTTPRequestHandler):
             except urllib.error.HTTPError as e: return self._json(400, {'error': f'{nombre} no acepta esa clave' if e.code in (401, 403) else f'{nombre} respondió {e.code}'})
             except Exception as e: return self._json(400, {'error': 'no se pudo comprobar: ' + str(e)[:80]})
             _claves_set(envn, k); _claves_set(envn + '_OFF', ''); plog(f'clave de {nombre} guardada desde la pantalla'); return self._json(200, {'ok': True, 'apis': _apis_estado()})
+        if self.path == '/api/carpetas':   # crear · renombrar · borrar una carpeta · meter / sacar creaciones
+            n = int(self.headers.get('Content-Length') or 0); body = json.loads(self.rfile.read(n) or b'{}')
+            try: return self._json(200, {'ok': True, 'carpetas': _carp_haz(body if isinstance(body, dict) else {})})
+            except ValueError as e: return self._json(400, {'error': str(e)})
         if self.path == '/api/borrar':   # mueve una creación (y su ficha/póster) a assets/papelera
             n = int(self.headers.get('Content-Length') or 0); body = json.loads(self.rfile.read(n) or b'{}'); rel = body.get('file', '')
             full = _creacion(rel)

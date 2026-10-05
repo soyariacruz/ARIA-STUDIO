@@ -32,6 +32,12 @@
   // 4) editor de ficha (v198): abre, pasa por todas sus piezas y cierra
   const hecha = ((window.PJ && PJ.list) || []).find(p => p.ficha360 && p.cuerpo);
   if (hecha && window.pjEdFicha) { paso('editor de ficha · abrir', () => { pjEdFicha(hecha.id, 'frente'); if (!document.getElementById('edf')) throw new Error('no se abre'); }); for (let i = 0; i < 7; i++) paso('editor de ficha · pieza ' + i, () => pjEdMueve(1)); paso('editor de ficha · cerrar', () => { pjEdCierra(); if (document.getElementById('edf')) throw new Error('no se cierra'); }); }
+  // 4b) carpetas de Mis creaciones (v218): con una carpeta de mentira, solo en memoria (no se guarda nada)
+  if (window.carpAbre) { const L0 = CARP.L; const c0 = TABS.creaciones.items.find(i => !i.pending && i.src);
+    paso('carpetas · pastillas', () => { CARP.L = [{ id: 'khumo', nombre: 'Humo', t: 0, items: c0 ? [c0.src.split('?')[0]] : [] }]; setTab('creaciones'); if (CARP.ok && ![...document.querySelectorAll('#gridChips button')].some(b => b.textContent.includes('Humo'))) throw new Error('no sale la pastilla'); });
+    paso('carpetas · abrir', () => { carpAbre('khumo'); if (view().length !== (c0 ? 1 : 0)) throw new Error('la carpeta no enseña lo suyo'); if (!document.querySelector('#gridChips').textContent.includes('Borrar carpeta')) throw new Error('sin cabecera'); });
+    paso('carpetas · menú de la selección', () => { if (!c0) return; toggleSel(c0.src, true); carpMenu(document.getElementById('selCarp')); if (CARP.ok && !document.getElementById('carpmenu')) throw new Error('no se abre'); carpPopX(); clearSel(); });
+    paso('carpetas · salir', () => { state.carp = null; CARP.L = L0; renderRail(); renderChips(); }); }
   // 5) Comunidad (v199): la página, sus tres apartados, la ficha de un personaje, y que se cierre al ir a otra sección
   if (window.comAbre) { try { COM.visto = true; await comAbre('dir'); if (!document.getElementById('compage') || !COM.D) throw new Error('la página no se pinta'); hecho.push('comunidad · abrir');
       for (const v of ['msg', 'dir']) { COM.vista = v; COM.arg = v === 'msg' ? comPendiente() : null; COM.M = []; comPinta(); hecho.push('comunidad · ' + v); }
