@@ -38,7 +38,7 @@ MAX_CUERPO = 40 * 1024 * 1024    # tope de una petición en modo servidor
 MAX_BIBLIO = 200 * 1024 * 1024   # tope de un fichero de la biblioteca común al copiarlo
 KINDS = ('vestidor', 'hair', 'expr')   # las bibliotecas a las que una cuenta puede añadir lo suyo
 _UUID = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
-VERSION = 219
+VERSION = 220
 _ctx = threading.local()   # la cuenta del hilo: la pone cada petición (y, a mano, cada hilo de fondo)
 def uid(): return getattr(_ctx, 'uid', None)   # en local siempre None
 DUENOS = tuple(e.strip().lower() for e in (os.environ.get('ARIA_DUENOS') or 'mix1994max@gmail.com').split(',') if e.strip())   # cuentas que pueden cambiar a Aria Cruz (en la web, la de Max)
@@ -103,6 +103,7 @@ def _dentro(base, full):   # full cae dentro de base (por carpetas, no por «emp
 def busca(rel, propio=False):   # ÚNICA puerta para las rutas que manda el navegador: primero la casa de la cuenta; si no, la biblioteca común (propio=True: solo la casa). Devuelve el fichero real o None
     rel = _rel_ok(rel)
     if not rel: return None
+    if rel.startswith('assets/compartida/'): return None if propio else _compartida(rel)   # v220: una creación de otra cuenta, solo si está en una carpeta que me ha compartido
     if rel.startswith('assets/prestamo/'): return _prestado(rel) if getattr(_ctx, 'prestamo_ok', False) and not propio else None   # el personaje de otro creador: solo al generar, y solo con su permiso
     base = casa(); full = os.path.join(base, *rel.split('/'))
     if _dentro(base, full) and os.path.isfile(full): return full
@@ -1356,10 +1357,11 @@ def _carp_fp(): return os.path.join(_dir(), 'carpetas.json')
 def _carp_lee():
     try: L = json.load(open(_carp_fp(), encoding='utf-8')).get('carpetas') or []
     except Exception: L = []
-    return [{'id': c['id'], 'nombre': str(c.get('nombre') or 'Carpeta')[:40], 't': c.get('t') or 0, 'items': [x for x in c.get('items') or [] if isinstance(x, str)], **({'colab': c['colab']} if isinstance(c.get('colab'), str) else {})} for c in L if isinstance(c, dict) and isinstance(c.get('id'), str)]
+    return [{'id': c['id'], 'nombre': str(c.get('nombre') or 'Carpeta')[:40], 't': c.get('t') or 0, 'items': [x for x in c.get('items') or [] if isinstance(x, str)], **({'colab': c['colab']} if isinstance(c.get('colab'), str) else {}), **({'comp': [x for x in c['comp'] if isinstance(x, str)]} if isinstance(c.get('comp'), list) and c['comp'] else {})} for c in L if isinstance(c, dict) and isinstance(c.get('id'), str)]
 def _carp_haz(b):   # crear · renombrar · borrar · meter · sacar → la lista entera, ya guardada
     ac = str(b.get('accion') or ''); nombre = ' '.join(str(b.get('nombre') or '').split())[:40]
     files = list(dict.fromkeys(x.split('?')[0] for x in (b.get('files') or []) if isinstance(x, str)))[:CARP_ITEMS]
+    aviso = None
     with _cerrojo('carp'):
         L = _carp_lee(); c = next((x for x in L if x['id'] == b.get('id')), None)
         if ac == 'crear':
@@ -1378,10 +1380,56 @@ def _carp_haz(b):   # crear · renombrar · borrar · meter · sacar → la list
             if len(c['items']) + len(nuevos) > CARP_ITEMS: raise ValueError(f'Una carpeta admite hasta {CARP_ITEMS} creaciones.')
             c['items'] = nuevos + c['items']
         elif ac == 'sacar': q = set(files); c['items'] = [x for x in c['items'] if x not in q]
+        elif ac == 'compartir':   # v220: con un creador con el que colaboro (on: false = dejar de compartir)
+            con = str(b.get('con') or ''); on = bool(b.get('on', True)); yo = _cid()
+            if not SERVIDOR or con == yo or con not in _com_cuentas(): raise ValueError('Ese creador no existe.')
+            if on and not _com_trato(_com_lee(), yo, con): raise ValueError('Solo puedes compartir carpetas con creadores con los que colaboras.')
+            ya = con in (c.get('comp') or []); S = [x for x in c.get('comp') or [] if x != con] + ([con] if on else [])
+            if S: c['comp'] = S[:50]
+            else: c.pop('comp', None)
+            if on != ya: aviso = (yo, con, on, c['nombre'], len(c['items']))
         else: raise ValueError('acción desconocida')
         fp = _carp_fp(); tmp = f'{fp}.tmp{threading.get_ident()}'
         json.dump({'carpetas': L}, open(tmp, 'w', encoding='utf-8'), ensure_ascii=False, indent=1); os.replace(tmp, fp)
-        return L
+    if aviso:   # se lo cuenta en su conversación (fuera del cerrojo de las carpetas)
+        try:
+            yo, con, on, nom, n = aviso
+            with _com_l:
+                d = _com_lee(); d['msgs'].setdefault(_com_par(yo, con), []).append({'de': yo, 'x': (f'📁 He compartido contigo la carpeta «{nom}» ({n} {"creación" if n == 1 else "creaciones"}). La tienes aquí arriba, en esta conversación.' if on else f'He dejado de compartir la carpeta «{nom}».'), 't': time.time(), 'auto': True}); _com_guarda(d)
+        except Exception as e: plog('compartir: aviso ✕ ' + str(e))
+    return L
+# ---- CARPETAS COMPARTIDAS (v220). La fuente de verdad es la lista `comp` de la carpeta en la casa de su dueña; además tiene que seguir habiendo colaboración.
+def _com_trato(d, a, b): return any(x.get('estado') == 'aceptada' and {x.get('de'), x.get('para')} == {a, b} for x in d['sol'])   # ¿colaboran (en cualquier sentido)?
+def _comp_carpetas(cid, d=None):   # las carpetas de la cuenta cid compartidas CONMIGO → (uid de su dueña, [carpetas]); nada si no colaboramos
+    if not SERVIDOR or not DATOS or not isinstance(cid, str) or not re.fullmatch(r'c[0-9a-f]{14}', cid): return None, []
+    yo = _cid()
+    if cid == yo or not _com_trato(d if d is not None else _com_lee(), yo, cid): return None, []
+    u = _com_cuentas().get(cid)
+    if not u: return None, []
+    try: L = json.load(open(os.path.join(DATOS, 'usuarios', u, 'carpetas.json'), encoding='utf-8')).get('carpetas') or []
+    except Exception: return None, []
+    return u, [c for c in L if isinstance(c, dict) and isinstance(c.get('id'), str) and isinstance(c.get('comp'), list) and yo in c['comp']]
+def _comp_items(u, c):   # lo que hay de verdad en una carpeta compartida, como rutas 'assets/compartida/…' (lo que fue a la papelera no sale)
+    base = os.path.join(DATOS, 'usuarios', u); out = []
+    for r in c.get('items') or []:
+        L = r.split('/') if isinstance(r, str) else []
+        if len(L) != 3 or L[0] != 'assets' or L[1] not in ('live', 'video') or L[2].startswith('.'): continue
+        full = os.path.join(base, *L)
+        if _dentro(base, full) and os.path.isfile(full): out.append(L)
+    return out
+def _compartida(rel):   # 'assets/compartida/<cid>/<carpeta>/<live|video>/<fichero>' → el fichero real en la casa de su dueña, o None. ÚNICA puerta a lo de otra cuenta.
+    L = rel.split('/')
+    if len(L) != 6 or L[4] not in ('live', 'video') or L[5].startswith('.'): return None
+    u, cs = _comp_carpetas(L[2]); c = next((x for x in cs if x['id'] == L[3]), None)
+    if not c or f'assets/{L[4]}/{L[5]}' not in (c.get('items') or []): return None
+    base = os.path.join(DATOS, 'usuarios', u); full = os.path.join(base, 'assets', L[4], L[5])
+    return full if _dentro(base, full) and os.path.isfile(full) else None
+def _comp_lista(d, yo):   # para la Comunidad: las carpetas que me comparten los creadores con los que colaboro
+    out = []
+    for cid in sorted({(x.get('de') if x.get('para') == yo else x.get('para')) for x in d['sol'] if x.get('estado') == 'aceptada' and yo in (x.get('de'), x.get('para'))} - {yo, None}):
+        u, cs = _comp_carpetas(cid, d)
+        for c in cs: out.append({'cid': cid, 'id': c['id'], 'nombre': str(c.get('nombre') or 'Carpeta')[:40], 'n': len(_comp_items(u, c))})
+    return out
 def _carp_auto(u, base, otro, alias, rel):   # mete «rel» en la carpeta automática «🤝 <otro creador>» de la cuenta u (se crea la primera vez). No depende de la cuenta en curso.
     with _cerrojos_l: lk = _cerrojos.setdefault((u, 'carp'), threading.Lock())
     with lk:
@@ -1729,6 +1777,11 @@ class H(SimpleHTTPRequestHandler):
             self._cc = 'private, no-cache'; self._fijo = full; return super().do_HEAD() if cabeza else super().do_GET()
         fa = _aria_fich(rel) if not os.path.isfile(os.path.join(casa(), *rel.split('/'))) else None
         if fa: self._cc = 'private, no-cache'; self._fijo = fa; return super().do_HEAD() if cabeza else super().do_GET()
+        if rel.startswith('assets/compartida/'):   # v220: una creación de una carpeta que otro creador me ha compartido
+            full = _compartida(rel)
+            if not full: return self._corta(404)
+            self._cc = 'private, no-cache'; self._fijo = full
+            return super().do_HEAD() if cabeza else super().do_GET()
         if rel.startswith('assets/prestamo/'):   # del personaje de otro creador, al navegador solo se le sirve el avatar (su ficha y su cuerpo los lee el servidor al generar)
             full = _prestado(rel) if rel.endswith('/foto.jpg') else None
             if not full: return self._corta(404)
@@ -1902,7 +1955,7 @@ class H(SimpleHTTPRequestHandler):
                 otra = [c for c in par if c != yo]; otra = otra[0] if otra else yo; visto = (d['visto'].get(yo) or {}).get(otra, 0)
                 chats.append({'con': otra, 'ultimo': M[-1], 'sin_leer': sum(1 for m in M if m.get('de') != yo and m.get('t', 0) > visto)})
             chats.sort(key=lambda c: -c['ultimo'].get('t', 0))
-            return self._json(200, {'ok': True, 'yo': yo, 'alias': str(d['alias'].get(yo) or ''), 'cuentas': cuentas, 'solicitudes': [x for x in d['sol'] if yo in (x.get('de'), x.get('para'))][-200:], 'chats': chats, 'avisos': _com_avisos(d, yo), 'prestados': _prest_lista(d, yo)})
+            return self._json(200, {'ok': True, 'yo': yo, 'alias': str(d['alias'].get(yo) or ''), 'cuentas': cuentas, 'solicitudes': [x for x in d['sol'] if yo in (x.get('de'), x.get('para'))][-200:], 'chats': chats, 'avisos': _com_avisos(d, yo), 'carpetas': _comp_lista(d, yo), 'prestados': _prest_lista(d, yo)})
         if u.path == '/api/comunidad/avisos':   # (la solicitud de ejemplo de Aria nace aquí también: así el aviso sale sin haber abierto la comunidad)
             yo = _cid()
             with _com_l:
@@ -1936,7 +1989,12 @@ class H(SimpleHTTPRequestHandler):
                     except Exception: fg = fp
                 fp = fg
             b = open(fp, 'rb').read(); self.send_response(200); self.send_header('Content-Type', 'image/jpeg'); self.send_header('Content-Length', str(len(b))); self.send_header('Cache-Control', 'private, max-age=600'); self.end_headers(); self.wfile.write(b); return
-        if u.path == '/api/carpetas': return self._json(200, {'carpetas': _carp_lee()})   # las carpetas de Mis creaciones de la cuenta
+        if u.path == '/api/carpetas': return self._json(200, {'carpetas': _carp_lee()})
+        if u.path == '/api/compartida':   # v220: lo que hay en una carpeta que me han compartido
+            q = urllib.parse.parse_qs(u.query); cid = (q.get('cid') or [''])[0]; kid = (q.get('id') or [''])[0]
+            uu, cs = _comp_carpetas(cid); c = next((x for x in cs if x['id'] == kid), None)
+            if not c: return self._json(404, {'error': 'Esa carpeta ya no está compartida contigo.'})
+            return self._json(200, {'ok': True, 'nombre': str(c.get('nombre') or 'Carpeta')[:40], 'items': [{'f': f'assets/compartida/{cid}/{kid}/{L[1]}/{L[2]}', 'kind': 'video' if L[1] == 'video' else 'image'} for L in _comp_items(uu, c)]})   # las carpetas de Mis creaciones de la cuenta
         if u.path == '/api/papelera':   # lo borrado de Mis creaciones que aún se puede recuperar (30 días), lo más reciente primero
             trash = papelera(); out = []; ahora = time.time()
             for fn in os.listdir(trash):
