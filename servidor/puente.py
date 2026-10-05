@@ -38,7 +38,7 @@ MAX_CUERPO = 40 * 1024 * 1024    # tope de una petición en modo servidor
 MAX_BIBLIO = 200 * 1024 * 1024   # tope de un fichero de la biblioteca común al copiarlo
 KINDS = ('vestidor', 'hair', 'expr')   # las bibliotecas a las que una cuenta puede añadir lo suyo
 _UUID = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
-VERSION = 258
+VERSION = 259
 _ctx = threading.local()   # la cuenta del hilo: la pone cada petición (y, a mano, cada hilo de fondo)
 def uid(): return getattr(_ctx, 'uid', None)   # en local siempre None
 DUENOS = tuple(e.strip().lower() for e in (os.environ.get('ARIA_DUENOS') or 'mix1994max@gmail.com').split(',') if e.strip())   # cuentas que pueden cambiar a Aria Cruz (en la web, la de Max)
@@ -908,7 +908,7 @@ VIDEO_MODELS = {
 V_ASPECTS = ['3:4', '9:16', '16:9', '1:1', '4:3', '21:9']
 # v255 · los modelos de vídeo de WaveSpeed que se ofrecen (familia, nombre, base del id) · cada uno con sus modos: i2v (imagen inicial), t2v (texto + referencias), r2v
 VID_CUR = [('Seedance', 'Seedance 2.0 Fast', 'bytedance/seedance-2.0-fast'), ('Seedance', 'Seedance 2.5', 'bytedance/seedance-2.5'),
-           ('Kling', 'Kling 3.0 Pro', 'kwaivgi/kling-v3.0-pro'), ('Kling', 'Kling 3.0', 'kwaivgi/kling-v3.0-std'), ('Kling', 'Kling 2.6 Pro', 'kwaivgi/kling-v2.6-pro'),
+           ('Kling', 'Kling 3.0 Omni Pro', 'kwaivgi/kling-video-o3-pro'), ('Kling', 'Kling 3.0 Omni', 'kwaivgi/kling-video-o3-std'), ('Kling', 'Kling 3.0 Pro', 'kwaivgi/kling-v3.0-pro'), ('Kling', 'Kling 3.0', 'kwaivgi/kling-v3.0-std'), ('Kling', 'Kling 2.6 Pro', 'kwaivgi/kling-v2.6-pro'),
            ('Veo', 'Veo 3.1', 'google/veo3.1'), ('Veo', 'Veo 3.1 Fast', 'google/veo3.1-fast'), ('Veo', 'Veo 3.1 Lite', 'google/veo3.1-lite'),
            ('Minimax', 'Hailuo 2.3 Pro', 'minimax/hailuo-2.3@pro'), ('Minimax', 'Hailuo 2.3', 'minimax/hailuo-2.3@standard'), ('Minimax', 'Minimax H3', 'minimax/h3'),
            ('Wan', 'Wan 3.0', 'alibaba/wan-3.0'), ('Grok', 'Grok Imagine 1.5', 'x-ai/grok-imagine-video-v1.5')]
@@ -928,7 +928,7 @@ def _vcat(forzar=False):   # id → esquema y precio base, del catálogo de Wave
 def _vmodos(base):   # {i2v|t2v|r2v: id} que existen en el catálogo para esa base
     M = _vcat(); b, var = (base.split('@') + [''])[:2]
     if var: C = {'i2v': f'{b}/i2v-{var}', 't2v': f'{b}/t2v-{var}'}
-    else: C = {'i2v': f'{b}/image-to-video', 't2v': f'{b}/text-to-video', 'r2v': f'{b}/reference-to-video'}
+    else: C = {'i2v': f'{b}/image-to-video', 't2v': f'{b}/text-to-video', 'r2v': f'{b}/reference-to-video', 'se': f'{b}/start-end-to-video'}
     return {k: v for k, v in C.items() if v in M}
 def _vinfo():   # lo que el panel necesita para cada modelo: modos, duraciones, resoluciones, formatos, audio, precio base
     out = []
@@ -938,12 +938,13 @@ def _vinfo():   # lo que el panel necesita para cada modelo: modos, duraciones, 
         M = _vcat(); p = {}
         for k in ('i2v', 't2v', 'r2v'):
             if k in md: p = dict(M[md[k]]['p'], **p)
+        pi = M[md['i2v']]['p'] if 'i2v' in md else {}; fin = 'se' in md or 'last_image' in pi or 'end_image' in pi
         en = lambda k: ((p.get(k) or {}).get('enum') or [])
         dur = en('duration') or ([x for x in range(int((p.get('duration') or {}).get('minimum') or 4), int((p.get('duration') or {}).get('maximum') or 10) + 1)] if 'duration' in p else [])
         dur = sorted(dur, key=lambda x: float(x))
         mx = lambda k: max([int(((M[v]['p'].get(k) or {}).get('maxItems')) or 0) for v in md.values()] + [0])
         maxi = {'img': max(mx('reference_images'), mx('images'), 1 if 'i2v' in md else 0), 'vid': mx('reference_videos'), 'aud': mx('reference_audios')}
-        out.append({'id': base, 'fam': fam, 'nombre': nom, 'modos': sorted(md), 'usd': min(float(M[v]['usd'] or 0) for v in md.values()), 'dur': dur, 'durDef': (p.get('duration') or {}).get('default'),
+        out.append({'id': base, 'fam': fam, 'nombre': nom, 'modos': sorted(k for k in md if k != 'se'), 'ini': 'i2v' in md, 'fin': fin, 'usd': min(float(M[v]['usd'] or 0) for v in md.values()), 'dur': dur, 'durDef': (p.get('duration') or {}).get('default'),
                     'res': en('resolution'), 'aspect': en('aspect_ratio'), 'audio': next((k for k in ('generate_audio', 'sound', 'audio') if (p.get(k) or {}).get('type') == 'boolean'), None), 'refs': 'r2v' in md or 'reference_images' in (M.get(md.get('t2v', ''), {}).get('p') or {}), 'max': maxi})
     return out
 def _vpayload(mid, b, prompt):   # la petición para ese modelo, desde su esquema
@@ -951,6 +952,9 @@ def _vpayload(mid, b, prompt):   # la petición para ese modelo, desde su esquem
     R = b.get('refs') or []; imgs = [r for r in by_kind(R, 'image')]; vids = by_kind(R, 'video'); auds = by_kind(R, 'audio')
     first = b.get('image') if isinstance(b.get('image'), dict) else (imgs[0] if imgs else None)
     if 'image' in p and first: out['image'] = resolve_ws(first)
+    if isinstance(b.get('end'), dict) and 'image' in out:   # v259: imagen final
+        for k in ('last_image', 'end_image'):
+            if k in p: out[k] = resolve_ws(b['end']); break
     if 'images' in p and imgs: out['images'] = [resolve_ws(r) for r in imgs][:9]
     if 'reference_images' in p and imgs and 'image' not in out: out['reference_images'] = [resolve_ws(r) for r in imgs][:9]
     if 'reference_videos' in p and vids: out['reference_videos'] = [resolve_ws(r) for r in vids][:3]
@@ -965,7 +969,7 @@ def _vpayload(mid, b, prompt):   # la petición para ese modelo, desde su esquem
     if 'aspect_ratio' in p and not ('image' in out and 'aspect_ratio' not in sch['req'] and b.get('aspect') in (None, '', 'auto')):
         E = en('aspect_ratio'); a0 = b.get('aspect') or '9:16'; out['aspect_ratio'] = a0 if (not E or a0 in E) else (p['aspect_ratio'].get('default') or E[0])
     for k in ('generate_audio', 'sound', 'audio'):
-        if (p.get(k) or {}).get('type') == 'boolean': out[k] = bool(b.get('audio'))
+        if (p.get(k) or {}).get('type') == 'boolean': out[k] = bool(b.get('audio')) and not ('end_image' in out and mid.startswith('kwaivgi/kling-v2.6'))   # Kling 2.6: imagen final y sonido no van juntos
     if not mid.startswith('bytedance/'):   # Seedance entiende @Image1; los demás no
         if 'image' in out and not any(k in out for k in ('images', 'reference_images')): out['prompt'] = re.sub(r'@Image1\b', 'the input image', out['prompt'])
         elif mid.startswith('x-ai/'): out['prompt'] = re.sub(r'@Image(\d+)', lambda m_: '<IMAGE_%d>' % (int(m_.group(1)) - 1), out['prompt'])
@@ -3330,7 +3334,9 @@ class H(SimpleHTTPRequestHandler):
             if body.get('provider') == 'ws':   # WaveSpeed: Seedance 2.0 (0,12 $/s a 480p; 720p ×2, 1080p ×5, 4K ×10)
                 res = body.get('resolution') if body.get('resolution') in ('480p', '720p', '1080p', '4k') else '720p'; dur = max(4, min(15, int(body.get('duration') or 5)))
                 prompt = (body.get('prompt') or '').strip() or 'Natural subtle motion, she breathes and blinks.'
-                if mode == 'i2v': ep = 'bytedance/seedance-2.0/image-to-video'; payload = {'prompt': prompt, 'image': resolve_ws(body['image']), 'duration': dur, 'resolution': res, 'generate_audio': bool(body.get('audio'))}
+                if mode == 'i2v':
+                    ep = 'bytedance/seedance-2.0/image-to-video'; payload = {'prompt': prompt, 'image': resolve_ws(body['image']), 'duration': dur, 'resolution': res, 'generate_audio': bool(body.get('audio'))}
+                    if isinstance(body.get('end'), dict): payload['last_image'] = resolve_ws(body['end'])
                 else:
                     R = body.get('refs') or []; ep = 'bytedance/seedance-2.0/text-to-video'
                     payload = {'prompt': prompt, 'duration': dur, 'resolution': res, 'aspect_ratio': body.get('aspect') if body.get('aspect') in V_ASPECTS else '3:4', 'generate_audio': bool(body.get('audio'))}
@@ -3350,6 +3356,7 @@ class H(SimpleHTTPRequestHandler):
                 M_ = _vcat(); conref = 'r2v' in md or 'reference_images' in (M_.get(md.get('t2v', ''), {}).get('p') or {}); imgs_ = by_kind(R, 'image')
                 if not una and imgs_ and not conref and 'i2v' in md: una = True; body['image'] = imgs_[0]   # sin referencias: la primera imagen, de inicio
                 mid = md.get('i2v') if una and 'i2v' in md else md.get('r2v') if (R and 'r2v' in md) else md.get('t2v') or md.get('i2v')
+                if una and isinstance(body.get('end'), dict) and 'se' in md: mid = md['se']
                 payload = _vpayload(mid, body, (body.get('prompt') or '').strip() or 'Natural subtle motion.')
                 try: bal0 = float((ws('GET', '/api/v3/balance').get('data') or {}).get('balance'))
                 except Exception: bal0 = None
@@ -3361,7 +3368,9 @@ class H(SimpleHTTPRequestHandler):
                 ver = body.get('vmodel') if body.get('vmodel') in ARK_MODELS else '2.0'; res = body.get('resolution') if body.get('resolution') in ARK_USD[ver] else '720p'
                 dur = max(4, min(30 if ver == '2.5' else 15, int(body.get('duration') or 5)))
                 prompt = (body.get('prompt') or '').strip() or 'Natural subtle motion, she breathes and blinks.'
-                if mode == 'i2v': content = [{'type': 'text', 'text': prompt}, {'type': 'image_url', 'image_url': {'url': data_uri(body['image'])}, 'role': 'first_frame'}]
+                if mode == 'i2v':
+                    content = [{'type': 'text', 'text': prompt}, {'type': 'image_url', 'image_url': {'url': data_uri(body['image'])}, 'role': 'first_frame'}]
+                    if isinstance(body.get('end'), dict): content.append({'type': 'image_url', 'image_url': {'url': data_uri(body['end'])}, 'role': 'last_frame'})
                 else:
                     R = body.get('refs') or []; content = [{'type': 'text', 'text': prompt}]
                     content += [{'type': 'image_url', 'image_url': {'url': data_uri(r)}, 'role': 'reference_image'} for r in by_kind(R, 'image')[:9]]
