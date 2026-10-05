@@ -232,7 +232,7 @@
   const step = (n, t, sub, cls) => { const g = el('div', 'pjgrp nfstep ' + (cls || '')); g.appendChild(el('h4', '', `<i class="nfn">${n}</i>${t}${sub ? `<small>${sub}</small>` : ''}`)); return g; };
   window.f3Render = function (host) {
     if (!F3.open) return false; host.innerHTML = ''; const w = el('div', 'nfwrap');
-    const bk0 = el('button', 'btn fxback', '← Volver a Fichas 360'); bk0.onclick = () => { F3.open = false; if (window.PJ) PJ.sel = OW(); window.pjScrollTop = true; renderProfile(); }; w.appendChild(bk0);
+    const bk0 = el('button', 'btn fxback', F3.owner ? '← Volver al creador de fichas' : '← Volver a Fichas 360'); bk0.onclick = () => { F3.open = false; if (window.PJ) PJ.sel = OW(); window.pjScrollTop = true; renderProfile(); }; w.appendChild(bk0);
     w.appendChild(el('div', 'pjwhd', `<div><h3>Nueva ficha</h3><p>Su ficha principal con otra ropa y otros objetos: las cuatro vistas y el cuerpo entero salen en una sola imagen, de una vez.</p></div>`));
     // 1 · personaje
     const s1 = step(1, 'Personaje', 'la ficha se hace con ella'); const pc = el('div', 'nfchar', `<img class="av" src="${P().avatar || C.base.thumb}" alt=""><div><b>${P().name}</b><small>Se parte de su ficha principal</small></div><img class="base" src="${P().comboThumb || principal()}" alt="">`); pc.querySelector('.base').onclick = () => lightbox(principal(), 'Ficha principal'); s1.appendChild(pc); w.appendChild(s1);

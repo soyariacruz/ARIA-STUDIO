@@ -38,7 +38,7 @@ MAX_CUERPO = 40 * 1024 * 1024    # tope de una petición en modo servidor
 MAX_BIBLIO = 200 * 1024 * 1024   # tope de un fichero de la biblioteca común al copiarlo
 KINDS = ('vestidor', 'hair', 'expr')   # las bibliotecas a las que una cuenta puede añadir lo suyo
 _UUID = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
-VERSION = 249
+VERSION = 250
 _ctx = threading.local()   # la cuenta del hilo: la pone cada petición (y, a mano, cada hilo de fondo)
 def uid(): return getattr(_ctx, 'uid', None)   # en local siempre None
 DUENOS = tuple(e.strip().lower() for e in (os.environ.get('ARIA_DUENOS') or 'mix1994max@gmail.com').split(',') if e.strip())   # cuentas que pueden cambiar a Aria Cruz (en la web, la de Max)
@@ -1743,7 +1743,7 @@ def _com_personajes(u, con_ocultos=False):   # los personajes de una cuenta tal 
             except Exception: t0 = 0
             out.append({'pid': d0, 'nombre': str(p.get('nombre') or d0)[:60], 'usuario': str(p.get('usuario') or '')[:60], 'edad': p.get('edad') if isinstance(p.get('edad'), (int, float)) else None,
                         'bio': str(p.get('bio') or '')[:600], 'ig': url[:200] if url.startswith('https://') else '', 'nicho': [str(x)[:30] for x in p.get('nicho')[:6]] if isinstance(p.get('nicho'), list) else [],
-                        'avatar': bool(p.get('avatar') or p.get('foto')), 'oculto': bool(p.get('privado')), 'abierto': bool(p.get('abierto')) and not p.get('privado'), 'igseg': str(p.get('igSeguidores') or '')[:12], 'nuevo': bool(t0 and time.time() - t0 < 3 * 86400), 't': int(t0), 'orden': p.get('orden') if isinstance(p.get('orden'), int) else 999})
+                        'avatar': bool(p.get('avatar') or p.get('foto')), 'oculto': bool(p.get('privado')), 'abierto': bool(p.get('abierto')) and not p.get('privado'), 'igseg': str(p.get('igSeguidores') or ig.get('followers') or '')[:12], 'nuevo': bool(t0 and time.time() - t0 < 3 * 86400), 't': int(t0), 'orden': p.get('orden') if isinstance(p.get('orden'), int) else 999})
     except Exception as e: plog('comunidad: personajes ✕ ' + str(e))
     out.sort(key=lambda x: x['orden']); return out
 COM_DEMO_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'comunidad_demo')   # caras de los creadores de demo (recortes de rejillas ya generadas)

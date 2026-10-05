@@ -838,7 +838,7 @@
       else { const a = el('div', 'f3acts'); const g = el('button', 'btn acc', '✨ Crearlo a partir de su ficha'); g.title = 'Genera su ficha de cuerpo usando su ficha como referencia'; g.onclick = () => force('cuerpo'); a.appendChild(g); a.appendChild(subir('btn')); d.appendChild(a); }
       col.appendChild(d); }
     top.appendChild(col); if (!pj.soloFichas) w.appendChild(top);
-    const sec2 = el('div', 'f3sec'); const hd = el('div', 'f3head stacked'); hd.appendChild(el('h4', '', 'Creador de fichas<small>fichas completas de tu personaje para usarlas en fotos y en vídeos</small>')); const nb = el('div', 'f3newbtns pjdevnew'); const b1 = el('button', 'pjbigopt', '<span>＋</span><b>Nueva ficha</b><small>Su ficha principal con otra ropa y otros objetos.</small>'); nb.appendChild(b1); b1.onclick = () => window.nfOpenFor && nfOpenFor(p.id); if (window.devGate) devGate(b1, `Fichas de ${p.nombre} · Nueva ficha`, () => window.nfOpenFor && nfOpenFor(p.id)); hd.appendChild(nb); sec2.appendChild(hd);
+    const sec2 = el('div', 'f3sec'); const hd = el('div', 'f3head stacked'); hd.appendChild(el('h4', '', 'Creador de fichas<small>fichas completas de tu personaje para usarlas en fotos y en vídeos</small>')); const nb = el('div', 'f3newbtns pjdevnew'); const b1 = el('button', 'pjbigopt', '<span>＋</span><b>Nueva ficha</b><small>Elige qué ficha quieres crear.</small>'); nb.appendChild(b1); b1.onclick = () => fichaTipo(p); hd.appendChild(nb); sec2.appendChild(hd);
     { const g = el('div', 'f3grid'); const jobs = window.nfJobs ? nfJobs(p.id) : [];
       jobs.forEach(jb => g.appendChild(el('div', 'f3card wide gen', `<div class="f3img sm"><img src="${p.combo || p.ficha360}" alt=""><span class="f3busy"><i class="spin"></i>Generando · <i data-t0="${jb.t0}">${Math.round((performance.now() - jb.t0) / 1000)} s</i></span></div><b>${esc(jb.it.name)}</b><small>se guardará aquí sola al terminar</small>`)));
       const bajar = f => { const x = document.createElement('a'); x.href = f.img; x.download = f.img.split('/').pop().split('?')[0]; document.body.appendChild(x); x.click(); x.remove(); };
@@ -852,6 +852,14 @@
     if (!p.celebrado) setTimeout(() => celebrar(p), 250);
     return w;
   }
+  function fichaTipo(p) { // v250 · builder de fichas: primero, qué ficha. Cada tipo usa su creador (el de siempre), sin duplicar nada
+    let m0 = $('#ftipo'); if (m0) m0.remove(); m0 = el('div', 'fxm'); m0.id = 'ftipo'; document.body.appendChild(m0); m0.onclick = e => { if (e.target === m0) m0.remove(); };
+    const b = el('div', 'devbox ftbox'); m0.appendChild(b); b.appendChild(el('h3', '', 'Nueva ficha')); b.appendChild(el('p', '', `¿Qué ficha quieres crear para ${esc(p.nombre)}?`));
+    const g = el('div', 'ftgrid'); const op = (ic, t, d, fn) => { const o = el('button', 'ftop', `<span>${ic}</span><b>${t}</b><small>${d}</small>`); o.onclick = () => { m0.remove(); fn(); }; g.appendChild(o); };
+    op('🧍', `${esc(p.nombre.split(' ')[0])} con otro look`, 'Su ficha completa con otra ropa, peinado u objetos. Para vídeos y escenas.', () => window.nfOpenFor && nfOpenFor(p.id));
+    op('🧩', 'Un objeto o complemento', 'Sus vistas (frente, lado, espalda, tres cuartos) a partir de una foto. Se guarda en sus Complementos.', () => { pj.tabBy[p.id] = 'complementos'; renderProfile(); setTimeout(() => { const t = document.querySelector('.pjbody .accaddtile'); if (t) t.click(); else toast('Pulsa «＋ Añadir nuevo» en sus Complementos'); }, 120); });
+    op('👤', 'Otro personaje', 'Una ficha 360 nueva desde cero: una persona distinta, para que salga con el tuyo.', () => window.pjStart && pjStart());
+    b.appendChild(g); const x = el('button', 'btn', 'Cancelar'); x.onclick = () => m0.remove(); b.appendChild(x); }
   function celebrar(p) { // al terminar: enhorabuena y a crear
     if ($('#pjcel')) return; const m0 = el('div', 'fxm'); m0.id = 'pjcel'; document.body.appendChild(m0); const short = esc((p.nombre || '').split(' ')[0]);
     const done = async go => { m0.remove(); const q = pj.list.find(x => x.id === p.id); if (q && !q.celebrado) { q.celebrado = true; await persist_(q); } if (go === 'crear') { if (window.setChar) setChar(p.id); setTab('crear'); return; } if (go === 'acc') pj.tabBy[p.id] = 'complementos'; renderProfile(); renderSide(); };
@@ -913,6 +921,7 @@
     if (tab === 'ficha' && p && window.F3 && F3.open && F3.owner === p.id && window.f3Render && f3Render(bd)) return;   // «Nueva ficha» de este personaje
     if (tab === 'ficha' && !p) { if (window.F3 && F3.owner) { F3.open = false; F3.owner = null; } if (window.f3Render && f3Render(bd)) return; if (window.fbRender && fbRender(bd)) return; if (window.f3Gallery) { bd.appendChild(f3Gallery()); return; } }
     if (tab === 'lugares' && window.lugPanel) { const w = el('div', 'pjpane'); w.appendChild(lugPanel(p ? p.id : 'aria')); bd.appendChild(w); return; }
+    if (tab === 'fichas' && p && window.F3 && F3.open && F3.owner === p.id && window.f3Render && f3Render(bd)) return;   // el creador «con otro look», dentro de su pestaña
     if (tab === 'fichas' && p) { pj.soloFichas = true; try { bd.appendChild(viewPersona(p)); } finally { pj.soloFichas = false; } if (Object.keys(pj.jobs).length) startTick(); return; }
     if (tab === 'complementos' && window.accPanel) { const w = el('div', 'pjpane'); w.appendChild(accPanel(p ? p.id : 'aria')); bd.appendChild(w); return; }
     if (tab === 'prompt' && p) { const w = el('div', 'pjpane'); const g = el('div', 'pjgrp'); g.appendChild(el('h4', '', 'Prompt base<small>la plantilla de la lección 1.4 con lo que elegiste</small>')); g.appendChild(el('div', 'promptbox', esc(p.prompt || ''))); const c = el('button', 'btn', 'Copiar prompt base'); c.onclick = () => { navigator.clipboard && navigator.clipboard.writeText(p.prompt || ''); toast('Prompt base copiado'); }; g.appendChild(c); w.appendChild(g); bd.appendChild(w); return; }
