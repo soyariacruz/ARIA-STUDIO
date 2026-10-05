@@ -1,0 +1,809 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ARIA STUDIO · Duelos</title>
+<script>try { if (localStorage.getItem('am_theme') !== 'light') document.documentElement.classList.add('dark'); } catch (e) { document.documentElement.classList.add('dark'); }</script>
+<style>
+:root{
+  --bg:#f2eee8; --panel:#fbfaf7; --line:#e4ded4; --ink:#18171b; --mut:#847e88;
+  --acc:#e8447f; --acc2:#7c5cff; --ok:#199e70; --warn:#d95926; --hl:#fdeaf1; --gold:#fcdc58;
+  --field:#fff; --head:rgba(242,238,232,.92);
+  --serif:"New York","Iowan Old Style","Palatino Linotype",ui-serif,Georgia,serif;
+  --sans:-apple-system,BlinkMacSystemFont,"SF Pro Text","Inter",Roboto,sans-serif;
+}
+/* mismo tema que Aria Studio (oscuro salvo que allí se haya elegido el claro) */
+html.dark{--bg:#1b1a1f;--panel:#232228;--line:#35333c;--ink:#ecebef;--mut:#9d98a5;--hl:#3c2231;--field:#2b2a31;--head:rgba(27,26,31,.92);color-scheme:dark}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{background:var(--bg);color:var(--ink);font:14px/1.45 var(--sans)}
+a{color:var(--acc)}
+button{font:inherit;cursor:pointer;border:0;background:none;color:inherit}
+header{position:sticky;top:0;z-index:20;background:var(--head);backdrop-filter:blur(10px);border-bottom:1px solid var(--line);padding:10px 20px;display:flex;align-items:center;gap:16px;flex-wrap:wrap}
+header .logo{font:600 15px var(--serif);letter-spacing:.02em;white-space:nowrap}
+header .logo b{color:var(--acc)}
+header select{font:inherit;padding:6px 10px;border:1px solid var(--line);border-radius:10px;background:var(--panel);color:var(--ink);max-width:360px}
+header .back{margin-left:auto;font-size:12.5px;text-decoration:none;padding:6px 12px;border:1px solid var(--line);border-radius:10px;background:var(--panel);color:var(--ink)}
+.steps{display:flex;gap:6px;padding:12px 20px 0;flex-wrap:wrap}
+.steps button{display:flex;align-items:center;gap:7px;padding:8px 13px;border-radius:12px;background:var(--panel);border:1px solid var(--line);font-size:13px;color:var(--mut)}
+.steps button .n{width:20px;height:20px;border-radius:50%;display:grid;place-items:center;background:var(--line);color:var(--ink);font-size:11px;font-weight:700}
+.steps button.on{color:var(--ink);border-color:var(--acc);box-shadow:0 0 0 2px var(--hl)}
+.steps button.on .n{background:var(--acc);color:#fff}
+.steps button.done .n{background:var(--ok);color:#fff}
+.steps button small{font-size:10.5px;color:var(--mut)}
+.steps button:disabled{opacity:.45;cursor:not-allowed}
+main{padding:16px 20px 120px;max-width:1500px;margin:0 auto}
+h2{font:600 22px var(--serif);margin:6px 0 4px}
+.sub{color:var(--mut);margin-bottom:14px;max-width:880px}
+.aviso{background:var(--hl);border:1px solid #f6c9da;border-radius:14px;padding:12px 16px;margin:0 0 16px;max-width:980px}
+html.dark .aviso{border-color:#6d2f4f}
+.aviso b{color:var(--acc)}
+.hecho{display:flex;align-items:center;gap:12px;flex-wrap:wrap;background:var(--panel);border:1px solid var(--ok);border-radius:14px;padding:10px 16px;margin:0 0 16px;max-width:980px}
+.espera{display:flex;align-items:center;gap:12px;padding:26px;border:2px dashed var(--line);border-radius:18px;background:var(--panel);color:var(--mut);margin:0 0 14px}
+.espera i{width:22px;height:22px;border:3px solid var(--line);border-top-color:var(--acc);border-radius:50%;animation:gira 1s linear infinite;flex:0 0 auto}
+@keyframes gira{to{transform:rotate(360deg)}}
+.b{padding:7px 12px;border-radius:10px;border:1px solid var(--line);background:var(--field);color:var(--ink);font-size:12.5px}
+.b:hover{border-color:#cfc6ba}
+.b.acc{background:var(--acc);border-color:var(--acc);color:#fff;font-weight:600}
+.b.ok{background:var(--ok);border-color:var(--ok);color:#fff}
+.b.big{padding:11px 20px;font-size:14px}
+.b:disabled{opacity:.5;cursor:not-allowed}
+textarea,input[type=text]{font:inherit;width:100%;border:1px solid var(--line);border-radius:12px;padding:9px 12px;background:var(--field);color:var(--ink);resize:vertical}
+.nota{margin-top:16px;max-width:980px}
+.nota label,.campo label{font-size:12px;color:var(--mut);display:block;margin-bottom:4px}
+.resumen{display:flex;gap:10px;flex-wrap:wrap;margin:0 0 12px;font-size:13px;align-items:center}
+.resumen span{background:var(--panel);border:1px solid var(--line);border-radius:999px;padding:5px 12px}
+.resumen span b{color:var(--acc)}
+.resumen span.bien b{color:var(--ok)}
+/* 1 · mundo */
+.mundos{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px}
+.mundo{background:var(--panel);border:2px solid var(--line);border-radius:18px;padding:18px;text-align:left;transition:.15s}
+.mundo:hover{border-color:#f0a8c2}
+.mundo.on{border-color:var(--acc);box-shadow:0 6px 20px rgba(232,68,127,.18)}
+.mundo .foto{margin:-18px -18px 12px;aspect-ratio:4/5;border-radius:16px 16px 0 0;overflow:hidden;background:var(--line)}
+.mundo .foto img{width:100%;height:100%;object-fit:cover;display:block}
+.mundo .foto.pend{display:grid;place-items:center;color:var(--mut);font-size:12px}
+.mundo h3{font:600 17px var(--serif);margin:6px 0}
+.mundo p{color:var(--mut);font-size:13px}
+.mundo .tick{float:right;font-size:12px;font-weight:700;color:var(--acc)}
+.k{color:var(--mut);font-size:12px}
+.opcion{display:flex;gap:10px;align-items:flex-start;margin-top:16px;max-width:980px;background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:12px 14px;cursor:pointer}
+.opcion input{margin-top:3px;accent-color:var(--acc)}
+.opcion small{display:block;color:var(--mut)}
+/* 2 · prompts */
+.test{margin:22px 0 8px;display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+.test .tn{font-weight:800;color:var(--acc);font-size:12px;letter-spacing:.06em}
+.test h3{font:600 17px var(--serif)}
+.test small{color:var(--mut)}
+.prompts{display:grid;grid-template-columns:repeat(auto-fill,minmax(380px,1fr));gap:12px}
+.pc{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:14px;display:flex;flex-direction:column;gap:8px}
+.pc.ok{border-color:var(--ok);box-shadow:inset 4px 0 0 var(--ok)}
+.pc.no{opacity:.55;border-color:var(--warn);box-shadow:inset 4px 0 0 var(--warn)}
+.pc .esc{font-weight:600}
+details summary{cursor:pointer;color:var(--mut);font-size:12px}
+details p{white-space:pre-wrap;margin-top:6px;background:var(--field);border:1px solid var(--line);border-radius:10px;padding:9px;max-height:260px;overflow:auto;font-size:12.5px}
+.acts{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.b.on.okb{background:var(--ok);border-color:var(--ok);color:#fff}
+.b.on.nob{background:var(--warn);border-color:var(--warn);color:#fff}
+/* 3 · galería (como «Mis creaciones» de Aria Studio) */
+.filtros{display:flex;gap:6px;flex-wrap:wrap;margin:0 0 12px}
+.filtros button{padding:5px 11px;border-radius:999px;border:1px solid var(--line);background:var(--panel);font-size:12px;color:var(--mut)}
+.filtros button.on{background:var(--acc);border-color:var(--acc);color:#fff}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px}
+.gt{position:relative;border-radius:12px;overflow:hidden;background:var(--line);aspect-ratio:9/16;outline:3px solid transparent;outline-offset:-3px;cursor:zoom-in}
+.gt img{width:100%;height:100%;object-fit:cover;display:block}
+.gt.fav{outline-color:var(--acc)}
+.gt .tag{position:absolute;top:6px;left:6px;max-width:calc(100% - 44px);background:rgba(0,0,0,.55);color:#fff;font-size:10.5px;font-weight:700;padding:3px 7px;border-radius:7px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.gt .star{position:absolute;top:5px;right:5px;width:30px;height:30px;border-radius:50%;border:0;padding:0;background:rgba(0,0,0,.5);color:#fff;display:none;place-items:center;font-size:15px;cursor:pointer;z-index:2;transition:transform .12s}
+.gt:hover .star,.gt.fav .star{display:grid}
+.gt.fav .star{background:var(--acc)}
+.gt .star:hover{transform:scale(1.12)}
+.gt.rol{outline-color:var(--ok)}
+.gt .hov.fija{opacity:1;justify-content:center;background:linear-gradient(transparent,rgba(0,0,0,.55))}
+.gt .hov.fija button{flex:0 0 auto;padding:6px 16px;background:var(--ok);color:#fff}
+.gt .hov.fija button:hover{background:var(--ok);filter:brightness(1.08)}
+.gt.mas{cursor:default;background:var(--panel);outline:2px dashed var(--line);outline-offset:-2px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;padding:14px;text-align:center}
+.gt.mas h4{font:600 16px var(--serif)}
+.gt.mas select{font:inherit;padding:7px 10px;border:1px solid var(--line);border-radius:10px;background:var(--field);color:var(--ink)}
+.gt.mas small{color:var(--mut);font-size:11.5px}
+.spin{display:block;width:22px;height:22px;border:3px solid rgba(255,255,255,.25);border-top-color:var(--acc);border-radius:50%;animation:gira 1s linear infinite;margin:0 auto 8px}
+.spin.s{display:inline-block;width:14px;height:14px;border-width:2px;margin:0 4px -2px;border-color:var(--line);border-top-color:var(--acc)}
+.par .ims .regen{position:absolute;inset:0;aspect-ratio:auto;z-index:1;background:rgba(0,0,0,.55);color:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:12px;font-weight:700}
+.par .ims .pend{font-weight:600;display:flex;flex-direction:column;align-items:center;justify-content:center;aspect-ratio:auto}
+.genbar{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:12px 16px;margin:0 0 14px;font-size:13.5px}
+.genbar .acts{display:flex;gap:8px;flex-wrap:wrap}
+.selg{float:right;display:inline-flex;gap:5px;align-items:center;font-size:12px;font-weight:700;color:var(--acc);cursor:pointer}
+.lados{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:12px 0}
+.lados .lado img{width:100%;aspect-ratio:9/16;object-fit:cover;border-radius:8px;display:block;margin-bottom:5px}
+.lados .lado b{display:block;font-size:11px;margin-bottom:5px}
+#lb .side .lados .btns{gap:4px}
+#lb .side .lados .btns button{min-width:0;flex:1 1 45%;font-size:11px;padding:6px 4px}
+.ro .gt .star{pointer-events:none}
+.ro .gt .hov.fija{opacity:1!important}
+.ro .par .ims .cambiar{display:none}
+.vista{display:inline-flex;margin-left:auto;border:1px solid var(--line);border-radius:999px;overflow:hidden}
+.vista button{padding:5px 12px;font-size:12px;background:var(--panel);color:var(--mut);border:0;border-radius:0}
+.vista button.on{background:var(--ink);color:var(--bg)}
+.alts{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:8px;max-height:60vh;overflow:auto}
+.alts .gt{cursor:pointer}
+.alts .gt.on{outline-color:var(--ok)}
+.alts .gt small{position:absolute;left:0;right:0;bottom:0;padding:16px 6px 5px;background:linear-gradient(transparent,rgba(0,0,0,.75));color:#fff;font-size:10.5px;text-align:center}
+.par .ims .cambiar{position:absolute;top:6px;right:6px;z-index:2;padding:3px 8px;border-radius:8px;border:0;background:rgba(0,0,0,.6);color:#fff;font-size:11px;font-weight:700;cursor:pointer}
+.gt .roles{position:absolute;left:6px;bottom:6px;display:flex;gap:4px;flex-wrap:wrap}
+.gt .roles i{font-style:normal;background:#fff;color:#18171b;font-size:10px;font-weight:800;letter-spacing:.04em;padding:3px 6px;border-radius:6px}
+.gt .hov{position:absolute;inset:auto 0 0 0;padding:28px 6px 6px;background:linear-gradient(transparent,rgba(0,0,0,.8));display:flex;gap:4px;opacity:0;transition:.15s}
+.gt:hover .hov{opacity:1}
+.gt:hover .roles{opacity:0}
+.gt .hov button{flex:1;padding:6px 0;border-radius:8px;background:rgba(255,255,255,.16);color:#fff;font-size:11px;font-weight:700;backdrop-filter:blur(4px)}
+.gt .hov button:hover{background:rgba(255,255,255,.3)}
+.gt .hov button.on{background:#fff;color:#18171b}
+.gt .hov button.f.on{background:var(--acc);color:#fff}
+.gt .pend{position:absolute;inset:0;display:grid;place-items:center;color:var(--mut);font-size:12px;text-align:center;padding:10px}
+@media (hover:none){.gt .hov{opacity:1}.gt .roles{display:none}}
+/* 4 · duelo */
+.pares{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:14px}
+.par{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:10px;display:flex;flex-direction:column;gap:8px}
+.par .lab{font-size:12px}
+.par .lab b{color:var(--acc)}
+.par .ims{display:grid;grid-template-columns:1fr 1fr;gap:3px;border-radius:12px;overflow:hidden}
+/* la vista previa calca la diapositiva final: etiqueta arriba, nombre en una línea a la misma altura (7,4 % desde abajo) y degradados */
+.par .ims div{aspect-ratio:2/5;background:var(--line);position:relative;container-type:inline-size;overflow:hidden;cursor:zoom-in}
+.par .ims img{width:100%;height:100%;object-fit:cover;display:block}
+.par .ims div::after{content:'';position:absolute;left:0;right:0;bottom:0;height:20%;background:linear-gradient(transparent,rgba(0,0,0,.65));pointer-events:none}
+.par .ims small{position:absolute;bottom:7.4%;left:4%;right:4%;z-index:1;text-align:center;color:#fff;font-weight:700;font-size:6.1cqw;line-height:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-shadow:0 1px 4px rgba(0,0,0,.6)}
+.campo input{font-size:13px;padding:7px 10px}
+/* 5 · carrusel */
+.carr{display:flex;gap:12px;overflow-x:auto;padding-bottom:12px}
+.carr img{height:min(460px,60vh);border-radius:12px;cursor:zoom-in;box-shadow:0 6px 20px rgba(0,0,0,.12)}
+/* 6 · publicar */
+.caja{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:16px;max-width:980px;margin:0 0 14px}
+.caja h3{font:600 16px var(--serif);margin-bottom:8px}
+.caja code{font-size:12px;color:var(--mut);word-break:break-all}
+.check{display:flex;flex-direction:column;gap:8px}
+.check div{background:var(--field);border:1px solid var(--line);border-radius:12px;padding:10px 14px;display:flex;gap:10px;align-items:center}
+.check div.hecho{border-color:var(--ok);margin:0;padding:10px 14px}
+.check div i{font-style:normal;font-size:18px}
+.check div a{margin-left:auto;font-size:12.5px;white-space:nowrap}
+/* solo lectura en los pasos hechos */
+.ro .mundo,.ro .opcion,.ro .pc .acts,.ro .pc input,.ro .gt .hov,.ro textarea,.ro .campo input{pointer-events:none}
+.ro .pc .acts,.ro .gt .hov{opacity:0!important}
+footer{position:fixed;left:0;right:0;bottom:0;z-index:30;background:#18171b;border-top:1px solid var(--line);color:#fff;padding:12px 20px;display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+footer .msg{flex:1;min-width:240px;font-size:13px}
+footer .msg b{color:#ffd166}
+footer .saved{font-size:11.5px;color:#bdb7c4}
+/* visor grande */
+#lb{position:fixed;inset:0;z-index:60;background:rgba(10,9,12,.94);display:none;align-items:stretch;justify-content:center;gap:22px;padding:24px 64px}
+#lb.on{display:flex}
+#lb .img{flex:1;display:flex;align-items:center;justify-content:center;min-width:0}
+#lb .img img{max-height:calc(100vh - 48px);max-width:100%;border-radius:10px}
+#lb .side{width:380px;flex:0 0 380px;color:#eee;font-size:13px;overflow:auto;display:flex;flex-direction:column;gap:12px;padding:6px 0}
+#lb .side h4{font:600 18px var(--serif)}
+#lb .side .k{color:#9d98a5;font-size:12px}
+#lb .side .tn{color:var(--gold);font-weight:800;font-size:12px;letter-spacing:.05em}
+#lb .side .btns{display:flex;gap:6px;flex-wrap:wrap}
+#lb .side .btns button{flex:1;min-width:100px;padding:9px 8px;border-radius:10px;background:rgba(255,255,255,.1);color:#fff;font-weight:700;font-size:12.5px}
+#lb .side .btns button.on{background:#fff;color:#18171b}
+#lb .side .btns button.f.on{background:var(--acc);color:#fff}
+#lb .side .btns small{width:100%;color:#9d98a5;font-size:11px}
+#lb .side table{border-collapse:collapse;width:100%}
+#lb .side td{padding:4px 0;border-bottom:1px solid rgba(255,255,255,.08);vertical-align:top}
+#lb .side td:first-child{color:#9d98a5;width:110px}
+#lb .side details p{background:rgba(255,255,255,.06);border-color:rgba(255,255,255,.1);color:#ddd;max-height:300px}
+#lb .side details summary{color:#cfcad6}
+#lb .side .copiar{font-size:11px;color:var(--acc);margin-left:8px}
+#lb .nav{position:absolute;top:50%;transform:translateY(-50%);font-size:40px;color:#fff;padding:20px;opacity:.8}
+#lb .prev{left:0}#lb .next{right:400px}
+#lb .x{position:absolute;top:8px;right:16px;font-size:32px;color:#fff;z-index:2}
+#lb .cnt{position:absolute;top:14px;left:24px;color:#9d98a5;font-size:12px}
+#toast{position:fixed;left:50%;bottom:76px;transform:translateX(-50%);background:#2b2830;color:#fff;padding:9px 16px;border-radius:12px;font-size:13px;opacity:0;transition:.2s;z-index:80;pointer-events:none}
+#toast.on{opacity:1}
+/* feedback (mismo aspecto que en Aria Studio) */
+#fbw{position:fixed;right:18px;bottom:74px;z-index:50;display:flex;flex-direction:column;align-items:flex-end;gap:8px}
+.fbbtn{background:var(--acc);color:#fff;border-radius:999px;padding:10px 16px;font-weight:600;box-shadow:0 8px 20px rgba(232,68,127,.35)}
+.fbpanel{position:relative;width:340px;background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:14px;box-shadow:0 12px 30px rgba(0,0,0,.18);display:flex;flex-direction:column;gap:8px}
+.fbhd small{display:block;color:var(--mut)}
+.fbx{position:absolute;top:8px;right:12px;font-size:20px}
+.fbtipos{display:flex;gap:5px;flex-wrap:wrap}.fbtipos button{padding:4px 8px;border:1px solid var(--line);border-radius:999px;font-size:11.5px;background:var(--field)}.fbtipos button.on{background:var(--acc);color:#fff;border-color:var(--acc)}
+.pjin{font:inherit;width:100%;border:1px solid var(--line);border-radius:10px;padding:8px;background:var(--field);color:var(--ink)}
+.fbrow{display:flex;justify-content:space-between;gap:8px}.fbmic{padding:7px 12px;border:1px solid var(--line);border-radius:10px;background:var(--field)}.fbmic.on{background:var(--warn);color:#fff}
+.btn{padding:7px 14px;border-radius:10px;border:1px solid var(--line);background:var(--field);color:var(--ink)}.btn.acc{background:var(--acc);color:#fff;border-color:var(--acc)}.btn.big{padding:10px 20px}
+.fxm{position:fixed;inset:0;z-index:90;background:rgba(10,9,12,.55);display:grid;place-items:center}
+.devbox{background:var(--panel);border-radius:20px;padding:26px;max-width:460px;text-align:center}.devemo{font-size:40px}.devbox h3{font:600 20px var(--serif);margin:6px 0}.devlab{color:var(--acc);font-weight:600;margin-bottom:8px}.devbox p{color:var(--mut);font-size:13.5px}
+.pjacts{display:flex;gap:8px;justify-content:center;margin-top:16px}
+/* v4 · nuevo duelo, comentarios con micrófono, imagen para la ficha */
+header .nuevo{padding:6px 12px;border-radius:10px;background:var(--acc);color:#fff;font-weight:600;font-size:12.5px}
+.modal{position:fixed;inset:0;z-index:95;background:rgba(10,9,12,.6);display:grid;place-items:center;padding:16px}
+.modal .caja{width:min(560px,100%);margin:0}
+.modal .fila{display:grid;grid-template-columns:1fr auto 1fr;gap:10px;align-items:end;margin:12px 0}
+.modal select{font:inherit;width:100%;padding:9px 10px;border:1px solid var(--line);border-radius:12px;background:var(--field);color:var(--ink)}
+.modal .vs{font:800 18px var(--sans);color:var(--acc);padding-bottom:8px}
+.pet{margin-top:10px;display:flex;flex-direction:column;gap:6px}
+.pet textarea{width:100%;min-height:64px;font-size:13px;resize:vertical}
+.pet .bar{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.ro .pet textarea,.ro .pet button{pointer-events:auto}
+.pet .mic{flex:0 0 auto;padding:9px 11px;border-radius:10px;border:1px solid var(--line);background:var(--field);font-size:14px}
+.pet .mic.on{background:var(--warn);border-color:var(--warn);color:#fff;animation:late 1s infinite}
+@keyframes late{50%{opacity:.6}}
+.pet .env{flex:0 0 auto}
+.pet .hist{display:flex;flex-direction:column;gap:4px}
+.pet .hist div{font-size:12px;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:6px 9px}
+.pet .hist div b{color:var(--acc)}
+.pet .hist div.hecha b{color:var(--ok)}
+#lb .pet textarea,#lb .pet .mic{background:rgba(255,255,255,.08);border-color:rgba(255,255,255,.15);color:#fff}
+#lb .pet .hist div{background:rgba(255,255,255,.06);border-color:rgba(255,255,255,.1);color:#ddd}
+.mundo{display:flex;flex-direction:column}
+.mundo .elige{all:unset;cursor:pointer;display:block}
+.mundo.nuevo{border-style:dashed;justify-content:flex-start;align-self:start}
+.mundo.nuevo h3{margin-top:0}
+.secs{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:10px;margin-bottom:8px}
+.sec{background:var(--panel);border:2px solid var(--line);border-radius:14px;padding:12px 14px;text-align:left}
+.sec:hover{border-color:#f0a8c2}
+.sec.on{border-color:var(--acc);box-shadow:0 6px 18px rgba(232,68,127,.16)}
+.sec .tono{font-size:11px;font-weight:700;color:var(--acc);letter-spacing:.03em}
+.sec h4{font:600 15px var(--serif);margin:4px 0}
+.sec p{font-size:12.5px;color:var(--mut)}
+.sec .tick{float:right;font-size:11px;font-weight:700;color:var(--acc)}
+.secs.bloq .sec{pointer-events:none}
+.histsel{margin:6px 0 10px}
+.histsel>summary{cursor:pointer;list-style:none;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:11px 14px;font-size:13.5px;display:flex;gap:8px;align-items:center}
+.histsel>summary::-webkit-details-marker{display:none}
+.histsel>summary::after{content:'▾';margin-left:auto;color:var(--mut)}
+.histsel[open]>summary::after{content:'▴'}
+.histsel .secs{margin-top:10px}
+.histsel p{background:none;border:0;padding:0;white-space:normal}
+.histsel .sub{margin:10px 0 0}
+.ficha{display:flex;gap:6px;align-items:center;font-size:12px;color:var(--mut);flex-wrap:wrap}
+.ficha button{padding:4px 9px;border-radius:8px;border:1px solid var(--line);background:var(--field);font-size:11.5px;font-weight:700}
+.ficha button.on{background:var(--ok);border-color:var(--ok);color:#fff}
+.ro .ficha button{pointer-events:none;opacity:.6}
+@media (max-width:900px){#lb{flex-direction:column;padding:50px 12px 12px}#lb .side{width:100%;flex:none;max-height:40vh}#lb .next{right:0}#lb .img img{max-height:52vh}}
+@media (max-width:700px){main{padding:12px 16px 150px}.prompts{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<header>
+  <div class="logo">ARIA STUDIO · <b>🥊 Duelos</b></div>
+  <select id="dsel" title="Duelo"></select>
+  <button class="nuevo" id="bnuevo" title="Crear un duelo nuevo: modelo contra modelo">＋ Nuevo duelo</button>
+  <a class="back" href="/" onclick="if (window.parent !== window && window.parent.ligaCierra) { event.preventDefault(); window.parent.ligaCierra(); }">← Volver a Aria Studio</a>
+</header>
+<div class="steps" id="steps"></div>
+<main id="main"><div class="espera"><i></i>Cargando…</div></main>
+<footer><div class="msg" id="fmsg"></div><span class="saved" id="saved"></span><button class="b acc big" id="listo">Siguiente →</button></footer>
+<div id="lb"><span class="cnt" id="lbcnt"></span><button class="x" onclick="lbClose()" title="Cerrar (Esc)">×</button><button class="nav prev" onclick="lbStep(-1)" title="Anterior (←)">‹</button><div class="img"><img id="lbimg" alt=""></div><button class="nav next" onclick="lbStep(1)" title="Siguiente (→)">›</button><div class="side" id="lbside"></div></div>
+<div id="toast"></div>
+<script>
+// ARIA STUDIO · DUELOS (AI League) — v124, 2 oct 2026
+// v209: dentro de la web (Workflows) la página va en un marco de la app: usa su sesión para /api y sus descargas; el servidor hace lo que hacía Claude
+const EMB = (() => { try { return window.parent !== window && !!window.parent.CUENTA; } catch (e) { return false; } })();
+const WEB = EMB && !!window.parent.CUENTA.web;
+if (EMB) { const pf = window.parent.fetch.bind(window.parent); window.fetch = (u, o) => pf(u, o); document.documentElement.classList.add('emb'); }
+async function bajar(u, nom) { if (!WEB) { location.href = u; return; } toast('Preparando la descarga…'); try { const r = await fetch(u); if (!r.ok) throw new Error(r.status); const b = await r.blob(); const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = nom; document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 4000); } catch (e) { toast('No se pudo descargar'); } }
+// Claude escribe assets/liga/<id>/duelo.json (mundos, prompts, galería, duelo, carrusel, cierre) y Max elige aquí;
+// lo que elige Max va a assets/liga/<id>/max.json por POST /api/liga. Claude solo lee max.json (barato en tokens).
+// Flujo: Mundo → (Prompts, opcional) → Galería → Duelo → Carrusel → Publicar.
+const PASOS = [
+  { k: 1, t: 'Mundo', i: '🌍' }, { k: 2, t: 'Prompts', i: '✍️', opc: true }, { k: 3, t: 'Galería', i: '🖼️' },
+  { k: 4, t: 'Duelo', i: '🥊' }, { k: 5, t: 'Carrusel', i: '🎠' }, { k: 6, t: 'Publicar', i: '📦' }];
+let LISTA = [], D = null, M = {}, PASO = 1, LB = { list: [], i: 0, ctx: '' }, saveT = null, editing = false, ultimoCambio = 0, FILTRO = 'todas', VER_PROMPTS = false, MONTANDO = false, SEC_OPEN = null, VISTA = 'gal', MAS_N = 3, FIRMA = '', SEL = new Set();
+const $ = s => document.querySelector(s);
+window.el = (tag, cls, html) => { const e = document.createElement(tag); if (cls) e.className = cls; if (html != null) e.innerHTML = html; return e; };
+window.esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+window.toast = m => { const t = $('#toast'); t.textContent = m; t.classList.add('on'); clearTimeout(t._t); t._t = setTimeout(() => t.classList.remove('on'), 2600); };
+window.state = { tab: 'duelos' };
+const src = p => `assets/liga/${D.id}/${p}`;
+const tests = () => D.tests || [];
+const testDe = n => tests().find(t => t.n === n) || { n, nombre: 'Test ' + n };
+const prompts = () => D.prompts || [];
+const promptDe = id => prompts().find(p => p.id === id) || { id, test: 0, escena: '', prompt: '' };
+const pOk = id => (M.prompts || {})[id] || {};
+const favs = () => (M.fav || []).slice().sort((x, y) => (promptDe(x).test - promptDe(y).test) || x.localeCompare(y));
+const titulo = id => ((M.titulos || {})[id] || '').trim() || testDe(promptDe(id).test).nombre;   // el título de la diapositiva: el que escribe Max o el del test
+const mundoElegido = () => (D.mundos || []).find(w => w.id === M.mundo);
+// v5 · qué modelo genera la galería (desde el 2 oct, Nano Banana Pro primero: galeria_lado = 'b'); el otro genera el duelo
+const ladoGal = () => D.galeria_lado || 'a';
+const modGal = () => D[ladoGal()]; const modOtro = () => D[ladoGal() === 'a' ? 'b' : 'a'];
+
+// ---------------------------------------------------------------- v4 · modelos para «＋ Nuevo duelo» (ids del catálogo de Higgsfield)
+const MODELOS = [
+  ['FLUX 3', 'flux_3_image'], ['NANO BANANA PRO', 'nano_banana_pro'], ['NANO BANANA 2', 'nano_banana_2'], ['GPT IMAGE 2.5', 'gpt_image_2_5'],
+  ['GPT IMAGE 2', 'gpt_image_2'], ['SEEDREAM 5.0 PRO', 'seedream_v5_pro'], ['SEEDREAM 5.0 FLASH', 'seedream_5_0_flash'], ['SEEDREAM 4.5', 'seedream_v4_5'],
+  ['IDEOGRAM 4.5', 'ideogram_4_5'], ['GROK IMAGE 2.0', 'grok_image_2_0'], ['KLING O1 IMAGE', 'kling_omni_image'], ['FLUX.2', 'flux_2'], ['SOUL 2', 'soul_2']]
+  .filter(([n, id]) => !WEB || ['nano_banana_pro', 'gpt_image_2_5', 'seedream_v5_pro', 'seedream_5_0_flash'].includes(id));   // en la web: los que el servidor genera (WaveSpeed)
+// ---------------------------------------------------------------- v4 · micrófono y comentarios para Claude
+const DRAFTS = {}; let MIC = null;
+function micToggle(key, ta, btn) {
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition; if (!SR) { toast('Este navegador no deja dictar: escríbelo'); return; }
+  if (MIC && MIC.key === key) { try { MIC.r.stop(); } catch (e) {} MIC = null; btn.classList.remove('on'); btn.textContent = '🎙'; return; }
+  if (MIC) { try { MIC.r.stop(); } catch (e) {} }
+  const r = new SR(); r.lang = 'es-ES'; r.continuous = true; r.interimResults = true; const base = (DRAFTS[key] || '').replace(/\s*$/, DRAFTS[key] ? ' ' : '');
+  r.onresult = e => { let t = ''; for (let i = 0; i < e.results.length; i++) t += e.results[i][0].transcript; DRAFTS[key] = (base + t).replace(/\s+/g, ' ').trimStart(); const el2 = document.querySelector(`textarea[data-key="${key}"]`); if (el2) el2.value = DRAFTS[key]; };
+  r.onerror = e => { if (e.error === 'not-allowed') toast('Da permiso al micrófono para dictar'); };
+  r.onend = () => { if (MIC && MIC.key === key) { MIC = null; const b = document.querySelector(`button.mic[data-key="${key}"]`); if (b) { b.classList.remove('on'); b.textContent = '🎙'; } } };
+  try { r.start(); MIC = { key, r }; btn.classList.add('on'); btn.textContent = '⏹'; } catch (e) { toast('No se pudo usar el micrófono'); }
+}
+function cajaPeticion(tipo, ref, placeholder, titulo) {
+  const key = `${tipo}:${ref}`; const w = el('div', 'pet');
+  if (titulo) w.appendChild(el('div', 'k', titulo));
+  const ta = el('textarea'); ta.rows = 3; ta.placeholder = placeholder; ta.dataset.key = key; ta.value = DRAFTS[key] || '';
+  ta.oninput = () => { DRAFTS[key] = ta.value; }; ta.onfocus = () => editing = true; ta.onblur = () => editing = false; ta.onclick = e => e.stopPropagation();
+  const mic = el('button', 'mic' + (MIC && MIC.key === key ? ' on' : ''), MIC && MIC.key === key ? '⏹' : '🎙'); mic.dataset.key = key; mic.title = 'Dictar con el micrófono'; mic.onclick = e => { e.stopPropagation(); micToggle(key, ta, mic); };
+  const env = el('button', 'b acc env', 'Enviar'); env.onclick = e => {
+    e.stopPropagation(); const texto = (DRAFTS[key] || '').trim(); if (!texto) { toast('Escribe o dicta algo primero'); return; }
+    if (MIC && MIC.key === key) { try { MIC.r.stop(); } catch (er) {} MIC = null; }
+    const p = { id: 'q' + Date.now(), tipo, ref, texto, fecha: new Date().toISOString() }; guardar({ peticiones: [...(M.peticiones || []), p] }, 'Enviado: Claude lo verá enseguida'); DRAFTS[key] = '';
+    if ($('#lb').classList.contains('on')) lbSide(); else pintarFondo();
+  };
+  // Max (2 oct): el texto ocupa todo el ancho; debajo, «Enviar» a la izquierda y el micro a la derecha
+  const bar = el('div', 'bar'); bar.appendChild(env); bar.appendChild(mic); w.appendChild(ta); w.appendChild(bar);
+  const hist = (M.peticiones || []).filter(p => p.tipo === tipo && p.ref === ref);
+  if (hist.length) { const h = el('div', 'hist'); hist.slice(-4).forEach(p => { const r = (D.respuestas || {})[p.id]; h.appendChild(el('div', r && r.estado === 'hecha' ? 'hecha' : '', `<b>${r ? (r.estado === 'hecha' ? '✓ Hecho' : '⏳ En ello') : '📨 Enviado'}</b> · ${esc(p.texto)}${r && r.texto ? `<br><i>Claude: ${esc(r.texto)}</i>` : ''}`)); }); w.appendChild(h); }
+  return w;
+}
+// ---------------------------------------------------------------- v4 · «＋ Nuevo duelo»
+function modalNuevo() {
+  const m = el('div', 'modal'); m.onclick = e => { if (e.target === m) m.remove(); };
+  const opts = MODELOS.map(([n, id]) => `<option value="${id}">${n}</option>`).join('');
+  const c = el('div', 'caja', `<h3>🥊 Nuevo duelo</h3><p class="sub" style="margin:0">Elige quién pelea contra quién. El modelo nuevo se genera primero; Claude te propone 3 mundos con su portada y la batería de tests.</p>
+    <div class="fila"><div><label class="k">Modelo nuevo</label><select id="ma">${opts}</select></div><div class="vs">VS</div><div><label class="k">Contra</label><select id="mb">${opts}</select></div></div>`);
+  c.querySelector('#mb').value = 'nano_banana_pro';
+  c.appendChild(cajaPeticion('nuevo', 'duelo', 'Opcional: una idea de mundo, una secuencia, lo que quieras probar… (puedes dictarlo con el micro)', 'Tu idea para Claude (opcional)'));
+  c.querySelector('.pet .env').remove();
+  const a = el('div', 'acts'); a.style.marginTop = '14px'; const ok = el('button', 'b acc big', 'Crear duelo'); const no = el('button', 'b big', 'Cancelar'); no.onclick = () => m.remove();
+  ok.onclick = async () => {
+    const sa = c.querySelector('#ma'), sb = c.querySelector('#mb'); if (sa.value === sb.value) { toast('Elige dos modelos distintos'); return; }
+    const nom = s => s.options[s.selectedIndex].text; ok.disabled = true; ok.textContent = 'Creando…';
+    try { const r = await fetch('/api/liga/nuevo', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ a: { nombre: nom(sa), modelo: sa.value }, b: { nombre: nom(sb), modelo: sb.value }, nota: (DRAFTS['nuevo:duelo'] || '').trim() }) }).then(x => x.json());
+      if (!r.ok) { toast('No se pudo crear: ' + (r.error || '')); ok.disabled = false; ok.textContent = 'Crear duelo'; return; }
+      DRAFTS['nuevo:duelo'] = ''; m.remove(); history.replaceState(null, '', '?id=' + r.id); D = null; await cargar(); toast('Duelo creado: Claude prepara los mundos');
+    } catch (e) { toast('No se pudo crear (¿puente apagado?)'); ok.disabled = false; ok.textContent = 'Crear duelo'; }
+  };
+  a.appendChild(ok); a.appendChild(no); c.appendChild(a); m.appendChild(c); document.body.appendChild(m);
+}
+$('#bnuevo').onclick = modalNuevo;
+
+async function cargar(keep) {
+  let r; try { r = await fetch('/api/liga').then(x => x.json()); } catch (e) { $('#main').innerHTML = '<div class="espera">El puente de Aria Studio está apagado. Ábrelo con «ARIA MIRROR.command».</div>'; return; }
+  LISTA = r.duelos || [];
+  if (!LISTA.length) { $('#main').innerHTML = '<div class="espera">Todavía no hay ningún duelo. Claude lo prepara cuando sale una IA nueva.</div>'; return; }
+  const want = keep && D ? D.id : (new URLSearchParams(location.search).get('id') || LISTA[0].duelo.id);
+  const it = LISTA.find(x => x.duelo.id === want) || LISTA[0];
+  const cambio = !D || D.id !== it.duelo.id;
+  D = it.duelo; if (cambio || !editing) M = it.max || {};
+  $('#dsel').innerHTML = LISTA.map(x => `<option value="${esc(x.duelo.id)}" ${x.duelo.id === D.id ? 'selected' : ''}>${esc(x.duelo.titulo)} · ${esc(x.duelo.fecha || '')}</option>`).join('');
+  if (cambio) PASO = Number(new URLSearchParams(location.search).get('paso')) || alcanzable();
+  const firma = JSON.stringify(it); if (keep && !cambio && firma === FIRMA) return; FIRMA = firma;   // si nada ha cambiado, no se repinta
+  if (!$('#lb').classList.contains('on')) pintar(); else lbSide();
+}
+$('#dsel').onchange = e => { history.replaceState(null, '', '?id=' + e.target.value); D = null; cargar(); };
+
+function guardar(parcial, aviso) {
+  Object.assign(M, parcial); ultimoCambio = Date.now(); $('#saved').textContent = 'Guardando…';
+  clearTimeout(saveT); saveT = setTimeout(async () => {
+    try { const r = await fetch('/api/liga', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: D.id, max: M }) }).then(x => x.json()); $('#saved').textContent = r.ok ? 'Guardado ✓' : 'No se guardó: ' + r.error; if (aviso && r.ok) toast(aviso); } catch (e) { $('#saved').textContent = 'No se guardó (¿puente apagado?)'; }
+  }, 300);
+}
+
+// ---------------------------------------------------------------- pasos
+const alcanzable = () => { const l = M.listo || {}; let k = 1; while (k < 6 && l[k]) k++; return k; };
+function falta(k) {
+  const P = prompts(), G = D.galeria || {}, fav = M.fav || [];
+  if (k === 1) { if (!(D.mundos || []).length) return 'Claude está preparando los mundos'; if (!M.mundo) return 'Elige un mundo'; const w = mundoElegido(); if (w && (w.secuencias || []).length && !M.secuencia) return 'Elige la historia que pasa en ese mundo'; return ''; }
+  if (k === 2) { if (!P.length) return 'Claude todavía está escribiendo los prompts'; const sin = P.filter(p => pOk(p.id).ok == null).length; if (sin) return `Te falta marcar ${sin} prompt${sin > 1 ? 's' : ''} (o pulsa «Aceptar todos»)`; return P.some(p => pOk(p.id).ok === true) ? '' : 'Marca al menos un prompt con ✅'; }
+  if (k === 3) { if (!Object.keys(G).length) return 'Claude todavía está generando la galería'; if (!fav.length) return 'Elige al menos una favorita ⭐';
+    // Max (2 oct): no hace falta cubrir todos los tests; el carrusel puede salir con menos comparativas
+    if (!M.portada) return 'Elige la foto de la portada'; if (!M.cierre_img) return 'Elige la foto del cierre'; return ''; }
+  if (k === 4) { const otro = ladoOtro(), cola = enCola(); const sin = fav.filter(id => !imgOriginal(id, otro)); if (!sin.length) return ''; const gen = sin.filter(id => girando(cola, id, otro)).length;
+    return gen === sin.length ? `Claude está generando ${gen} con ${modOtro().nombre}` : `Faltan ${sin.length - gen} imagen${sin.length - gen > 1 ? 'es' : ''} de ${modOtro().nombre}: pulsa «Generar» arriba`; }
+  if (k === 5) return (D.carrusel || []).length ? (MONTANDO ? 'Montando el carrusel…' : '') : 'Claude todavía está montando el carrusel';
+  return '';
+}
+function pintarPasos() {
+  const s = $('#steps'); s.innerHTML = ''; const listo = M.listo || {}; const top = alcanzable();
+  PASOS.forEach(p => {
+    if (p.opc && pasoPromptsOculto()) return;   // la pestaña de prompts solo aparece si Max quiere revisarlos
+    const sub = p.opc ? (M.prompts_auto && listo[2] ? '<small>· aceptados</small>' : '<small>· opcional</small>') : '';
+    const b = el('button', (p.k === PASO ? 'on' : '') + (listo[p.k] ? ' done' : ''), `<span class="n">${listo[p.k] ? '✓' : p.k > top ? '🔒' : p.k}</span>${p.i} ${p.t} ${sub}`);
+    b.disabled = p.k > top; b.title = p.k > top ? 'Termina antes el paso anterior' : '';
+    b.onclick = () => { PASO = p.k; history.replaceState(null, '', `?id=${D.id}&paso=${p.k}`); pintar(); }; s.appendChild(b);
+  });
+}
+function pintar() {
+  if (PASO > alcanzable()) PASO = alcanzable();
+  if (PASO === 2 && !M.revisar_prompts && (M.listo || {})[2]) PASO = 3;   // sin revisión, el paso 2 no se enseña
+  const sx = $('.carr') ? $('.carr').scrollLeft : 0;   // el carrusel no vuelve al principio al refrescar
+  pintarPasos(); const m = $('#main'); m.innerHTML = ''; const listo = (M.listo || {})[PASO];
+  // Max (2 oct): de la galería en adelante todo se puede seguir cambiando aunque el paso esté hecho; solo Mundo y Prompts se reabren con «Cambiar»
+  m.classList.toggle('ro', !!listo && PASO <= 2);
+  if (D.aviso && !listo && (D.aviso_paso || 1) === PASO) m.appendChild(el('div', 'aviso', `<b>Claude:</b> ${esc(D.aviso)}`));   // cada aviso, solo en su paso
+  if (listo && PASO <= 2) { const h = el('div', 'hecho', `✅ <b>Paso hecho.</b> Puedes revisarlo; para cambiar algo, pulsa «Cambiar» (se reabren este paso y los siguientes).`); const c = el('button', 'b', '✏️ Cambiar'); c.onclick = reabrir; h.appendChild(c); m.appendChild(h); }
+  else if (listo && PASO < 6) m.appendChild(el('div', 'hecho', '✅ <b>Paso hecho.</b> Puedes seguir cambiando cosas aquí cuando quieras: el carrusel se rehace solo.'));
+  ({ 1: pMundo, 2: pPrompts, 3: pGaleria, 4: pDuelo, 5: pCarrusel, 6: pPublicar })[PASO](m);
+  if ($('.carr')) $('.carr').scrollLeft = sx;
+  const f = falta(PASO), btn = $('#listo');
+  if (listo) { btn.textContent = PASO < 6 ? `Ir al paso ${siguientePaso()} →` : '🏁 Duelo terminado'; btn.disabled = PASO === 6; $('#fmsg').innerHTML = PASO === 6 ? 'Duelo terminado.' : 'Este paso ya está hecho.'; }
+  else { btn.textContent = PASO < 6 ? 'Siguiente →' : '🏁 Terminar'; btn.disabled = !!f; $('#fmsg').innerHTML = f ? `Para seguir: <b>${esc(f)}</b>.` : `Todo listo. Pulsa <b>Siguiente</b>: Claude se pone con lo que toca (si no estuviera conectado, díselo en el chat: «Duelo: paso ${PASO} listo»).`; }
+  if (window.feedbackSection) feedbackSection('Duelos · ' + PASOS[PASO - 1].t);
+}
+function reabrir() {
+  if (!confirm('Se reabre este paso y los siguientes. Lo que ya se haya generado después se rehace si cambia algo. ¿Seguro?')) return;
+  const l = Object.assign({}, M.listo || {}); Object.keys(l).forEach(k => { if (Number(k) >= PASO) delete l[k]; }); guardar({ listo: l }, 'Paso reabierto'); pintar();
+}
+// sin «Quiero revisar los prompts», del mundo se salta directo a la galería (el paso 2 ni se ve)
+const pasoPromptsOculto = () => { const l = M.listo || {}; return !M.revisar_prompts && !(l[2] && !M.prompts_auto); };
+const siguientePaso = () => PASO === 1 && pasoPromptsOculto() ? 3 : PASO + 1;
+function irA(k) { PASO = k; history.replaceState(null, '', `?id=${D.id}&paso=${k}`); pintar(); window.scrollTo(0, 0); }
+$('#listo').onclick = () => {
+  const l = Object.assign({}, M.listo || {});
+  if (l[PASO]) { if (PASO < 6) irA(siguientePaso()); return; }
+  if (falta(PASO)) { toast(falta(PASO)); return; }
+  const ahora = new Date().toISOString(); l[PASO] = ahora; const extra = {};
+  if (PASO === 1 && !M.revisar_prompts) { l[2] = ahora; extra.prompts_auto = true; }   // sin revisión: los prompts se aceptan solos y se salta al paso de la galería
+  guardar(Object.assign({ listo: l }, extra), PASO < 6 ? 'Hecho. Claude se pone con lo siguiente' : '¡Duelo terminado!');
+  irA(Math.min(alcanzable(), 6));
+};
+function espera(m, texto) { const t = D.trabajando && D.trabajando.paso === PASO ? D.trabajando.texto : texto; m.appendChild(el('div', 'espera', `<i></i><div><b>${esc(t)}</b><br><small>Aparecerá aquí solo en cuanto esté (la página se actualiza cada pocos segundos).</small></div>`)); }
+function notaBox(key, label) {
+  const d = el('div', 'nota', `<label>${esc(label)}</label>`); const t = el('textarea'); t.rows = 2; t.value = M[key] || '';
+  t.onfocus = () => editing = true; t.onblur = () => editing = false; t.oninput = () => guardar({ [key]: t.value }); d.appendChild(t); return d;
+}
+
+// ---------------------------------------------------------------- 1 · mundo
+function pMundo(m) {
+  m.appendChild(el('h2', '', esc(D.titulo)));
+  m.appendChild(el('p', 'sub', `Elige el mundo del carrusel. Dentro de él irán los ${tests().length || 18} tests, uno por diapositiva. Primero se genera la galería con <b>${esc(modGal().nombre)}</b>; luego tus favoritas con <b>${esc(modOtro().nombre)}</b>.${D.coste_estimado ? '<br><b>Coste al pulsar «Siguiente»:</b> ' + esc(D.coste_estimado) : ''}`));
+  if (!(D.mundos || []).length) { espera(m, 'Claude está preparando 3 mundos con su portada…'); return; }
+  const g = el('div', 'mundos');
+  (D.mundos || []).forEach(w => {
+    const c = el('div', 'mundo' + (M.mundo === w.id ? ' on' : ''));
+    const foto = w.img ? `<div class="foto"><img src="${src(w.mini || w.img)}?v=${encodeURIComponent(w.v || '')}" alt=""></div>` : `<div class="foto pend">portada generándose…</div>`;
+    const top = el('button', 'elige', `${foto}${M.mundo === w.id ? '<span class="tick">✓ ELEGIDO</span>' : ''}<h3>${w.emoji || '🌍'} ${esc(w.titulo)}</h3><p>${esc(w.desc)}</p>`);
+    top.onclick = () => { const cambio = M.mundo !== w.id; guardar(cambio ? { mundo: w.id, secuencia: null } : { mundo: w.id }, (w.secuencias || []).length ? 'Mundo elegido: ahora elige su historia (abajo)' : 'Mundo elegido: pulsa «Siguiente»'); pintar(); }; c.appendChild(top);
+    c.appendChild(cajaPeticion('mundo', w.id, 'Cambios a este mundo o la secuencia que quieres que pase en él (escribe o dicta)'));
+    g.appendChild(c);
+  });
+  const nv = el('div', 'mundo nuevo', '<h3>＋ Proponer otro mundo</h3><p>Cuéntame una idea nueva o describe la secuencia exacta que quieres: te preparo el mundo con su portada.</p>');
+  nv.appendChild(cajaPeticion('mundo_nuevo', 'nuevo', 'Ej.: «Aria de socorrista en una piscina municipal en agosto: llega, se pelea con el viento…»')); g.appendChild(nv);
+  m.appendChild(g);
+  // v5 · las historias de ese mundo: 5-10 secuencias para elegir (o proponer la tuya)
+  const w = mundoElegido();
+  if (w) {
+    // desplegable: cerrado enseña la historia elegida; abierto, todas las propuestas (con el paso hecho solo se consultan)
+    const S = w.secuencias || []; const elegida = S.find(sq => sq.id === M.secuencia);
+    if (S.length) {
+      const d = el('details', 'histsel'); d.open = SEC_OPEN != null ? SEC_OPEN : !elegida; d.ontoggle = () => { SEC_OPEN = d.open; };
+      d.appendChild(el('summary', '', elegida ? `📖 <b>Historia:</b>&nbsp;${esc(elegida.tono || '')} · ${esc(elegida.titulo)}` : `📖 <b>Elige la historia</b>&nbsp;· ${S.length} propuestas para «${esc(w.titulo)}»`));
+      if (D.nota_historias) d.appendChild(el('p', 'sub', esc(D.nota_historias)));
+      const sg = el('div', 'secs' + ((M.listo || {})[1] && elegida ? ' bloq' : ''));
+      S.forEach(sq => { const c = el('button', 'sec' + (M.secuencia === sq.id ? ' on' : ''), `${M.secuencia === sq.id ? '<span class="tick">✓ ELEGIDA</span>' : ''}<span class="tono">${esc(sq.tono || '')}</span><h4>${esc(sq.titulo)}</h4><p>${esc(sq.resumen)}</p>`); c.onclick = () => { SEC_OPEN = false; guardar({ secuencia: sq.id }, (M.listo || {})[1] ? 'Historia elegida' : 'Historia elegida: pulsa «Siguiente»'); pintar(); }; sg.appendChild(c); });
+      d.appendChild(sg); m.appendChild(d);
+    } else if (D.galeria_lado) m.appendChild(el('div', 'espera', '<i></i><div><b>Claude está preparando las historias de este mundo…</b></div>'));
+    m.appendChild(cajaPeticion('secuencia', w.id, 'Propón tu propia historia para este mundo: qué pasa, en qué orden, el tono (graciosa, misteriosa…). Escribe o dicta.', '✍️ O cuéntame la tuya'));
+  }
+  const o = el('label', 'opcion', `<input type="checkbox" ${M.revisar_prompts ? 'checked' : ''}><div><b>Quiero revisar los prompts antes de generar</b><small>Opcional. Si no lo marcas, Claude escribe los prompts y genera la galería directamente: tú eliges en la galería.</small></div>`);
+  o.querySelector('input').onchange = e => guardar({ revisar_prompts: e.target.checked }); m.appendChild(o);
+}
+
+// ---------------------------------------------------------------- 2 · prompts (opcional)
+function pPrompts(m) {
+  m.appendChild(el('h2', '', 'Los prompts de la galería'));
+  if (!prompts().length) { espera(m, 'Claude está escribiendo los prompts del mundo elegido…'); return; }
+  const P = prompts(), ok = P.filter(p => pOk(p.id).ok === true).length, no = P.filter(p => pOk(p.id).ok === false).length, listo = (M.listo || {})[2];
+  m.appendChild(el('p', 'sub', `${P.length} prompts para ${tests().length} tests, cada uno con su versión neutra. ${D.coste ? '<br><b>Coste:</b> ' + esc(D.coste) : ''}`));
+  if (M.prompts_auto && listo) m.appendChild(el('div', 'resumen', `<span class="bien"><b>${P.length}</b> aceptados automáticamente</span>`));
+  else {
+    const r = el('div', 'resumen', `<span class="bien"><b>${ok}</b> ✅ se generan</span><span><b>${no}</b> ❌ fuera</span><span><b>${P.length - ok - no}</b> sin mirar</span>`);
+    const all = el('button', 'b acc', '✅ Aceptar todos y continuar'); all.onclick = () => { const pr = Object.assign({}, M.prompts || {}); P.forEach(p => { if (!pr[p.id] || pr[p.id].ok == null) pr[p.id] = Object.assign({}, pr[p.id], { ok: true }); }); const l = Object.assign({}, M.listo || {}, { 2: new Date().toISOString() }); guardar({ prompts: pr, listo: l }, 'Aceptados. Claude genera la galería'); irA(3); };
+    r.appendChild(all); m.appendChild(r);
+  }
+  const ver = el('button', 'b', VER_PROMPTS ? '▴ Ocultar los prompts' : '▾ Ver y elegir uno a uno'); ver.onclick = () => { VER_PROMPTS = !VER_PROMPTS; pintar(); }; m.appendChild(ver);
+  if (!VER_PROMPTS) return;
+  tests().forEach(t => {
+    const ps = P.filter(p => p.test === t.n); if (!ps.length) return;
+    m.appendChild(el('div', 'test', `<span class="tn">TEST ${t.n}</span><h3>${esc(t.nombre)}</h3><small>${esc(t.que || '')}</small>`));
+    const g = el('div', 'prompts');
+    ps.forEach(p => {
+      const st = pOk(p.id); const c = el('div', 'pc' + (st.ok === true ? ' ok' : st.ok === false ? ' no' : ''));
+      c.appendChild(el('div', 'esc', `${esc(p.id)} · ${esc(p.escena)}`));
+      c.appendChild(el('details', '', `<summary>Ver el prompt completo (${(p.prompt || '').length} caracteres)</summary><p>${esc(p.prompt)}</p>`));
+      if (p.neutro) c.appendChild(el('details', '', `<summary>Versión neutra (para la comunidad)</summary><p>${esc(p.neutro)}</p>`));
+      const a = el('div', 'acts'); const y = el('button', 'b okb' + (st.ok === true ? ' on' : ''), '✅ Se genera'); const n = el('button', 'b nob' + (st.ok === false ? ' on' : ''), '❌ Fuera');
+      const set = v => { const pr = Object.assign({}, M.prompts || {}); pr[p.id] = Object.assign({}, pr[p.id], { ok: st.ok === v ? null : v }); guardar({ prompts: pr }); pintar(); };
+      y.onclick = () => set(true); n.onclick = () => set(false); a.appendChild(y); a.appendChild(n); c.appendChild(a);
+      const t2 = el('input'); t2.type = 'text'; t2.placeholder = 'Nota para Claude (opcional): «más de noche», «sin gente»…'; t2.value = st.nota || '';
+      t2.onfocus = () => editing = true; t2.onblur = () => editing = false; t2.oninput = () => { const pr = Object.assign({}, M.prompts || {}); pr[p.id] = Object.assign({}, pr[p.id], { nota: t2.value }); guardar({ prompts: pr }); };
+      c.appendChild(t2); g.appendChild(c);
+    });
+    m.appendChild(g);
+  });
+}
+
+// ---------------------------------------------------------------- 3 · galería (cuadrícula como «Mis creaciones»)
+const ladoOtro = () => ladoGal() === 'a' ? 'b' : 'a';
+const hayOtro = () => Object.values(D.duelo || {}).some(par => par[ladoOtro()]);
+// VISTA 'gal' = la galería (modelo de galeria_lado) · 'otro' = lo que ya se ha generado con el otro modelo
+// x.rol = lo que se guarda como portada/cierre: 'mundo', 'pNN' (galería) o 'pNN:a|b' (imagen del otro modelo)
+function itemsGaleria() {
+  const G = D.galeria || {}; const out = []; const mw = mundoElegido(); const otro = VISTA === 'otro' && hayOtro();
+  const lado = otro ? ladoOtro() : ladoGal(), mod = D[lado];
+  if (mw && mw.img && !otro) out.push({ kind: 'mundo', pid: 'mundo', rol: 'mundo', src: src(mw.img), mini: src(mw.mini || mw.img), titulo: 'Foto del mundo', tn: 'PORTADA', sub: mw.titulo, prompt: mw.prompt || '', info: [['Para', 'Portada del carrusel'], ['Mundo', mw.titulo], ['Modelo', mw.modelo || 'Nano Banana Pro']] });
+  tests().forEach(t => prompts().filter(p => p.test === t.n).forEach(p => {
+    const par = (D.duelo || {})[p.id] || {};
+    const g0 = otro ? (par[lado] ? { img: par[lado], mini: par[lado + '_mini'] } : null) : G[p.id]; if (!g0) return;
+    out.push({ kind: 'foto', pid: p.id, rol: otro ? `${p.id}:${lado}` : p.id, test: t.n, src: src(g0.img), mini: src(g0.mini || g0.img), error: g0.error, titulo: titulo(p.id), tn: `TEST ${t.n} · ${testDe(t.n).nombre.toUpperCase()} · ${mod.nombre}`, sub: p.escena, prompt: p.prompt, neutro: p.neutro,
+      info: [['Modelo', mod.nombre], ['Test', `${t.n} · ${testDe(t.n).nombre}`], ['Qué mide', testDe(t.n).que || ''], ['Tamaño', g0.w ? `${g0.w} × ${g0.h} px` : '2K vertical'], ['Coste', mod.coste_imagen || ''], ['Archivo', g0.img], ['Prompt', p.id]] });
+  }));
+  return out;
+}
+function toggleFav(pid) { const f = new Set(M.fav || []); f.has(pid) ? f.delete(pid) : f.add(pid); guardar({ fav: [...f] }); }
+function setRol(k, rol) { guardar({ [k]: M[k] === rol ? null : rol }); }
+// la última casilla de la galería: pedir N imágenes más (prompts nuevos, sin repetir, dentro de la historia); el coste se ve antes de pulsar
+function tileMas() {
+  const t = el('div', 'gt mas'); const c = parseFloat(String(modGal().coste_imagen || '').replace(',', '.')) || 0;
+  const pend = (M.peticiones || []).filter(p => p.tipo === 'mas' && ((D.respuestas || {})[p.id] || {}).estado !== 'hecha');
+  if (pend.length) { t.innerHTML = `<h4>⏳ Generando ${pend.reduce((s, p) => s + (p.n || 0), 0)} más…</h4><small>Claude escribe prompts nuevos (sin repetir) dentro de tu historia y los genera con ${esc(modGal().nombre)}. Aparecen aquí solos.</small>`; return t; }
+  t.appendChild(el('h4', '', '＋ Más imágenes'));
+  const s = el('select'); [1, 3, 5, 10].forEach(n => { const o = el('option', '', `${n} más`); o.value = n; o.selected = n === MAS_N; s.appendChild(o); });
+  const coste = el('small'); const pc = () => { coste.innerHTML = c ? `Coste: <b>≈ ${MAS_N * c} créditos</b> (${MAS_N} × ${c})` : ''; }; pc();
+  s.onclick = e => e.stopPropagation(); s.onfocus = () => editing = true; s.onblur = () => editing = false; s.onchange = () => { MAS_N = Number(s.value); pc(); };
+  const b = el('button', 'b acc', 'Generar'); b.onclick = e => {
+    e.stopPropagation(); const p = { id: 'q' + Date.now(), tipo: 'mas', ref: 'galeria', n: MAS_N, texto: `Quiero ${MAS_N} imagen${MAS_N > 1 ? 'es' : ''} más en la galería (prompts nuevos, sin repetir, dentro de la historia elegida)`, fecha: new Date().toISOString() };
+    guardar({ peticiones: [...(M.peticiones || []), p] }, `Pedidas ${MAS_N} más: Claude se pone ya`); pintar(); };
+  t.appendChild(s); t.appendChild(coste); t.appendChild(b); t.appendChild(el('small', '', `Con ${esc(modGal().nombre)}, sin repetir las anteriores y dentro de la historia elegida.`));
+  return t;
+}
+function pGaleria(m) {
+  if (!hayOtro()) VISTA = 'gal'; if (/^t\d/.test(FILTRO)) FILTRO = 'todas';
+  const mod = VISTA === 'otro' ? modOtro() : modGal(); const ro = false;   // la galería se puede tocar siempre (Max, 2 oct)
+  m.appendChild(el('h2', '', `Galería · ${esc(mod.nombre)}`));
+  const todos = itemsGaleria(); const fotos = todos.filter(x => x.kind === 'foto');
+  if (!fotos.length && VISTA === 'gal') { espera(m, `Claude está generando la galería con ${modGal().nombre}…`); return; }
+  const fav = new Set(M.fav || []); const cubiertos = new Set([...fav].map(id => promptDe(id).test)); const meta = tests().length;
+  m.appendChild(el('p', 'sub', `Pasa el ratón por una foto: la <b>★</b> de arriba a la derecha la marca como favorita (una por test) y abajo eliges <b>Portada</b> o <b>Cierre</b> (salen en verde). No hace falta llegar a ${meta}: elige solo las que te gusten; si quieres más, pídelas en la última casilla. Púlsala para verla en grande (teclas F, P y C).`));
+  m.appendChild(el('div', 'resumen', `<span class="${fav.size >= meta ? 'bien' : ''}"><b>${fav.size}</b>/${meta} ⭐</span><span class="${cubiertos.size >= meta ? 'bien' : ''}"><b>${cubiertos.size}</b>/${meta} tests cubiertos</span><span class="${M.portada ? 'bien' : ''}">Portada <b>${M.portada ? '✓' : '—'}</b></span><span class="${M.cierre_img ? 'bien' : ''}">Cierre <b>${M.cierre_img ? '✓' : '—'}</b></span>`));
+  // dos ⭐ en el mismo test ya no bloquean (Max elige lo que le gusta): solo se avisa de que saldrán las dos
+  const dobles = tests().filter(t => [...fav].filter(id => promptDe(id).test === t.n).length > 1);
+  if (dobles.length) m.appendChild(el('p', 'sub', `ℹ️ Tienes 2 o más ⭐ en ${dobles.map(t => `«${esc(t.nombre)}»`).join(', ')}: saldrán todas en el carrusel. Si solo quieres una, quita la otra estrella (o elige luego en el paso Duelo con «⇄»).`));
+  const fl = el('div', 'filtros');
+  [['todas', `Todas · ${todos.length}`], ['fav', `⭐ Favoritas · ${fav.size}`], ['sin', 'Tests sin elegir']].forEach(([k, lab]) => { const b = el('button', FILTRO === k ? 'on' : '', esc(lab)); b.onclick = () => { FILTRO = k; pintar(); }; fl.appendChild(b); });
+  if (hayOtro()) { const v = el('div', 'vista'); [['gal', modGal().nombre], ['otro', modOtro().nombre]].forEach(([k, lab]) => { const b = el('button', VISTA === k ? 'on' : '', esc(lab)); b.onclick = () => { VISTA = k; pintar(); }; v.appendChild(b); }); fl.appendChild(v); }
+  m.appendChild(fl);
+  const vis = todos.filter(x => FILTRO === 'todas' || (FILTRO === 'fav' && fav.has(x.pid)) || (FILTRO === 'sin' && x.kind === 'foto' && !cubiertos.has(x.test)));
+  const g = el('div', 'grid');
+  vis.forEach((x, i) => {
+    const esRol = M.portada === x.rol || M.cierre_img === x.rol;
+    const t = el('div', 'gt' + (x.kind === 'foto' && fav.has(x.pid) ? ' fav' : '') + (esRol ? ' rol' : ''));
+    if (x.error) t.appendChild(el('div', 'pend', '⚠️ ' + esc(x.error))); else { const im = el('img'); im.loading = 'lazy'; im.src = x.mini; t.appendChild(im); }
+    t.appendChild(el('span', 'tag', x.kind === 'mundo' ? '🌍 Foto del mundo' : esc(`${x.test} · ${testDe(x.test).nombre}`)));
+    if (x.kind === 'foto') { const st = el('button', 'star', fav.has(x.pid) ? '★' : '☆'); st.title = fav.has(x.pid) ? 'Quitar de favoritas' : 'Marcar como favorita'; st.onclick = e => { e.stopPropagation(); toggleFav(x.pid); pintar(); }; t.appendChild(st); }
+    const h = el('div', 'hov' + (esRol ? ' fija' : ''));
+    if (esRol) [['portada', 'Portada'], ['cierre_img', 'Cierre']].filter(([k]) => M[k] === x.rol).forEach(([k, lab]) => { const b = el('button', 'on', `✓ ${lab}`); b.title = 'Pulsa para quitarla'; b.onclick = e => { e.stopPropagation(); setRol(k, x.rol); pintar(); }; h.appendChild(b); });
+    else {
+      const p = el('button', '', 'Portada'); p.onclick = e => { e.stopPropagation(); setRol('portada', x.rol); pintar(); }; h.appendChild(p);
+      if (x.kind === 'foto') { const c = el('button', '', 'Cierre'); c.onclick = e => { e.stopPropagation(); setRol('cierre_img', x.rol); pintar(); }; h.appendChild(c); }
+    }
+    t.appendChild(h); t.onclick = () => lbOpen(vis, i, 'galeria'); g.appendChild(t);
+  });
+  if (!ro && VISTA === 'gal' && FILTRO === 'todas') g.appendChild(tileMas());
+  m.appendChild(g);
+  m.appendChild(notaBox('nota_galeria', '¿Algo que repetir o cambiar antes de pasar al campeón? (opcional)'));
+}
+
+// ---------------------------------------------------------------- 4 · duelo
+// imagen de un lado del par: la que Max cambió con «⇄» (max.json › alt) o la original (el lado de la galería ya está; el otro llega al generarlo)
+function imgOriginal(pid, s) {
+  const par = (D.duelo || {})[pid] || {}, g0 = (D.galeria || {})[pid] || {};
+  if (par[s]) return { img: par[s], mini: par[s + '_mini'] || par[s] };
+  if (s === ladoGal() && g0.img) return { img: g0.img, mini: g0.mini || g0.img };
+  return null;
+}
+function imgLado(pid, s) { const alt = ((M.alt || {})[pid] || {})[s]; return alt ? { img: alt.img, mini: alt.mini || alt.img, de: alt.de } : imgOriginal(pid, s); }
+// todas las imágenes de ese modelo para el mismo test (otros prompts del test y variantes repetidas: duelo.json › variantes)
+function opcionesLado(pid, s) {
+  const t = promptDe(pid).test, out = [];
+  prompts().filter(p => p.test === t).forEach(p => {
+    const o = imgOriginal(p.id, s); if (o) out.push(Object.assign({ de: p.id }, o));
+    (((D.variantes || {})[p.id] || {})[s] || []).forEach(v => out.push({ img: v.img, mini: v.mini || v.img, de: p.id }));
+  });
+  return out;
+}
+function modalAlt(pid, s) {
+  const m = el('div', 'modal'); m.onclick = e => { if (e.target === m) m.remove(); };
+  const c = el('div', 'caja'); c.style.width = 'min(860px,100%)';
+  c.appendChild(el('h3', '', `⇄ ${esc(D[s].nombre)} · ${esc(titulo(pid))}`));
+  c.appendChild(el('p', 'sub', 'Todas las imágenes de este modelo para el mismo test. Pulsa la que quieras: sustituye a la de la comparativa y el carrusel se vuelve a montar solo. Si viene de otro prompt, lo verás marcado (la comparativa ya no sería con el mismo prompt).'));
+  const actual = (imgLado(pid, s) || {}).img, orig = (imgOriginal(pid, s) || {}).img; const g = el('div', 'alts');
+  opcionesLado(pid, s).forEach(o => {
+    const t = el('div', 'gt' + (o.img === actual ? ' on' : '')); const im = el('img'); im.loading = 'lazy'; im.src = src(o.mini); t.appendChild(im);
+    t.appendChild(el('small', '', o.img === actual ? '✓ En la comparativa' : o.de === pid ? 'Mismo prompt' : `⚠️ Otro prompt (${esc(o.de)})`));
+    t.onclick = () => { const a = JSON.parse(JSON.stringify(M.alt || {})); a[pid] = a[pid] || {}; if (o.img === orig) delete a[pid][s]; else a[pid][s] = o; if (!Object.keys(a[pid]).length) delete a[pid]; guardar({ alt: a }, 'Imagen cambiada en la comparativa'); m.remove(); if ($('#lb').classList.contains('on')) lbSide(); else pintar(); };
+    g.appendChild(t);
+  });
+  c.appendChild(g); const x = el('button', 'b', 'Cerrar'); x.style.marginTop = '12px'; x.onclick = () => m.remove(); c.appendChild(x);
+  m.appendChild(c); document.body.appendChild(m);
+}
+function itemsDuelo() {
+  const out = [];
+  favs().forEach((id, k) => { const p = promptDe(id); const ia = imgLado(id, 'a') || {}, ib = imgLado(id, 'b') || {};
+    [['a', D.a, ia.img, ia.mini], ['b', D.b, ib.img, ib.mini]].forEach(([s, mod, f, mini]) => out.push({ kind: 'duelo', pid: id, lado: s, src: f ? src(f) : '', mini: mini ? src(mini) : (f ? src(f) : ''), titulo: titulo(id), tn: `TEST ${k + 1} · ${titulo(id).toUpperCase()} · ${mod.nombre}`, sub: p.escena, prompt: p.prompt, neutro: p.neutro, info: [['Modelo', mod.nombre], ['Test', `${p.test} · ${testDe(p.test).nombre}`], ['Coste', mod.coste_imagen || ''], ['Archivo', f || 'pendiente']] })); });
+  return out;
+}
+// v6 · el duelo NO se genera solo: Max ve las parejas, deja notas y pulsa «Generar todas» o «Generar seleccionadas» (petición 'generar');
+// «↻ Regenerar» rehace un lado con su nota (petición 'regenerar'). Lo que está en cola o generándose (D.generando) lleva ruleta.
+const costeNum = mod => parseFloat(String((mod || {}).coste_imagen || '').replace(',', '.')) || 0;
+function enCola() {
+  const s = new Set(D.generando || []);
+  (M.peticiones || []).filter(p => (p.tipo === 'generar' || p.tipo === 'regenerar') && ((D.respuestas || {})[p.id] || {}).estado !== 'hecha')
+    .forEach(p => p.tipo === 'generar' ? (p.pids || []).forEach(x => s.add(x)) : s.add(`${p.ref}:${p.lado}`));
+  return s;
+}
+const girando = (cola, id, s) => cola.has(`${id}:${s}`) || (s === ladoOtro() && cola.has(id));
+function pedirGeneracion(pids) {
+  const c = costeNum(modOtro()); SEL = new Set();
+  const p = { id: 'q' + Date.now(), tipo: 'generar', ref: 'duelo', pids, texto: `Generar ${pids.length} con ${modOtro().nombre}${c ? ` (≈ ${pids.length * c} créditos)` : ''}`, fecha: new Date().toISOString() };
+  guardar({ peticiones: [...(M.peticiones || []), p] }, `Pedidas ${pids.length}: Claude se pone ya`); pintar();
+}
+function pedirRegen(pid, s, nota) {
+  const p = { id: 'q' + Date.now(), tipo: 'regenerar', ref: pid, lado: s, texto: `Regenerar ${D[s].nombre}${nota ? ': ' + nota : ''}`, fecha: new Date().toISOString() };
+  guardar({ peticiones: [...(M.peticiones || []), p] }, `Claude regenera la de ${D[s].nombre}; la de ahora queda como alternativa (⇄)`); pintar();
+}
+function pDuelo(m) {
+  m.appendChild(el('h2', '', `${esc(D.a.nombre)} vs ${esc(D.b.nombre)}`));
+  const fav = favs(); if (!fav.length) { m.appendChild(el('div', 'espera', 'Primero elige tus favoritas en la galería (paso 3).')); return; }
+  m.appendChild(el('p', 'sub', `Mismo prompt, mismas referencias, una imagen por modelo. <b>Nada se genera hasta que lo pidas:</b> deja antes una nota para Claude en las que quieras y pulsa <b>Generar todas</b>, o marca unas cuantas y <b>Generar seleccionadas</b>. Aquí también cambias el <b>título</b> de cada diapositiva, la <b>imagen de la ficha</b> de prompts y las alternativas (⇄), y puedes <b>regenerar</b> una imagen con tu nota.`));
+  const otro = ladoOtro(), cola = enCola(), c = costeNum(modOtro());
+  const sinImg = fav.filter(id => !imgOriginal(id, otro)), faltan = sinImg.filter(id => !girando(cola, id, otro)), generando = sinImg.length - faltan.length;
+  if (sinImg.length) {
+    const bx = el('div', 'genbar');
+    bx.appendChild(el('div', '', faltan.length ? `<b>${faltan.length}</b> comparativa${faltan.length > 1 ? 's' : ''} sin la imagen de ${esc(modOtro().nombre)}${generando ? ` · <i class="spin s"></i>${generando} generándose` : ''}` : `<i class="spin s"></i>Claude está generando ${generando} con ${esc(modOtro().nombre)}…`));
+    if (faltan.length) {
+      const sel = faltan.filter(id => SEL.has(id)); const acts = el('div', 'acts');
+      const b1 = el('button', 'b acc', `▶ Generar todas (${faltan.length})${c ? ` · ≈ ${faltan.length * c} créditos` : ''}`); b1.onclick = () => pedirGeneracion(faltan);
+      const b2 = el('button', 'b', `▶ Generar seleccionadas (${sel.length})${c && sel.length ? ` · ≈ ${sel.length * c} créditos` : ''}`); b2.disabled = !sel.length; b2.onclick = () => pedirGeneracion(sel);
+      acts.appendChild(b1); acts.appendChild(b2); bx.appendChild(acts);
+    }
+    m.appendChild(bx);
+  }
+  const lista = itemsDuelo(); const g = el('div', 'pares');
+  fav.forEach((id, k) => {
+    const p = promptDe(id); const c = el('div', 'par');
+    const lab = el('div', 'lab', `<b>TEST ${k + 1} · ${esc(titulo(id)).toUpperCase()}</b> · ${esc(p.escena)}`);
+    if (faltan.includes(id)) { const ck = el('label', 'selg', `<input type="checkbox" ${SEL.has(id) ? 'checked' : ''}> Seleccionar`); ck.querySelector('input').onchange = e => { e.target.checked ? SEL.add(id) : SEL.delete(id); pintar(); }; lab.prepend(ck); }
+    c.appendChild(lab);
+    const ims = el('div', 'ims');
+    ['a', 'b'].forEach((s, j) => { const it = lista[k * 2 + j]; const d = el('div'); const gira = girando(cola, id, s);
+      if (it.mini) { const im = el('img'); im.loading = 'lazy'; im.src = it.mini; d.appendChild(im); d.onclick = () => lbOpen(lista, k * 2 + j, 'duelo'); if (gira) d.appendChild(el('div', 'regen', '<i class="spin"></i>Regenerando…')); }
+      else d.appendChild(el('div', 'gt', gira ? '<div class="pend"><i class="spin"></i>Generando…</div>' : '<div class="pend">Pendiente</div>'));
+      d.appendChild(el('small', '', esc(s === 'a' ? D.a.nombre : D.b.nombre)));
+      const n = opcionesLado(id, s).length; if (n > 1) { const cb = el('button', 'cambiar', `⇄ ${n} opciones`); cb.title = 'Elegir otra imagen de este modelo para este test'; cb.onclick = e => { e.stopPropagation(); modalAlt(id, s); }; d.appendChild(cb); }
+      ims.appendChild(d); });
+    c.appendChild(ims);
+    const fi = el('div', 'ficha', '📋 Imagen para la ficha de prompts:'); const actual = fichaLado(id);
+    [['a', D.a.nombre], ['b', D.b.nombre]].forEach(([s, nom]) => { const b = el('button', actual === s ? 'on' : '', esc(nom)); b.onclick = () => { const f2 = Object.assign({}, M.ficha_img || {}); f2[id] = s; guardar({ ficha_img: f2 }); pintar(); }; fi.appendChild(b); });
+    c.appendChild(fi);
+    const tc = el('div', 'campo', '<label>Título en la diapositiva (arriba, tras «TEST N ·»)</label>'); const ti = el('input'); ti.type = 'text'; ti.value = (M.titulos || {})[id] || ''; ti.placeholder = testDe(p.test).nombre;
+    ti.onfocus = () => editing = true; ti.onblur = () => { editing = false; pintar(); }; ti.oninput = () => { const tt = Object.assign({}, M.titulos || {}); tt[id] = ti.value; guardar({ titulos: tt }); }; tc.appendChild(ti); c.appendChild(tc);
+    const nc = el('div', 'campo'); const ni = el('input'); ni.type = 'text'; ni.placeholder = 'Nota para Claude (opcional)'; ni.value = ((M.duelo || {})[id] || {}).nota || '';
+    ni.onfocus = () => editing = true; ni.onblur = () => editing = false; ni.oninput = () => { const dd = Object.assign({}, M.duelo || {}); dd[id] = { nota: ni.value }; guardar({ duelo: dd }); }; nc.appendChild(ni);
+    const rg = el('div', 'ficha', '↻ Regenerar con tu nota:');
+    ['a', 'b'].forEach(s => { if (!imgOriginal(id, s) || girando(cola, id, s)) return; const b = el('button', '', esc(D[s].nombre)); b.title = `Vuelve a generar la de ${D[s].nombre} teniendo en cuenta tu nota (${D[s].coste_imagen || ''}). La de ahora queda como alternativa.`; b.onclick = () => pedirRegen(id, s, ni.value.trim()); rg.appendChild(b); });
+    if (rg.querySelector('button')) { rg.style.marginTop = '6px'; nc.appendChild(rg); }
+    c.appendChild(nc);
+    g.appendChild(c);
+  });
+  m.appendChild(g);
+}
+
+// ---------------------------------------------------------------- 5 · carrusel
+// la imagen sola (sin comparativa ni textos) que va a las fichas de prompts: la que elija Max; si no, la de Nano Banana Pro (o la del campeón)
+const fichaLado = id => (M.ficha_img || {})[id] || (D.a.modelo === 'nano_banana_pro' ? 'a' : D.b.modelo === 'nano_banana_pro' ? 'b' : ladoGal());
+const titulosActuales = () => Object.fromEntries(favs().map(id => [id, titulo(id)]));
+async function remontar() {
+  if (MONTANDO) return; MONTANDO = true; pintar();
+  try { const r = await fetch('/api/liga/montar', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: D.id }) }).then(x => x.json()); toast(r.ok ? 'Carrusel montado de nuevo' : 'No se pudo montar: ' + (r.error || '')); } catch (e) { toast('No se pudo montar (¿puente apagado?)'); }
+  MONTANDO = false; await cargar(true); pintar();
+}
+function pCarrusel(m) {
+  m.appendChild(el('h2', '', 'El carrusel'));
+  const C = D.carrusel || []; const incompletas = favs().filter(id => !imgOriginal(id, 'a') || !imgOriginal(id, 'b'));
+  if (MONTANDO) { espera(m, 'Montando el carrusel… unos segundos.'); return; }
+  if (!C.length) { if (incompletas.length) { m.appendChild(el('div', 'espera', `Faltan ${incompletas.length} comparativas por generar: pídelas en el paso Duelo.`)); return; } setTimeout(remontar, 0); espera(m, 'Montando el carrusel (portada + comparativas + cierre)…'); return; }
+  // se rehace solo si cambian títulos, imágenes (⇄), portada o cierre; si hay favoritas nuevas sin pareja, espera a que se generen
+  const roles = JSON.stringify([M.portada || null, M.cierre_img || null]);
+  const cambiado = JSON.stringify(titulosActuales()) !== JSON.stringify(D.titulos_montados || {}) || JSON.stringify(M.alt || {}) !== JSON.stringify(D.alt_montado || {}) || roles !== JSON.stringify(D.roles_montados || JSON.parse(roles));
+  if (cambiado && !incompletas.length) { setTimeout(remontar, 0); espera(m, 'Has cambiado algo: montando el carrusel de nuevo…'); return; }
+  if (cambiado) m.appendChild(el('div', 'aviso', `Hay ${incompletas.length} favorita${incompletas.length > 1 ? 's' : ''} nueva${incompletas.length > 1 ? 's' : ''} sin su pareja: genérala${incompletas.length > 1 ? 's' : ''} en el paso Duelo y el carrusel se rehace solo.`));
+  const fila = el('div', 'resumen', `<span><b>${C.length}</b> imágenes · 2160 × 2700 (alta resolución, formato Instagram 4:5)</span>`); const rb = el('button', 'b', '↻ Volver a montar'); rb.onclick = remontar; fila.appendChild(rb); m.appendChild(fila);
+  const pids = Object.keys(D.titulos_montados || {});
+  const s = el('div', 'carr'); s.dataset.keep = 'carr'; const lista = C.map((f, i) => ({ kind: 'slide', pid: i > 0 && i < C.length - 1 ? pids[i - 1] : null, src: src(f) + '?v=' + encodeURIComponent(D.montado || ''), mini: src(f), titulo: f.split('/').pop(), tn: i === 0 ? 'PORTADA' : i === C.length - 1 ? 'CIERRE' : `TEST ${i} · ${(Object.values(D.titulos_montados || {})[i - 1] || '').toUpperCase()}`, sub: '', prompt: '', info: [['Diapositiva', `${i + 1} de ${C.length}`], ['Archivo', f], ['Montado', D.montado || '']] }));
+  C.forEach((f, i) => { const im = el('img'); im.loading = 'lazy'; im.src = lista[i].src; im.onclick = () => lbOpen(lista, i, 'carrusel'); s.appendChild(im); }); m.appendChild(s);
+  m.appendChild(notaBox('nota_carrusel', '¿Cambios en el carrusel? (orden, portada, textos…) Los títulos se cambian en el paso Duelo.'));
+}
+
+// ---------------------------------------------------------------- 6 · publicar
+async function abrirCarpeta() { try { const r = await fetch('/api/liga/abrir', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: D.id }) }).then(x => x.json()); toast(r.ok ? 'Abierta en el Finder' : 'No se pudo abrir: ' + (r.error || '')); } catch (e) { toast('No se pudo abrir (¿puente apagado?)'); } }
+function pPublicar(m) {
+  m.appendChild(el('h2', '', 'Guardar y publicar'));
+  const caja = el('div', 'caja', `<h3>📦 Tu carrusel</h3><p class="sub" style="margin-bottom:10px">${(D.carrusel || []).length} imágenes listas para subir a Instagram. Están en tu servidor:</p><code>${esc(D.ruta || ('Aria Mirror › assets › liga › ' + D.id + ' › carrusel'))}</code>`);
+  const a = el('div', 'acts'); a.style.marginTop = '12px';
+  const dz = el('button', 'b acc', '⬇ Descargar el carrusel (.zip)'); dz.onclick = () => bajar(`/api/liga/zip?id=${encodeURIComponent(D.id)}`, `carrusel-${D.id}.zip`); a.appendChild(dz);
+  const dt = el('button', 'b', '⬇ Todo (galería, duelo y carrusel)'); dt.onclick = () => bajar(`/api/liga/zip?id=${encodeURIComponent(D.id)}&todo=1`, `duelo-${D.id}.zip`); a.appendChild(dt);
+  if (!WEB) { const ab = el('button', 'b', '📂 Abrir la carpeta en el Finder'); ab.onclick = abrirCarpeta; a.appendChild(ab); } caja.appendChild(a); m.appendChild(caja);
+  const L = D.cierre && D.cierre.length ? D.cierre : [
+    { tarea: 'Imágenes guardadas en el servidor (NAS)' }, { tarea: 'Ficha en Prompts de Imágenes (pago), con los prompts y las imágenes' },
+    { tarea: 'Versión gratis en Prompts Gratis' }, { tarea: 'Entrada en el Calendario de Instagram, con caption y descargables' },
+    { tarea: 'Post de Skool con los testeos (10 imágenes como máximo), en la voz de Aria' }, { tarea: 'Batería de testeos y Banco de Novedades actualizados' }];
+  const cj = el('div', 'caja', '<h3>✅ Lo que hace Claude con el duelo</h3>'); const c = el('div', 'check');
+  L.forEach(x => c.appendChild(el('div', x.hecho ? 'hecho' : '', `<i>${x.hecho ? '✅' : '⬜️'}</i><span>${esc(x.tarea)}</span>${x.link ? `<a href="${esc(x.link)}" target="_blank">abrir ↗</a>` : ''}`))); cj.appendChild(c); m.appendChild(cj);
+  // v6 · Notion: si las fichas ya existen se actualizan con lo último; si no, se crean (pago, gratis, calendario y Skool)
+  const pend = (M.peticiones || []).some(p => p.tipo === 'publicar' && ((D.respuestas || {})[p.id] || {}).estado !== 'hecha');
+  const nb = el('div', 'caja', `<h3>🔄 Subir a Notion</h3><p class="sub" style="margin-bottom:10px">${D.cierre && D.cierre.length ? 'Este duelo ya está en Notion: si has cambiado algo (imágenes, títulos, portada…), Claude actualiza las fichas de pago y gratis, la entrada del Calendario (caption y zip) y el post de Skool.' : 'Claude crea la ficha de pago, la gratis, la entrada del Calendario de Instagram y el post de Skool.'} Al pulsar «Terminar» también se hace.</p>`);
+  const bp = el('button', 'b acc', pend ? '⏳ Claude lo está subiendo…' : (D.cierre && D.cierre.length ? '🔄 Actualizar Notion con los cambios' : '📤 Crear todo en Notion')); bp.disabled = pend;
+  bp.onclick = () => { guardar({ peticiones: [...(M.peticiones || []), { id: 'q' + Date.now(), tipo: 'publicar', ref: 'notion', texto: 'Subir a Notion lo último del carrusel (crear o actualizar)', fecha: new Date().toISOString() }] }, 'Pedido: Claude lo sube a Notion'); pintar(); };
+  nb.appendChild(bp); m.appendChild(nb);
+  m.appendChild(notaBox('nota_publicar', 'Nota (opcional)'));
+}
+
+// ---------------------------------------------------------------- visor grande (con toda la información y las acciones)
+function lbOpen(list, i, ctx) { LB = { list, i, ctx }; lbShow(); $('#lb').classList.add('on'); }
+function lbShow() { const x = LB.list[LB.i]; if (!x) return; $('#lbimg').src = x.src || x.mini; $('#lbcnt').textContent = `${LB.i + 1} / ${LB.list.length}`; lbSide(); }
+function lbSide() {
+  const x = LB.list[LB.i]; if (!x) return; const s = $('#lbside'); s.innerHTML = ''; const ro = false;
+  s.appendChild(el('div', 'tn', esc(x.tn || ''))); s.appendChild(el('h4', '', esc(x.titulo || ''))); if (x.sub) s.appendChild(el('div', 'k', esc(x.sub)));
+  if (LB.ctx === 'galeria') {
+    const fav = new Set(M.fav || []); const b = el('div', 'btns');
+    if (x.kind === 'foto') { const f = el('button', 'f' + (fav.has(x.pid) ? ' on' : ''), fav.has(x.pid) ? '★ Me gusta' : '☆ Me gusta'); f.onclick = () => { toggleFav(x.pid); lbSide(); pintarFondo(); }; f.disabled = ro; b.appendChild(f); }
+    const p = el('button', M.portada === x.rol ? 'on' : '', '🖼 Portada'); p.onclick = () => { setRol('portada', x.rol); lbSide(); pintarFondo(); }; p.disabled = ro; b.appendChild(p);
+    if (x.kind === 'foto') { const c = el('button', M.cierre_img === x.rol ? 'on' : '', '🔚 Cierre'); c.onclick = () => { setRol('cierre_img', x.rol); lbSide(); pintarFondo(); }; c.disabled = ro; b.appendChild(c); }
+    b.appendChild(el('small', '', ro ? 'La galería ya está cerrada: pulsa «Cambiar» para tocarla.' : 'Teclas: F me gusta · P portada · C cierre · ← → para pasar')); s.appendChild(b);
+  }
+  // v6 · portada, cierre y alternativas desde cualquier paso (duelo y carrusel también)
+  if (LB.ctx === 'duelo' && x.src) s.appendChild(botonesLado(x.pid, x.lado));
+  if (LB.ctx === 'carrusel') {
+    if (x.pid) { const w = el('div', 'lados'); ['a', 'b'].forEach(sd => { const im0 = imgLado(x.pid, sd); if (!im0) return; const c = el('div', 'lado'); const im = el('img'); im.src = src(im0.mini); c.appendChild(im); c.appendChild(el('b', '', esc(D[sd].nombre))); c.appendChild(botonesLado(x.pid, sd)); w.appendChild(c); }); s.appendChild(w); }
+    else s.appendChild(el('div', 'k', 'Para cambiar la portada o el cierre, pulsa «Portada» o «Cierre» en cualquier imagen: en la galería, en el duelo o aquí, en cada comparativa. El carrusel se rehace solo al cerrar el visor.'));
+  }
+  if ((LB.ctx === 'galeria' || LB.ctx === 'duelo' || LB.ctx === 'carrusel') && x.pid) s.appendChild(cajaPeticion('imagen', x.pid + (x.lado ? ':' + x.lado : ''), 'Tu feedback sobre esta imagen: qué falla, qué repetir o cambiar (escribe o dicta)', '💬 Feedback para Claude'));
+  if (x.info && x.info.length) s.appendChild(el('table', '', x.info.filter(r => r[1]).map(([k, v]) => `<tr><td>${esc(k)}</td><td>${esc(v)}</td></tr>`).join('')));
+  if (x.prompt) { const d = el('details', '', `<summary>Prompt <button class="copiar">copiar</button></summary><p>${esc(x.prompt)}</p>`); d.open = true; d.querySelector('.copiar').onclick = e => { e.preventDefault(); navigator.clipboard && navigator.clipboard.writeText(x.prompt).then(() => toast('Prompt copiado')); }; s.appendChild(d); }
+  if (x.neutro) { const d = el('details', '', `<summary>Versión neutra (para la comunidad) <button class="copiar">copiar</button></summary><p>${esc(x.neutro)}</p>`); d.querySelector('.copiar').onclick = e => { e.preventDefault(); navigator.clipboard && navigator.clipboard.writeText(x.neutro).then(() => toast('Versión neutra copiada')); }; s.appendChild(d); }
+}
+// botones de un lado de una comparativa: alternativas (⇄), usar como portada o como cierre
+function botonesLado(pid, sd) {
+  const rol = sd === ladoGal() ? pid : `${pid}:${sd}`; const b = el('div', 'btns');
+  const n = opcionesLado(pid, sd).length; if (n > 1) { const a = el('button', '', `⇄ ${n} opciones`); a.onclick = () => modalAlt(pid, sd); b.appendChild(a); }
+  const p = el('button', M.portada === rol ? 'on' : '', '🖼 Portada'); p.onclick = () => { setRol('portada', rol); lbSide(); }; b.appendChild(p);
+  const c = el('button', M.cierre_img === rol ? 'on' : '', '🔚 Cierre'); c.onclick = () => { setRol('cierre_img', rol); lbSide(); }; b.appendChild(c);
+  return b;
+}
+function pintarFondo() { const y = window.scrollY; pintar(); window.scrollTo(0, y); }
+function lbStep(d) { LB.i = (LB.i + d + LB.list.length) % LB.list.length; lbShow(); }
+function lbClose() { $('#lb').classList.remove('on'); pintarFondo(); }
+$('#lb').onclick = e => { if (e.target.id === 'lb' || e.target.classList.contains('img')) lbClose(); };
+addEventListener('keydown', e => {
+  if (!$('#lb').classList.contains('on') || /INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName)) return;
+  const x = LB.list[LB.i]; const k = e.key.toLowerCase();
+  if (e.key === 'Escape') lbClose(); if (e.key === 'ArrowLeft') lbStep(-1); if (e.key === 'ArrowRight') lbStep(1);
+  if (LB.ctx === 'galeria' && x) {
+    if (k === 'f' && x.kind === 'foto') { toggleFav(x.pid); lbSide(); pintarFondo(); }
+    if (k === 'p') { setRol('portada', x.rol); lbSide(); pintarFondo(); }
+    if (k === 'c' && x.kind === 'foto') { setRol('cierre_img', x.rol); lbSide(); pintarFondo(); }
+  }
+});
+
+// una imagen que falla al cargar (lectura puntual del NAS) se reintenta sola hasta 3 veces, en vez de quedarse rota
+document.addEventListener('error', e => {
+  const i = e.target; if (!i || i.tagName !== 'IMG' || !i.getAttribute('src')) return; const n = Number(i.dataset.reint || 0); if (n >= 3) return; i.dataset.reint = n + 1;
+  const base = i.getAttribute('src').replace(/[?&]r=\d+$/, ''); setTimeout(() => { i.src = base + (base.includes('?') ? '&' : '?') + 'r=' + Date.now(); }, 500 * (n + 1));
+}, true);
+cargar(); setInterval(() => { if (!editing && !MONTANDO && Date.now() - ultimoCambio > 4000) cargar(true); }, 6000);   // recoge lo que Claude va añadiendo
+window.fbContext = () => D ? `duelo ${D.id} · paso ${PASO}` : '';
+</script>
+<script>if (window.parent !== window) document.write('<style>#fbw{display:none!important}</style>');   // en el marco de la web: el feedback es el de la app</script>
+<script src="feedback.js"></script>
+<script>
+  // primera visita: aviso de «en desarrollo» (regla de Aria Studio)
+  try { if (!localStorage.getItem('liga_intro') && window.devIntro) { devIntro('Duelos · carrusel de testeos AI League', () => {}); localStorage.setItem('liga_intro', '1'); } } catch (e) {}
+</script>
+</body>
+</html>

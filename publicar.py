@@ -55,5 +55,11 @@ shutil.copyfile(os.path.join(SRC, 'cuenta.js'), os.path.join(OUT, 'cuenta.js'))
 # el servidor (Render) usa el mismo puente que la app local, arrancado con ARIA_SERVIDOR=1
 SRV = os.path.join(os.path.dirname(OUT), 'servidor'); os.makedirs(SRV, exist_ok=True)
 shutil.copyfile(os.path.join(SRC, 'puente.py'), os.path.join(SRV, 'puente.py'))
+# 🥊 Workflows (v209): la página de Duelos va en la web y el servidor monta los carruseles con la misma plantilla y fuentes
+shutil.copyfile(os.path.join(SRC, 'liga.html'), os.path.join(OUT, 'liga.html'))
+LIGA = '/Users/maxromanenko/Desktop/XXX/.claude/scripts/ai_league'; LS = os.path.join(SRV, 'liga'); os.makedirs(os.path.join(LS, 'fuentes'), exist_ok=True)
+for fn in ('liga.py', 'montar.py'): shutil.copyfile(os.path.join(LIGA, fn), os.path.join(LS, fn))
+for fn in os.listdir(os.path.join(LIGA, 'fuentes')):
+    if fn.endswith('.ttf'): shutil.copyfile(os.path.join(LIGA, 'fuentes', fn), os.path.join(LS, 'fuentes', fn))
 for f in sorted(os.listdir(OUT)):
     print(f'{os.path.getsize(os.path.join(OUT, f)) // 1024:>6} KB  {f}')

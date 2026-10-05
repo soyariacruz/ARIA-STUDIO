@@ -21,6 +21,7 @@ from http.server import ThreadingHTTPServer, SimpleHTTPRequestHandler
 RAIZ = os.path.dirname(os.path.abspath(__file__)); ROOT = RAIZ   # la carpeta del código y de la biblioteca común (ROOT = lo mismo; solo para lo que es de todos)
 LIGA_DIR = os.path.join(ROOT, 'assets', 'liga')   # 🥊 Duelos de AI League (v123) · solo en local
 LIGA_PY = '/Users/maxromanenko/Desktop/XXX/.claude/scripts/ai_league/liga.py'   # montaje del carrusel (v124)
+LIGA_PY_SRV = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'liga', 'liga.py')   # en el servidor, la copia que va con él (con montar.py y sus fuentes)
 # ---- «modo servidor» (ARIA_SERVIDOR=1): muchas cuentas a la vez; cada una con su casa, sus claves, sus trabajos y su capa sobre el catálogo común. Sin la variable NO cambia nada (un solo usuario, en local)
 SERVIDOR = os.environ.get('ARIA_SERVIDOR') == '1'
 HOST = (os.environ.get('ARIA_HOST') or '127.0.0.1') if SERVIDOR else '127.0.0.1'
@@ -37,7 +38,7 @@ MAX_CUERPO = 40 * 1024 * 1024    # tope de una petición en modo servidor
 MAX_BIBLIO = 200 * 1024 * 1024   # tope de un fichero de la biblioteca común al copiarlo
 KINDS = ('vestidor', 'hair', 'expr')   # las bibliotecas a las que una cuenta puede añadir lo suyo
 _UUID = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
-VERSION = 208
+VERSION = 209
 _ctx = threading.local()   # la cuenta del hilo: la pone cada petición (y, a mano, cada hilo de fondo)
 def uid(): return getattr(_ctx, 'uid', None)   # en local siempre None
 DUENOS = tuple(e.strip().lower() for e in (os.environ.get('ARIA_DUENOS') or 'mix1994max@gmail.com').split(',') if e.strip())   # cuentas que pueden cambiar a Aria Cruz (en la web, la de Max)
@@ -172,6 +173,232 @@ def _aria_publica():   # la Aria de equipo → catálogo común. Ficheros cambia
     json.dump({'t': time.strftime('%Y-%m-%d %H:%M'), 'por': quien, 'borrador': P, 'ensayo': ensayo}, open(os.path.join(DATOS, 'aria_publicado.json'), 'w', encoding='utf-8'), ensure_ascii=False)
     plog(f'Aria publicada para todos por {quien} · {len(mapa)} ficheros nuevos' + (' (ENSAYO)' if ensayo else ''))
     return {'ok': True, 'ficheros': len(mapa), 'ensayo': ensayo}
+# ---- 🥊 WORKFLOWS EN LA WEB (v209): los Duelos de AI League para el equipo, sin depender del Mac de Max ----
+LIGA_WEB = os.path.join(DATOS, 'liga') if SERVIDOR and DATOS else ''
+ARIA_EMAIL = (os.environ.get('ARIA_EMAIL') or 'soyariacruz@gmail.com').strip().lower()
+LIGA_LLM = os.environ.get('ARIA_LIGA_LLM') or 'claude-opus-5-5'   # quién escribe mundos, historias y prompts (clave de Claude de la cuenta de Aria)
+LIGA_WS = {'nano_banana_pro': 'nbp', 'gpt_image_2_5': 'gptimg', 'seedream_v5_pro': 'seedream', 'seedream_5_0_flash': 'seedflash'}   # modelos de la página → WaveSpeed
+LIGA_TESTS = [{'n': 1, 'nombre': 'De lejos', 'que': 'Cuerpo entero y pequeña en el encuadre: ¿se la reconoce?'}, {'n': 2, 'nombre': 'Contraluz', 'que': 'Luz fuerte detrás y la cara en penumbra, creíble'},
+    {'n': 3, 'nombre': 'Comiendo de verdad', 'que': 'Boca, comida y manos a la vez sin deformarse'}, {'n': 4, 'nombre': 'Las gafas en apuros', 'que': 'Empañadas, con gotas o con reflejos, y siguen siendo las suyas'},
+    {'n': 5, 'nombre': 'Texto en español', 'que': 'Una frase con tildes y ñ, legible y sin faltas'}, {'n': 6, 'nombre': 'De perfil y de espaldas', 'que': '¿Es la misma cara y la misma coleta fuera del plano frontal?'},
+    {'n': 7, 'nombre': 'Casi a oscuras', 'que': 'Una sola fuente de luz pequeña y la piel aguanta'}, {'n': 8, 'nombre': 'UGC de verdad', 'que': 'Foto de móvil cualquiera, nada de estudio (el móvil nunca se ve)'},
+    {'n': 9, 'nombre': 'Con más gente', 'que': 'Contacto con otras personas sin que se le contagie la cara'}, {'n': 10, 'nombre': 'Manos haciendo algo', 'que': 'Cinco dedos, bien colocados y agarrando de verdad'},
+    {'n': 11, 'nombre': 'En movimiento', 'que': 'Pose dinámica con un cuerpo posible'}, {'n': 12, 'nombre': 'Ángulo extremo', 'que': 'Cenital o contrapicado sin romper proporciones'},
+    {'n': 13, 'nombre': 'Emoción extrema', 'que': 'Llanto, carcajada o susto que sigue siendo Aria'}, {'n': 14, 'nombre': 'Agua y pelo mojado', 'que': 'Pelo empapado y piel mojada sin perder su coleta ni sus rasgos'},
+    {'n': 15, 'nombre': 'Producto con etiqueta', 'que': 'Un objeto con marca o etiqueta legible en la mano'}, {'n': 16, 'nombre': 'Ropa con estampado', 'que': 'Un estampado complejo que se mantiene coherente'},
+    {'n': 17, 'nombre': 'Reflejo en un espejo', 'que': 'El reflejo coincide con ella (sin móvil a la vista)'}, {'n': 18, 'nombre': 'Detalle de cerca', 'que': 'Primer plano de la cara: piel, ojos y gafas con detalle real'}]
+LIGA_REGLAS = """Eres el guionista y director de fotografía de los «Duelos de AI League» de Aria Cruz, una influencer IA española de 24 años: coleta alta, gafas redondas metálicas finas, aros plateados, ojos verdes, cara reconocible. Cada duelo enfrenta dos generadores de imagen con LAS MISMAS situaciones difíciles dentro de un MUNDO con historia, y se publica como carrusel en Instagram y Skool.
+Reglas de los prompts de imagen (en INGLÉS, largos, detallados y CREATIVOS; nada de imágenes genéricas de IA):
+- Empiezan anclando a Aria a la referencia: «the woman in image 1» (su ficha 360) + MANDATORY: thin round metal glasses, silver hoop earrings, high ponytail, green eyes.
+- Una idea concreta, un momento, un detalle que cuenta algo: quién hace la foto, dónde, qué pasa, luz, lente, textura (foto real, nada de estudio salvo que el test lo pida).
+- Encuadre vertical 9:16 pensado para recortarse a media diapositiva: Aria Y lo que se pone a prueba en la franja central.
+- Todo en positivo (sin «no…»), el texto que deba salir escrito va entre comillas. El móvil nunca se ve en la foto. Nada de desnudos ni contenido sexual.
+- Cada prompt pone a prueba UN test de la batería; puede haber varios prompts del mismo test."""
+def liga_dir(): return LIGA_WEB if SERVIDOR else LIGA_DIR
+def liga_puede(): return (not SERVIDOR) or not aria_fija()   # en la web: solo el equipo
+_liga_ll = threading.Lock(); _liga_cer = {}
+def _liga_cerrojo(did):
+    with _liga_ll: return _liga_cer.setdefault(did, threading.Lock())
+def _liga_ok_id(did): return isinstance(did, str) and bool(re.fullmatch(r'[A-Za-z0-9_.-]+', did)) and not did.startswith(('.', '_')) and os.path.isfile(os.path.join(liga_dir(), did, 'duelo.json'))
+def _liga_lee(did, fn):
+    try: return json.load(open(os.path.join(liga_dir(), did, fn), encoding='utf-8'))
+    except Exception: return {}
+def _liga_cambia(did, fn):   # duelo.json: leer, cambiar y escribir de golpe, de uno en uno
+    with _liga_cerrojo(did):
+        fp = os.path.join(liga_dir(), did, 'duelo.json'); Dd = json.load(open(fp, encoding='utf-8')); fn(Dd)
+        tmp = fp + f'.tmp{threading.get_ident()}'; json.dump(Dd, open(tmp, 'w', encoding='utf-8'), ensure_ascii=False, indent=1); os.replace(tmp, fp); return Dd
+def _liga_claude(sistema, texto, max_tokens=16000):   # → el JSON que devuelve Claude
+    k = _env('ANTHROPIC_API_KEY', 'anthropic.env')
+    if not k: raise RuntimeError('Falta la clave de Claude en la cuenta de Aria («🔑 Mis APIs»)')
+    body = {'model': LIGA_LLM, 'max_tokens': max_tokens, 'system': sistema, 'messages': [{'role': 'user', 'content': texto}]}
+    rq = urllib.request.Request('https://api.anthropic.com/v1/messages', data=json.dumps(body).encode(), method='POST', headers={'x-api-key': k, 'anthropic-version': '2023-06-01', 'content-type': 'application/json', 'User-Agent': UA})
+    try: r = json.loads(urllib.request.urlopen(rq, timeout=900).read())
+    except urllib.error.HTTPError as e: raise RuntimeError(f'Claude respondió {e.code}: ' + e.read().decode('utf-8', 'replace')[:200])
+    t = ''.join(b.get('text', '') for b in r.get('content') or [] if b.get('type') == 'text')
+    try: return json.loads(t[t.index('{'):t.rindex('}') + 1])
+    except Exception: raise RuntimeError('Claude no devolvió un JSON válido: ' + t[:160])
+def _liga_gen(did, modelo_id, prompt, dest):   # una imagen 9:16 con la ficha de Aria como referencia → (img, mini, w, h, usd); dest = 'galeria/p01'
+    mk = LIGA_WS.get(modelo_id)
+    if not mk: raise RuntimeError(f'«{modelo_id}» no se puede generar desde la web: aquí solo hay Nano Banana Pro, GPT Image 2.5 y Seedream 5.0 (WaveSpeed)')
+    if not load_ws(): raise RuntimeError('Falta la clave de WaveSpeed en la cuenta de Aria («🔑 Mis APIs»)')
+    M = WS_MODELS[mk]; _ctx.ws_modo = 'propia'
+    ficha = str((_cat_load()[1].get('perfil') or {}).get('ficha') or 'assets/perfil/ficha360.jpg').split('?')[0]
+    payload = M['body'](prompt, [resolve_ws({'path': ficha})], aspect_ok('9:16'), 'high')
+    r = ws('POST', '/api/v3/' + M['ep'], payload); rid = (r.get('data') or {}).get('id')
+    if not rid: raise RuntimeError('WaveSpeed no devolvió id')
+    url = None
+    for _ in range(240):
+        time.sleep(4); w = ws('GET', f'/api/v3/predictions/{rid}/result').get('data') or {}
+        if w.get('status') == 'completed': url = (w.get('outputs') or [None])[0]; break
+        if w.get('status') == 'failed': raise RuntimeError('WaveSpeed: ' + str(w.get('error') or 'falló')[:200])
+    if not url: raise RuntimeError('WaveSpeed no terminó a tiempo')
+    data = urllib.request.urlopen(urllib.request.Request(url, headers={'User-Agent': UA}), timeout=300).read()
+    from PIL import Image
+    import io as _io
+    ext = '.png' if url.lower().split('?')[0].endswith('.png') else '.jpg'; base = os.path.join(liga_dir(), did)
+    img = dest + ext; fp = os.path.join(base, *img.split('/')); os.makedirs(os.path.dirname(fp), exist_ok=True); open(fp, 'wb').write(data)
+    im = Image.open(_io.BytesIO(data)).convert('RGB'); w0, h0 = im.size; mini = os.path.dirname(dest) + '/mini/' + os.path.basename(dest) + '.jpg'
+    mp = os.path.join(base, *mini.split('/')); os.makedirs(os.path.dirname(mp), exist_ok=True); im.thumbnail((480, 960)); im.save(mp, quality=86)
+    return img, mini, w0, h0, float(M['usd']['high'])
+def _liga_suma(Dd, usd):   # coste acumulado del duelo
+    Dd['coste_usd'] = round(float(Dd.get('coste_usd') or 0) + usd, 3); Dd['coste'] = f"${Dd['coste_usd']:.2f} en imágenes (WaveSpeed)"
+def _liga_textos_de(M, tipos):   # comentarios del equipo de ciertos tipos (para dárselos a Claude)
+    return [p.get('texto', '') for p in (M.get('peticiones') or []) if p.get('tipo') in tipos and p.get('texto')]
+def _liga_mundos(did, solo=None, nota=''):   # 3 mundos con 6 historias y su portada (o rehacer uno)
+    Dd = _liga_lee(did, 'duelo.json'); M = _liga_lee(did, 'max.json'); lado = Dd.get('galeria_lado') or 'b'; mod = Dd[lado].get('modelo')
+    _liga_cambia(did, lambda x: x.update({'trabajando': {'paso': 1, 'texto': 'Claude está escribiendo los mundos y sus historias…'}}))
+    guia = '\n'.join(filter(None, [Dd.get('nota_inicial') or '', *_liga_textos_de(M, ('nuevo',)), nota]))
+    previos = [w.get('titulo') for w in Dd.get('mundos') or []]
+    pide = f"Duelo: {Dd['a']['nombre']} contra {Dd['b']['nombre']}.\n{('Ideas del equipo: ' + guia) if guia else ''}\n{('Rehaz SOLO un mundo nuevo distinto de: ' + ', '.join(previos)) if solo else ''}\n" + \
+           f"Propón {1 if solo else 3} MUNDO(S) muy distintos entre sí (lugares y situaciones reales y concretas, con mucha vida y detalle visual, preferiblemente en España). Para cada uno: id (minúsculas sin espacios), emoji, titulo, desc (2 frases en español), prompt_img (prompt en inglés para su PORTADA: Aria en ese mundo, siguiendo las reglas) y secuencias: 6 historias con id (<id>-1…), tono (emoji + palabra: 😂 Graciosa, 💛 Tierna, 🎡 Romántica, 🎆 Épica, 🕵️ Misteriosa, 🍻 Fiesta…), titulo y resumen (una frase).\n" + \
+           'Responde SOLO con JSON: {"mundos": [...]}'
+    W = _liga_claude(LIGA_REGLAS, pide).get('mundos') or []
+    if not W: raise RuntimeError('Claude no propuso mundos')
+    _liga_cambia(did, lambda x: x.update({'trabajando': {'paso': 1, 'texto': 'Generando la portada de cada mundo…'}}))
+    hechos = []
+    for w in W[:1 if solo else 3]:
+        wid = re.sub(r'[^a-z0-9-]+', '-', str(w.get('id') or 'mundo').lower()).strip('-')[:30] or 'mundo'
+        img, mini, _, _, usd = _liga_gen(did, mod, w.get('prompt_img') or w.get('desc', ''), 'mundos/' + wid)
+        hechos.append({'id': wid, 'emoji': w.get('emoji', '🌍'), 'titulo': w.get('titulo', ''), 'modelo': Dd[lado].get('nombre'), 'desc': w.get('desc', ''), 'secuencias': w.get('secuencias') or [], 'img': img, 'mini': mini, 'v': str(int(time.time())), 'prompt_img': w.get('prompt_img', '')})
+        _liga_cambia(did, lambda x, u=usd: _liga_suma(x, u))
+    def pon(x):
+        if solo: x['mundos'] = [hechos[0] if m.get('id') == solo else m for m in x.get('mundos') or []]
+        else: x['mundos'] = hechos
+        x['trabajando'] = None; x['aviso'] = 'Ya están los mundos: elige uno y su historia (o cuéntanos la tuya) y pulsa Siguiente.'; x['aviso_paso'] = 1
+    _liga_cambia(did, pon)
+def _liga_prompts(did, n=30, extra=False):   # los prompts de la galería a partir del mundo y la historia elegidos
+    Dd = _liga_lee(did, 'duelo.json'); M = _liga_lee(did, 'max.json')
+    w = next((x for x in Dd.get('mundos') or [] if x.get('id') == M.get('mundo')), None)
+    if not w: raise RuntimeError('Elige primero un mundo')
+    sq = next((x for x in w.get('secuencias') or [] if x.get('id') == M.get('secuencia')), None)
+    tests = Dd.get('tests') or LIGA_TESTS; ya = Dd.get('prompts') or []
+    _liga_cambia(did, lambda x: x.update({'trabajando': {'paso': 3 if extra else 2, 'texto': f'Claude está escribiendo {n} prompts…'}}))
+    pide = f"Mundo: {w.get('titulo')} — {w.get('desc')}\nHistoria elegida: {(sq or {}).get('titulo', '')} — {(sq or {}).get('resumen', '')}\n" + \
+           f"Batería de tests: {json.dumps([{'n': t['n'], 'nombre': t['nombre'], 'que': t['que']} for t in tests], ensure_ascii=False)}\n" + \
+           (f"Ya hay estas escenas (no las repitas): {json.dumps([p.get('escena') for p in ya], ensure_ascii=False)}\n" if ya else '') + \
+           f"Escribe {n} prompts que cuenten esa historia momento a momento, repartidos entre los tests (todos los tests al menos una vez si n ≥ 18). Para cada uno: test (número), escena (una frase en español) y prompt (inglés, largo y detallado, siguiendo las reglas).\n" + \
+           'Responde SOLO con JSON: {"prompts": [{"test": 1, "escena": "...", "prompt": "..."}]}'
+    P = _liga_claude(LIGA_REGLAS, pide, 20000).get('prompts') or []
+    if not P: raise RuntimeError('Claude no escribió prompts')
+    k0 = len(ya)
+    nuevos = [{'id': f'p{k0 + i + 1:02d}', 'test': int(p.get('test') or 1), 'escena': p.get('escena', ''), 'prompt': p.get('prompt', '')} for i, p in enumerate(P[:n])]
+    lado = Dd.get('galeria_lado') or 'b'; usd = float(WS_MODELS.get(LIGA_WS.get(Dd[lado].get('modelo')), {}).get('usd', {}).get('high', 0.14))
+    def pon(x):
+        x['prompts'] = (x.get('prompts') or []) + nuevos; x['tests'] = x.get('tests') or tests; x['trabajando'] = None
+        x['coste_estimado'] = f"galería de {len(x['prompts'])} imágenes con {x[lado]['nombre']} ≈ ${len(x['prompts']) * usd:.2f} (WaveSpeed)"
+        if not extra: x['aviso'] = 'Prompts listos.' + (' Revísalos y pulsa Siguiente para generar la galería.' if M.get('revisar_prompts') else ' Generando la galería…'); x['aviso_paso'] = 2
+    _liga_cambia(did, pon)
+    return [p['id'] for p in nuevos]
+def _liga_reescribe(prompt, nota):   # el mismo prompt con lo que pide el equipo
+    return _liga_claude(LIGA_REGLAS, f"Prompt actual:\n{prompt}\n\nCambio que pide el equipo: {nota}\n\nReescribe el prompt aplicando el cambio y manteniendo las reglas. Responde SOLO con JSON: {{\"prompt\": \"...\"}}", 4000).get('prompt') or prompt
+def _liga_prompt_de(Dd, M, pid):
+    mp = M.get('prompts') if isinstance(M.get('prompts'), dict) else {}
+    p = next((x for x in Dd.get('prompts') or [] if x.get('id') == pid), {})
+    v = mp.get(pid); return (v.get('prompt') if isinstance(v, dict) else v) or p.get('prompt', '')
+def _liga_galeria(did, pids=None):   # la galería con el modelo del lado de la galería (de 3 en 3)
+    from concurrent.futures import ThreadPoolExecutor
+    Dd = _liga_lee(did, 'duelo.json'); M = _liga_lee(did, 'max.json'); lado = Dd.get('galeria_lado') or 'b'; mod = Dd[lado].get('modelo')
+    faltan = [p['id'] for p in Dd.get('prompts') or [] if p['id'] not in (Dd.get('galeria') or {}) and p['id'] not in (Dd.get('fallidas') or {}) and (pids is None or p['id'] in pids)]
+    if not faltan: return
+    _liga_cambia(did, lambda x: x.update({'generando': sorted(set(x.get('generando') or []) | set(faltan)), 'trabajando': {'paso': 3, 'texto': f'Generando la galería: {len(faltan)} imágenes con {Dd[lado]["nombre"]}…'}}))
+    c = (getattr(_ctx, 'uid', None), getattr(_ctx, 'email', ''), getattr(_ctx, 'interno', False))
+    def una(pid):
+        with como(*c):
+            try:
+                img, mini, w0, h0, usd = _liga_gen(did, mod, _liga_prompt_de(Dd, M, pid), 'galeria/' + pid)
+                def pon(x): x.setdefault('galeria', {})[pid] = {'img': img, 'mini': mini, 'w': w0, 'h': h0, 'v': str(int(time.time()))}; x['generando'] = [g for g in x.get('generando') or [] if g != pid]; _liga_suma(x, usd)
+            except Exception as er:
+                plog(f'liga {did} {pid} ✕ {er}')
+                def pon(x, m=str(er)[:200]): x.setdefault('fallidas', {})[pid] = m; x['generando'] = [g for g in x.get('generando') or [] if g != pid]
+            _liga_cambia(did, pon)
+    with ThreadPoolExecutor(3) as ex: list(ex.map(una, faltan))
+    def fin(x):
+        x['trabajando'] = None; nf = len(x.get('fallidas') or {})
+        x['aviso'] = f'Galería lista ({len(x.get("galeria") or {})} imágenes){" · " + str(nf) + " fallaron" if nf else ""}: marca tus favoritas, la portada y el cierre, y pulsa Siguiente.'; x['aviso_paso'] = 3
+    _liga_cambia(did, fin)
+def _liga_lado(Dd, pid, s, nota=''):   # genera (o rehace) un lado del duelo para un prompt
+    M = _liga_lee(Dd['id'], 'max.json'); prompt = _liga_prompt_de(Dd, M, pid)
+    dn = (M.get('duelo') or {}).get(pid); nota = nota or (dn.get('nota') if isinstance(dn, dict) else dn if isinstance(dn, str) else '') or ''
+    if nota and nota.strip(): prompt = _liga_reescribe(prompt, nota.strip())
+    gl = Dd.get('galeria_lado') or 'b'; carpeta = 'galeria' if s == gl else 'campeon'
+    img, mini, _, _, usd = _liga_gen(Dd['id'], Dd[s].get('modelo'), prompt, f'{carpeta}/{pid}' + ('' if s != gl or not nota else f'-{int(time.time())}'))
+    def pon(x):
+        g = (x.get('galeria') or {}).get(pid) or {}; par = x.setdefault('duelo', {}).setdefault(pid, {})
+        par.setdefault(gl, g.get('img')); par.setdefault(gl + '_mini', g.get('mini')); par[s] = img; par[s + '_mini'] = mini
+        if s == gl: x.setdefault('galeria', {})[pid] = dict(g, img=img, mini=mini, v=str(int(time.time())))
+        x['generando'] = [q for q in x.get('generando') or [] if q != pid]; _liga_suma(x, usd)
+    _liga_cambia(Dd['id'], pon)
+def _liga_responde(did, pid, estado, texto):
+    _liga_cambia(did, lambda x: x.setdefault('respuestas', {}).update({pid: {'estado': estado, 'texto': texto, 't': time.strftime('%Y-%m-%d %H:%M:%S')}}))
+def _liga_peticion(did, p):   # lo que pide el equipo desde la página
+    tipo, ref, texto = p.get('tipo'), str(p.get('ref') or ''), str(p.get('texto') or '')
+    _liga_responde(did, p['id'], 'trabajando', 'En ello…'); Dd = _liga_lee(did, 'duelo.json'); gl = Dd.get('galeria_lado') or 'b'; otro = 'a' if gl == 'b' else 'b'
+    if tipo == 'generar':
+        pids = [x for x in p.get('pids') or [] if isinstance(x, str)]
+        _liga_cambia(did, lambda x: x.update({'generando': sorted(set(x.get('generando') or []) | set(pids)), 'trabajando': {'paso': 4, 'texto': f'Generando {len(pids)} con {Dd[otro]["nombre"]}…'}}))
+        from concurrent.futures import ThreadPoolExecutor
+        c = (getattr(_ctx, 'uid', None), getattr(_ctx, 'email', ''), getattr(_ctx, 'interno', False)); mal = []
+        def una(pid):
+            with como(*c):
+                try: _liga_lado(_liga_lee(did, 'duelo.json'), pid, otro)
+                except Exception as er: mal.append(pid); plog(f'liga {did} {pid} ✕ {er}'); _liga_cambia(did, lambda x: x.update({'generando': [q for q in x.get('generando') or [] if q != pid]}))
+        with ThreadPoolExecutor(3) as ex: list(ex.map(una, pids))
+        _liga_cambia(did, lambda x: x.update({'trabajando': None, 'aviso': f'Listas {len(pids) - len(mal)} parejas con {Dd[otro]["nombre"]}' + (f' ({len(mal)} fallaron: vuelve a pedirlas)' if mal else '') + '. Revisa títulos e imágenes y pulsa Siguiente para el carrusel.', 'aviso_paso': 4}))
+        return _liga_responde(did, p['id'], 'hecha', f'Listas {len(pids) - len(mal)} de {len(pids)} con {Dd[otro]["nombre"]}.')
+    if tipo in ('regenerar', 'imagen'):
+        pid, _, s = ref.partition(':'); s = p.get('lado') or s or gl
+        nota = texto.split(':', 1)[1].strip() if tipo == 'regenerar' and ':' in texto else texto
+        _liga_cambia(did, lambda x: x.update({'generando': sorted(set(x.get('generando') or []) | {pid})}))
+        _liga_lado(_liga_lee(did, 'duelo.json'), pid, s if s in ('a', 'b') else gl, nota)
+        return _liga_responde(did, p['id'], 'hecha', 'Hecha de nuevo' + (' con tu nota.' if nota else '.'))
+    if tipo == 'mas':
+        n = max(1, min(int(p.get('n') or 3), 12)); nuevos = _liga_prompts(did, n, extra=True); _liga_galeria(did, nuevos)
+        return _liga_responde(did, p['id'], 'hecha', f'{len(nuevos)} imágenes más en la galería.')
+    if tipo == 'secuencia':
+        def pon(x):
+            for w in x.get('mundos') or []:
+                if w.get('id') == ref: k = sum(1 for q in w.get('secuencias') or [] if '-tuya' in str(q.get('id'))) + 1; w.setdefault('secuencias', []).insert(0, {'id': f'{ref}-tuya{k}', 'tono': '✍️ La tuya', 'titulo': texto[:48], 'resumen': texto})
+        _liga_cambia(did, pon); return _liga_responde(did, p['id'], 'hecha', 'Tu historia ya está en la lista: elígela.')
+    if tipo == 'mundo':
+        _liga_mundos(did, solo=ref, nota=texto); return _liga_responde(did, p['id'], 'hecha', 'Mundo rehecho con tu comentario.')
+    if tipo == 'nuevo':
+        if Dd.get('mundos'): _liga_mundos(did, nota=texto)
+        return _liga_responde(did, p['id'], 'hecha', 'Tenido en cuenta para los mundos.')
+    if tipo == 'publicar':
+        return _liga_responde(did, p['id'], 'hecha', 'Publicar en Notion e Instagram lo hace de momento Claude desde el ordenador de Max: avísale. Mientras, descarga el carrusel en el paso Carrusel.')
+    return _liga_responde(did, p['id'], 'hecha', 'Recibido.')
+_LIGA_EN = set(); _LIGA_EN_L = threading.Lock()
+def _liga_tarea(did, clave, fn):   # una tarea a la vez por (duelo, clave), en su hilo y como la cuenta de Aria (sus claves)
+    with _LIGA_EN_L:
+        if (did, clave) in _LIGA_EN: return
+        _LIGA_EN.add((did, clave))
+    def corre():
+        try:
+            with como(ARIA_UID, ARIA_EMAIL, True): fn()
+        except Exception as e:
+            plog(f'liga {did} {clave} ✕ {e}')
+            try:
+                _liga_cambia(did, lambda x: x.update({'trabajando': None, 'aviso': '⚠️ ' + str(e)[:300], **({'error_' + clave: str(e)[:300]} if clave in ('mundos', 'prompts') else {})}))
+                if clave.startswith('q'): _liga_responde(did, clave, 'error', '⚠️ ' + str(e)[:300])
+            except Exception: pass
+        finally:
+            with _LIGA_EN_L: _LIGA_EN.discard((did, clave))
+    threading.Thread(target=corre, daemon=True).start()
+def _liga_vigia():   # el trabajador: mira los duelos cada pocos segundos y hace lo que toca
+    while True:
+        time.sleep(5)
+        try:
+            if not os.path.isdir(LIGA_WEB): continue
+            for did in sorted(os.listdir(LIGA_WEB)):
+                if not _liga_ok_id(did): continue
+                Dd = _liga_lee(did, 'duelo.json'); M = _liga_lee(did, 'max.json'); listo = M.get('listo') or {}; resp = Dd.get('respuestas') or {}
+                if not Dd.get('mundos') and not Dd.get('error_mundos'): _liga_tarea(did, 'mundos', lambda d=did: _liga_mundos(d)); continue
+                if '1' in listo and M.get('secuencia') and not Dd.get('prompts') and not Dd.get('error_prompts'): _liga_tarea(did, 'prompts', lambda d=did: _liga_prompts(d)); continue
+                if Dd.get('prompts') and ('2' in listo or ('1' in listo and not M.get('revisar_prompts'))):
+                    if any(p['id'] not in (Dd.get('galeria') or {}) and p['id'] not in (Dd.get('fallidas') or {}) for p in Dd['prompts']): _liga_tarea(did, 'galeria', lambda d=did: _liga_galeria(d))
+                for p in M.get('peticiones') or []:
+                    if isinstance(p, dict) and p.get('id') and p['id'] not in resp: _liga_tarea(did, p['id'], lambda d=did, q=p: _liga_peticion(d, q))
+        except Exception as e: plog('liga vigía ✕ ' + str(e)[:200])
 def _biblio_ok(rel):
     if rel.startswith(BIBLIO_OK) or rel == 'assets/personajes/_lienzo.jpg': return True
     try: return rel.startswith('assets/live/') and rel in _comun()['live']
@@ -1318,6 +1545,10 @@ class H(SimpleHTTPRequestHandler):
     def _estatico(self, cabeza=False):   # modo servidor: solo /assets/… — primero la casa de la cuenta; si no está y es de la biblioteca común, al almacén público. Nada más (ni código, ni catálogo, ni registros, ni lo de otra cuenta)
         ruta = urllib.parse.unquote(urllib.parse.urlparse(self.path).path); rel = _rel_ok(ruta[1:]) if ruta.startswith('/assets/') else None
         if not rel: return self._corta(404)
+        if rel.startswith('assets/liga/'):   # 🥊 Workflows: solo el equipo
+            full = os.path.join(LIGA_WEB, *rel.split('/')[2:]) if LIGA_WEB else ''
+            if not liga_puede() or not full or not _dentro(LIGA_WEB, full) or not os.path.isfile(full): return self._corta(404)
+            self._cc = 'private, no-cache'; self._fijo = full; return super().do_HEAD() if cabeza else super().do_GET()
         fa = _aria_fich(rel) if not os.path.isfile(os.path.join(casa(), *rel.split('/'))) else None
         if fa: self._cc = 'private, no-cache'; self._fijo = fa; return super().do_HEAD() if cabeza else super().do_GET()
         if rel.startswith('assets/prestamo/'):   # del personaje de otro creador, al navegador solo se le sirve el avatar (su ficha y su cuerpo los lee el servidor al generar)
@@ -1356,7 +1587,8 @@ class H(SimpleHTTPRequestHandler):
     def _get(self):
         u = urllib.parse.urlparse(self.path); q = urllib.parse.parse_qs(u.query)
         if SERVIDOR:
-            if u.path in ('/api/calendario', '/api/liga', '/api/liga/zip'): return self._json(404, {'error': 'no disponible en el servidor'})   # Notion y los duelos son del ordenador de Max
+            if u.path == '/api/calendario': return self._json(404, {'error': 'no disponible en el servidor'})
+            if u.path in ('/api/liga', '/api/liga/zip') and not liga_puede(): return self._json(403, {'error': 'Los Workflows son solo para el equipo'})   # Notion y los duelos son del ordenador de Max
             if u.path == '/api/catalogo': return self._json(200, _cat_load()[1])   # el catálogo que ve esta cuenta: el común + su capa
         if u.path == '/api/claves':   # estado de las APIs, sin enseñar nunca las claves
             A = _apis_estado(); w = A[0]
@@ -1528,7 +1760,7 @@ class H(SimpleHTTPRequestHandler):
             return self._json(200, {'jobs': out})
         if u.path == '/api/estado': return self._json(*_estado((q.get('id') or [''])[0]))
         if u.path == '/api/liga/zip':   # 🥊 descarga del carrusel (o de todo el duelo) en un zip
-            did = (q.get('id') or [''])[0]; carpeta = os.path.join(LIGA_DIR, did)
+            did = (q.get('id') or [''])[0]; carpeta = os.path.join(liga_dir(), did)
             if not re.fullmatch(r'[A-Za-z0-9_.-]+', did) or did.startswith('.') or not os.path.isdir(carpeta): return self._json(400, {'error': 'duelo desconocido'})
             import io, zipfile
             todo = (q.get('todo') or [''])[0] == '1'; buf = io.BytesIO()
@@ -1543,13 +1775,13 @@ class H(SimpleHTTPRequestHandler):
             self.send_response(200); self.send_header('Content-Type', 'application/zip'); self.send_header('Content-Disposition', f'attachment; filename="{nombre}"')
             self.send_header('Content-Length', str(len(data))); self.end_headers(); self.wfile.write(data); return
         if u.path == '/api/liga':   # 🥊 Duelos: lo que prepara Claude (duelo.json) + lo que elige Max (max.json), por carpeta de assets/liga
-            os.makedirs(LIGA_DIR, exist_ok=True); out = []
-            for d in sorted(os.listdir(LIGA_DIR), reverse=True):
-                f = os.path.join(LIGA_DIR, d, 'duelo.json')
+            os.makedirs(liga_dir(), exist_ok=True); out = []
+            for d in sorted(os.listdir(liga_dir()), reverse=True):
+                f = os.path.join(liga_dir(), d, 'duelo.json')
                 if d.startswith('.') or not os.path.isfile(f): continue
                 try: duelo = json.load(open(f, encoding='utf-8'))
                 except Exception as e: duelo = {'id': d, 'titulo': d + ' (duelo.json roto)', 'error': str(e)}
-                duelo['id'] = d; mf = os.path.join(LIGA_DIR, d, 'max.json')
+                duelo['id'] = d; mf = os.path.join(liga_dir(), d, 'max.json')
                 try: mx = json.load(open(mf, encoding='utf-8')) if os.path.isfile(mf) else {}
                 except Exception: mx = {}
                 out.append({'duelo': duelo, 'max': mx})
@@ -1647,6 +1879,52 @@ class H(SimpleHTTPRequestHandler):
                     if con == ARIA_CID and not any(m.get('x') == ARIA_RESP for m in M): M.append({'de': ARIA_CID, 'x': ARIA_RESP, 't': time.time() + 1})
                     del M[:-500]; _com_guarda(d); return self._json(200, {'ok': True})
             return self._json(400, {'error': 'acción desconocida'})
+        if self.path.startswith('/api/liga'):   # 🥊 Workflows · Duelos: crear, guardar lo que se elige, montar el carrusel (v209: recuperado y también en la web, solo el equipo)
+            if not liga_puede(): return self._json(403, {'error': 'Los Workflows son solo para el equipo'})
+            n = int(self.headers.get('Content-Length') or 0); body = json.loads(self.rfile.read(n) or b'{}'); LD = liga_dir(); os.makedirs(LD, exist_ok=True)
+            if self.path == '/api/liga/nuevo':
+                a, b = body.get('a') or {}, body.get('b') or {}
+                if not a.get('nombre') or not b.get('nombre') or a.get('modelo') == b.get('modelo'): return self._json(400, {'error': 'elige dos modelos distintos'})
+                if SERVIDOR and (a.get('modelo') not in LIGA_WS or b.get('modelo') not in LIGA_WS): return self._json(400, {'error': 'En la web solo se pueden enfrentar Nano Banana Pro, GPT Image 2.5 y Seedream 5.0 (Pro o Flash)'})
+                slug = lambda s0: re.sub(r'[^a-z0-9]+', '-', str(s0).lower()).strip('-')[:24] or 'modelo'
+                base = time.strftime('%Y-%m-%d') + f"-{slug(a['nombre'])}-vs-{slug(b['nombre'])}"; did = base; k = 2
+                while os.path.exists(os.path.join(LD, did)): did = f'{base}-{k}'; k += 1
+                meses = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic']; t = time.localtime()
+                quien = 'el servidor' if SERVIDOR else 'Claude'
+                duelo = {'id': did, 'titulo': f"{a['nombre']} vs {b['nombre']}", 'fecha': f'{t.tm_mday} {meses[t.tm_mon - 1]} {t.tm_year}', 'paso': 1,
+                         'a': {'nombre': str(a['nombre'])[:40], 'modelo': str(a.get('modelo', ''))[:60], 'nuevo': True}, 'b': {'nombre': str(b['nombre'])[:40], 'modelo': str(b.get('modelo', ''))[:60]},
+                         'nota_inicial': str(body.get('nota') or '')[:4000], 'creado': time.strftime('%Y-%m-%d %H:%M:%S'), 'por': getattr(_ctx, 'email', '') or '',
+                         'galeria_lado': 'a' if a.get('modelo') == 'nano_banana_pro' else 'b',
+                         'aviso': f'Duelo creado. {quien[0].upper() + quien[1:]} está preparando los mundos con su portada y sus historias; aparecen aquí solos.', 'aviso_paso': 1,
+                         'trabajando': {'paso': 1, 'texto': 'Preparando los mundos con su portada y sus historias…'},
+                         'mundos': [], 'tests': LIGA_TESTS if SERVIDOR else [], 'prompts': [], 'galeria': {}, 'duelo': {}, 'carrusel': [], 'cierre': []}
+                os.makedirs(os.path.join(LD, did))
+                json.dump(duelo, open(os.path.join(LD, did, 'duelo.json'), 'w', encoding='utf-8'), ensure_ascii=False, indent=1)
+                json.dump({}, open(os.path.join(LD, did, 'max.json'), 'w', encoding='utf-8'))
+                plog(f'liga nuevo duelo {did}'); return self._json(200, {'ok': True, 'id': did})
+            did = str(body.get('id') or '')
+            if not _liga_ok_id(did): return self._json(400, {'error': 'duelo desconocido'})
+            carpeta = os.path.join(LD, did)
+            if self.path == '/api/liga/abrir':
+                if SERVIDOR: return self._json(400, {'error': 'en la web, descarga el carrusel con el botón ⬇'})
+                import subprocess
+                destino = os.path.join(carpeta, 'carrusel') if os.path.isdir(os.path.join(carpeta, 'carrusel')) else carpeta
+                subprocess.run(['open', destino]); return self._json(200, {'ok': True, 'ruta': destino})
+            if self.path == '/api/liga/montar':
+                import subprocess
+                py = LIGA_PY_SRV if SERVIDOR and os.path.isfile(LIGA_PY_SRV) else LIGA_PY   # en el servidor de pruebas de este Mac, el de los scripts
+                r = subprocess.run([sys.executable, py, 'montar', did], capture_output=True, text=True, timeout=900, env=dict(os.environ, ARIA_LIGA_BASE=LD))
+                plog(f'liga montar {did} → {r.returncode}')
+                if r.returncode: return self._json(500, {'error': (r.stderr or r.stdout or '')[-500:]})
+                return self._json(200, {'ok': True, 'salida': r.stdout[-500:]})
+            if self.path == '/api/liga':   # guarda lo que se elige (mundo, prompts, favoritas, portada, cierre, notas, «listo») en max.json
+                mx = body.get('max') or {}
+                if not isinstance(mx, dict): return self._json(400, {'error': 'max no es un objeto'})
+                mx['actualizado'] = time.strftime('%Y-%m-%d %H:%M:%S'); mx['por'] = getattr(_ctx, 'email', '') or ''
+                with _liga_cerrojo(did + ':max'):
+                    tmp = os.path.join(carpeta, f'.max.json.tmp{threading.get_ident()}'); json.dump(mx, open(tmp, 'w', encoding='utf-8'), ensure_ascii=False, indent=1); os.replace(tmp, os.path.join(carpeta, 'max.json'))
+                return self._json(200, {'ok': True})
+            return self._json(404, {'error': 'no'})
         if self.path == '/api/aria/publicar':   # «Publicar para todos»: la Aria de equipo pasa a ser la que ven todos los miembros
             if aria_fija() or (getattr(_ctx, 'email', '') or '').lower() not in ARIA_PUBLICAN: return self._json(403, {'error': 'Publicar a Aria para todos solo lo puede hacer Max'})
             try: return self._json(200, _aria_publica())
@@ -2493,6 +2771,7 @@ if __name__ == '__main__':
         if not SECRETO: print('AVISO: falta ARIA_SECRETO (32+ caracteres): no se podrán guardar claves de API', flush=True)
         if os.environ.get('ARIA_DEV') == '1' and not DEV: print('ARIA_DEV se ignora: el servidor no escucha en 127.0.0.1', flush=True)
     _jobs_restore(); threading.Thread(target=_vigilante, daemon=True).start()
+    if SERVIDOR and LIGA_WEB: os.makedirs(LIGA_WEB, exist_ok=True); threading.Thread(target=_liga_vigia, daemon=True).start()   # 🥊 Workflows en la web
     if SERVIDOR: print(f'ARIA STUDIO v{VERSION} · modo servidor en http://{HOST}:{PORT} · datos en {DATOS} · orígenes: {", ".join(ORIGENES)}' + (' · ATAJO DE PRUEBAS X-Dev-Uid ACTIVO' if DEV else '') + (f' · 🎁 saldo regalo ACTIVO (tope {CASA_TOPE:g} $/mes)' if CASA_KEY else ' · saldo regalo apagado (falta ARIA_CASA_WS)'), flush=True)
     else: print(f'ARIA MIRROR · puente en http://localhost:{PORT} · modelo {MODEL} · clave {"OK" if _hf_listo() else "FALTA (ID:SECRET)"}')
     ThreadingHTTPServer((HOST, PORT), H).serve_forever()

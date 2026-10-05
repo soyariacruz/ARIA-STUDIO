@@ -120,10 +120,11 @@ function buildNav() {
   { nav.appendChild(el('div', 'nav-sep')); const cb = el('button', 'more soon combtn' + (COM && COM.on ? ' on' : ''), '<span>🤝</span>Comunidad<i>pronto</i>'); cb.title = 'Comunidad: los creadores y sus personajes, colaboraciones y mensajes';
       cb.onclick = () => { if (COM.on) return; if (!COM.visto && window.devIntro) { devIntro('Comunidad', () => { COM.visto = true; comAbre(); }); return; } comAbre(); }; nav.appendChild(cb); }
   if (state.interno) {
-    const wb = el('button', 'more', '<span>🧰</span>Workflows'); wb.title = 'Programas internos del equipo (solo cuentas autorizadas)'; wb.onclick = () => navMore(wb, [['🥊', 'Duelos', () => { if (window.CUENTA && CUENTA.web) { toast('Los Duelos funcionan de momento en la app del ordenador de Max; en la web, muy pronto'); return; } location.href = 'liga.html'; }, 'interno']]); nav.appendChild(wb); }
+    const wb = el('button', 'more', '<span>🧰</span>Workflows'); wb.title = 'Programas internos del equipo (solo cuentas autorizadas)'; wb.onclick = () => navMore(wb, [['🥊', 'Duelos', () => { if (window.CUENTA && CUENTA.web) { ligaAbre(); return; } location.href = 'liga.html'; }, 'interno']]); nav.appendChild(wb); }
   nav.appendChild(el('div', 'sp')); comPonAvisos();
 }
 function setTab(k) {
+  if ($('#ligapage')) ligaCierra();   // cualquier sección del menú cierra los Workflows
   if (k === 'lugar' && !LUGARES_ON) k = 'vestidor';   // Lugares, pronto
   if (COM && COM.on) comCierra();   // cualquier sección del menú cierra la página de la Comunidad
   if (state.spinning || state.busy) return;
@@ -1861,6 +1862,11 @@ const comAVC = new Map();   // avatares de otros creadores: se piden con la sesi
 function comAvPon(root) { root.querySelectorAll('img[data-av]').forEach(async im => { const u = im.dataset.av; im.removeAttribute('data-av'); try { if (!comAVC.has(u)) comAVC.set(u, fetch(u).then(r => r.ok ? r.blob() : null).then(bl => bl ? URL.createObjectURL(bl) : '')); const src = await comAVC.get(u); if (src) im.src = src; else im.replaceWith(Object.assign(document.createElement('i'), { textContent: im.alt || '?' })); } catch (e) {} }); }
 const comAv = (c, p, cls) => `<span class="comav ${cls || ''}">${p && p.src ? `<img src="${p.src}" alt="">` : p && p.avatar ? `<img data-av="/api/comunidad/avatar?c=${c.cid}&p=${encodeURIComponent(p.pid)}" alt="${esc((p.nombre || '?')[0])}">` : `<i>${esc(((p && p.nombre) || comNom(c) || '?')[0])}</i>`}</span>`;
 const comNom = c => c.aria ? 'Aria Cruz' : (c.alias || (c.personajes && c.personajes[0] ? 'Creador de ' + c.personajes[0].nombre : 'Creador sin nombre'));
+function ligaAbre() { // 🧰 Workflows › Duelos en la web: la página de Duelos en un marco, a la derecha del menú (el menú sigue a la vista)
+  if (COM && COM.on) comCierra(); let pg = $('#ligapage'); if (pg) return; pg = el('div', ''); pg.id = 'ligapage'; document.body.appendChild(pg);
+  const coloca = () => { const m = document.querySelector('main'), n = $('#nav'); const r = m ? m.getBoundingClientRect() : { top: 0, bottom: innerHeight }; pg.style.top = Math.round(r.top) + 'px'; pg.style.bottom = Math.max(0, Math.round(innerHeight - r.bottom)) + 'px'; pg.style.left = Math.round(n ? n.getBoundingClientRect().right : 0) + 'px'; };
+  coloca(); window.addEventListener('resize', coloca); pg._coloca = coloca; const fr = document.createElement('iframe'); fr.src = 'liga.html?v=' + Date.now(); fr.title = 'Workflows · Duelos'; pg.appendChild(fr); }
+window.ligaCierra = function () { const pg = $('#ligapage'); if (!pg) return; window.removeEventListener('resize', pg._coloca); pg.remove(); };
 const comAvC = (c, cls) => c.aria ? comAv(c, c.personajes[0], cls) : `<span class="comav cre ${cls || ''}"><i>${esc((((c.yo ? COM.D.alias : comNom(c)) || 'Tú').trim()[0] || '?').toUpperCase())}</i></span>`;   // un creador (una cuenta) se pinta con su inicial; un personaje, con su foto
 const comCta = cid => COM.D.cuentas.find(c => c.cid === cid) || { cid, alias: '', personajes: [] };
 const comYo = () => COM.D.cuentas.find(c => c.yo) || { cid: COM.D.yo, alias: '', personajes: [], yo: true };
