@@ -1553,6 +1553,78 @@ nav .navlib button.more span{font-size:9px}
 .bibrow.bibone{flex-wrap:wrap}.bibrow .bibmodo{flex:1 0 100%!important;min-width:100%;display:flex;gap:6px;margin-top:2px}.bibm{flex:1;white-space:nowrap;text-align:center;font:inherit;font-size:10.5px;font-weight:700;letter-spacing:.04em;padding:5px 10px;border-radius:999px;border:1px solid var(--line);background:transparent;color:var(--mut);cursor:pointer}.bibm:hover{border-color:var(--acc);color:var(--acc)}.bibm.on{background:var(--acc);border-color:var(--acc);color:#fff}.igup{cursor:pointer;opacity:.8}.genfoot{z-index:6;padding-bottom:4px}.chardd{position:fixed;left:auto;right:auto;top:auto;width:300px;margin-top:0;z-index:300;max-height:420px}.accdd .it.accadd .emo{background:rgba(236,72,153,.10);border:2px dashed var(--acc);color:var(--acc);font-weight:700}.accnone{display:flex;flex-direction:column;gap:4px;padding:10px 10px 8px;font-size:12px}.accnone span{font-size:11px;line-height:1.4;color:var(--mut)}.galmet{margin:0 0 8px;font-weight:700;color:var(--acc)}.galchars{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:8px}.galchar{display:inline-flex;align-items:center;gap:7px;font-size:13px;font-weight:700;padding:4px 12px 4px 4px;border-radius:999px;border:1px solid var(--line);background:rgba(255,255,255,.05)}.galchar img,.galchar i{width:26px;height:26px;border-radius:50%;object-fit:cover;display:block;background:var(--acc)}.galacts{display:flex;gap:8px;align-items:stretch}.galacts .btn.w{flex:1;width:auto}.galacts .btn.eye{flex:none;width:44px;padding:0;display:flex;align-items:center;justify-content:center}.igrow{display:block;margin-top:4px}.igrow .igurl{display:block;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}.igrow .igurl:has(input){overflow:visible;white-space:normal}
 .f3card.big.mini.pjaddb .f3img{height:132px!important}
 .pjc[draggable=true]{cursor:grab}.pjc.drag{opacity:.35}.pjc.dropL{box-shadow:-4px 0 0 var(--acc)}.pjc.dropR{box-shadow:4px 0 0 var(--acc)}
+
+/* ===== v262 · MÓVIL (< 768 px). Nada de esto toca el ordenador ===== */
+@media (hover:none) and (pointer:coarse){.cell .addc{opacity:1}}
+@media (max-width:47.99em){
+  html,body{height:auto;overflow-x:hidden;overflow-y:auto}
+  body{display:block;height:auto;min-height:100vh;padding-bottom:calc(64px + env(safe-area-inset-bottom))}
+  header{position:sticky;top:0;z-index:80;height:48px;padding:0 10px;gap:8px}
+  header .meter,header .chip,#btnConsole,#guia{display:none!important}
+  header .right{gap:6px}
+  .console{display:none!important}
+  main{display:flex;flex-direction:column;min-height:0}
+  /* el menú: una barra fija abajo, que se desliza de lado */
+  nav{position:fixed;left:0;right:0;bottom:0;z-index:90;flex-direction:row;align-items:center;justify-content:flex-start;height:calc(62px + env(safe-area-inset-bottom));padding:4px 6px env(safe-area-inset-bottom);gap:2px;border-right:0;border-top:1px solid var(--line);overflow-x:auto;overflow-y:hidden;box-shadow:0 -6px 20px rgba(0,0,0,.06)}
+  nav .nav-sep{display:none}
+  nav .navmain,nav .navlib{flex-direction:row;padding:3px;gap:2px;flex:0 0 auto}
+  nav button{width:64px;min-height:50px;font-size:8.5px}
+  nav button span{font-size:19px}
+  /* una sola columna: imagen → ajustes → galería */
+  .stage{display:contents}
+  .mirror-wrap{order:1;height:56vh;min-height:300px;padding:10px 12px 6px}
+  .profcard{order:1;padding:14px!important}
+  .stage.solo .profcard{display:block}
+  .cinebox{order:1;height:56vw;min-height:220px}
+  aside#side{order:2;border-right:0;overflow:visible;max-height:none}
+  .picker{order:3;min-height:60vh}
+  /* Creaciones: las carpetas, en una fila que se desliza encima de la galería */
+  .picker.concarp{display:flex!important;flex-direction:column}
+  .picker.concarp>#carpSide{display:flex!important;flex-direction:row;flex-wrap:nowrap;overflow-x:auto;gap:6px;padding:8px 12px;border-right:0;border-bottom:1px solid var(--line);scrollbar-width:none}
+  #carpSide .carplt{display:none}
+  #carpSide .carpl{flex:0 0 auto;width:auto;white-space:nowrap;border:1px solid var(--line);border-radius:999px;padding:6px 10px;display:inline-flex;gap:6px;align-items:center}
+  #carpSide .carpl.hija{display:none}
+  #carpSide .carpl small{margin-left:2px}
+  /* Mis creaciones: sin el hueco de la imagen grande (tocar una abre su ventana) */
+  body[data-tab=creaciones] .mirror-wrap,body[data-tab=creaciones] aside#side{display:none!important}
+  body[data-tab=creaciones] .picker{min-height:calc(100vh - 110px)}
+  /* bibliotecas: la imagen un poco más baja */
+  body[data-tab=biblio] .mirror-wrap,body[data-tab=videoteca] .mirror-wrap,body[data-tab=vestidor] .mirror-wrap,body[data-tab=hair] .mirror-wrap,body[data-tab=expr] .mirror-wrap,body[data-tab=photo] .mirror-wrap,body[data-tab=movie] .mirror-wrap,body[data-tab=cartoon] .mirror-wrap{height:46vh}
+  /* la ventana de una creación: imagen arriba, su ficha debajo, a pantalla completa */
+  .gal{z-index:130;align-items:stretch}
+  .galbox{grid-template-columns:minmax(0,1fr)!important;grid-template-rows:62vh auto!important;width:100vw!important;height:100%!important;border-radius:0!important;overflow-y:auto}
+  .galmedia{height:62vh!important}
+  .galside{border-left:0!important;overflow:visible!important;border-top:1px solid var(--line)}
+  .galnav{width:38px;height:38px}
+  .galzoom{display:none!important}
+  .galx{top:10px;right:10px}
+  /* Perfil: primero la tarjeta del personaje, luego sus fichas */
+  body[data-tab=perfil] aside#side{order:0}
+  body[data-tab=perfil] .profcard{order:1}
+  /* Comunidad y Mensajes: entre la cabecera y el menú de abajo */
+  .cpfilrow{flex-wrap:wrap;gap:8px}
+  .cpfilrow .cpchips{flex:1 1 100%;flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none}
+  .cpfilrow .cpchips button{flex:0 0 auto;white-space:nowrap}
+  .cpfilrow .cpbusca2{flex:1;min-width:0}
+  .livedot{white-space:nowrap;font-size:10px;padding:5px 8px;letter-spacing:.08em}
+  header .casa{white-space:nowrap;padding:5px 8px;font-size:10.5px}
+  header .logo{font-size:13px;letter-spacing:.16em}
+  header .right{min-width:0;flex-shrink:1;overflow:hidden}
+  .themebtn{flex:none}
+  #compage{top:48px!important;left:0!important;right:0!important;bottom:calc(62px + env(safe-area-inset-bottom))!important;border-left:0!important}
+  /* el botón de feedback, encima del menú y más pequeño */
+  #fbw{bottom:calc(72px + env(safe-area-inset-bottom))!important;right:10px!important}
+  #fbw .fbbtn{width:44px;height:44px;font-size:18px}
+  .gridhd{padding:8px 12px 6px;flex-wrap:wrap}
+  .gridhd .search{width:120px}
+  .gridhd .hint{display:none}
+  /* ventanas: a pantalla completa */
+  .fxm{align-items:flex-end}
+  .fxm>.devbox,.fxm>div:first-child{max-width:100vw;max-height:92vh;overflow:auto;border-radius:18px 18px 0 0}
+  .devbox{width:100vw!important}
+  /* lo que en el ordenador sale al pasar el ratón, en el móvil siempre a la vista */
+  .cell .addc{opacity:1}
+}
 </style>
 <script>
 /* Escala de la interfaz (v153, adaptable desde la v163). Todas las medidas en px de las hojas de estilo se multiplican por ESCALA.
@@ -1562,7 +1634,7 @@ nav .navlib button.more span{font-size:9px}
 (function () {
   var BASE = 1.08, REF_W = 1560, REF_H = 850, MIN = 0.8;
   try { var g = parseFloat(localStorage.getItem('am_escala')); if (g >= 0.8 && g <= 1.6) BASE = g; } catch (e) {}
-  var calc = function () { var k = Math.min(1, innerWidth / REF_W, innerHeight / REF_H); return Math.max(MIN, Math.round(BASE * k * 50) / 50); };   // pasos de 0,02
+  var calc = function () { if (innerWidth < 768) return 1;   /* v262: el móvil, a tamaño real */ try { if (innerWidth < 1200 && matchMedia('(pointer:coarse)').matches) return 1; } catch (e) {}   /* y las tabletas táctiles */ var k = Math.min(1, innerWidth / REF_W, innerHeight / REF_H); return Math.max(MIN, Math.round(BASE * k * 50) / 50); };   // pasos de 0,02
   var Z = calc(); window.ESCALA = Z;
   var re = /url\([^)]*\)|(\d*\.?\d+)px\b/g;
   var esc = function (t) { return Z === 1 ? t : t.replace(re, function (m, n) { if (n === undefined) return m; var v = parseFloat(n); return v <= 1 ? m : (Math.round(v * Z * 100) / 100) + 'px'; }); };   // las líneas de 1 px se quedan en 1 px
@@ -1576,6 +1648,7 @@ nav .navlib button.more span{font-size:9px}
 /* Móviles y tabletas (v167): ARIA STUDIO es para ordenador. Se avisa en pantallas pequeñas o táctiles; «Continuar de todos modos» lo recuerda en esa pestaña. */
 (function () {
   var lado = Math.min(screen.width || 9999, screen.height || 9999); var tactil = (navigator.maxTouchPoints || 0) > 1;
+  return;   // v262: ya hay versión para móvil y tableta
   if (!(lado < 700 || (tactil && lado < 1000))) return; try { if (sessionStorage.getItem('am_movil_ok')) return; } catch (e) {}
   var pon = function () { if (document.getElementById('movil')) return; var d = document.createElement('div'); d.id = 'movil';
     d.innerHTML = '<h1>ARIA<b>STUDIO</b></h1><span>💻</span><p><b>Ábrelo en el ordenador.</b><br>ARIA STUDIO está hecho para la pantalla de un portátil o un sobremesa: en el móvil no se ve ni funciona bien.</p><button type="button">Copiar el enlace</button><a href="#">Continuar de todos modos</a>';

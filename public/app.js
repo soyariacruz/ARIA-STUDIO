@@ -128,6 +128,7 @@ function buildNav() {
   nav.appendChild(el('div', 'sp')); comPonAvisos();
 }
 function setTab(k) {
+  try { document.body.dataset.tab = k; } catch (e) {}   // v262: para el móvil (qué se enseña en cada sección)
   if ($('#ligapage')) ligaCierra();   // cualquier sección del menú cierra los Workflows
   if (k === 'lugar' && !LUGARES_ON) k = 'vestidor';   // Lugares, pronto
   if (COM && COM.on) comCierra();   // cualquier sección del menú cierra la página de la Comunidad
@@ -296,6 +297,7 @@ function paint(it, fast) {
 function select(it, fast, scroll) {
   if (state.busy) return;
   const t = TABS[state.tab]; const prev = cur(); state.sel[state.tab] = it; if (t === TABS.crear && !it.custom) applyRecipe(it); paint(it, fast); renderSide();
+  if (innerWidth < 768 && !fast && state.tab !== 'creaciones') try { scrollTo({ top: 0, behavior: 'smooth' }); } catch (e) {}   // v262: en el móvil, al tocar un elemento se sube a verlo
   if (scroll) { setCompact(false); centerOn(it, true); }
   if (!fast && prev !== it && t !== TABS.perfil) { const ex = LIVE ? existingImage(state.tab, it) : null; log(`<span class="g">▸</span> ${t.label.toLowerCase()} <span class="w">«${it.name}»</span> <span class="g">· ${ex ? (it.live ? 'generada antes por la API · se enseña sin gastar' : 'ya generada · caché local · 0 ms') : LIVE ? 'sin generar todavía' : 'look precomputado · caché local · 0 ms'}</span>`); }
 }
@@ -1615,7 +1617,7 @@ function rasgosNode(list, editable, owner) {
   if (editable) { const ad = el('button', 'chadd', '＋'); ad.title = 'Añadir un rasgo'; ad.onclick = () => { const inp = el('input', 'pjin edin chin'); inp.placeholder = 'Nuevo rasgo'; ad.replaceWith(inp); inp.focus(); let done = false; const fin = s1 => { if (done) return; done = true; const v = inp.value.trim(); if (s1 && v) profSave({ 'datos.rasgos': list.concat([v]) }, owner); else renderSide(); }; inp.onblur = () => fin(true); inp.onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); inp.blur(); } if (e.key === 'Escape') { e.preventDefault(); fin(false); } }; }; ch.appendChild(ad); }
   return ch;
 }
-function renderSide() {
+function renderSide() { try { document.body.dataset.tab = state.tab; } catch (e) {}
   side.querySelectorAll('video').forEach(v => { try { v.pause(); v.removeAttribute('src'); v.load(); } catch (e) {} });   // que ningún vídeo del panel siga sonando tras re-pintar
   const t = TABS[state.tab], it = cur(); side.innerHTML = '';
   if (state.pick && state.tab === state.pick.tab && it) { pickPanel(it); return; }
