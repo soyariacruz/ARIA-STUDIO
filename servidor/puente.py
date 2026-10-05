@@ -38,7 +38,7 @@ MAX_CUERPO = 40 * 1024 * 1024    # tope de una petición en modo servidor
 MAX_BIBLIO = 200 * 1024 * 1024   # tope de un fichero de la biblioteca común al copiarlo
 KINDS = ('vestidor', 'hair', 'expr')   # las bibliotecas a las que una cuenta puede añadir lo suyo
 _UUID = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
-VERSION = 227
+VERSION = 228
 _ctx = threading.local()   # la cuenta del hilo: la pone cada petición (y, a mano, cada hilo de fondo)
 def uid(): return getattr(_ctx, 'uid', None)   # en local siempre None
 DUENOS = tuple(e.strip().lower() for e in (os.environ.get('ARIA_DUENOS') or 'mix1994max@gmail.com').split(',') if e.strip())   # cuentas que pueden cambiar a Aria Cruz (en la web, la de Max)
@@ -1382,7 +1382,7 @@ def _carp_haz(b):   # crear · renombrar · borrar · meter · sacar → la list
         elif ac == 'sacar': q = set(files); c['items'] = [x for x in c['items'] if x not in q]
         elif ac == 'compartir':   # v220: con un creador con el que colaboro (on: false = dejar de compartir)
             con = str(b.get('con') or ''); on = bool(b.get('on', True)); yo = _cid()
-            if not SERVIDOR or con == yo or con not in _com_cuentas(): raise ValueError('Ese creador no existe.')
+            if not SERVIDOR or con == yo or (con not in _com_cuentas() and not _demo_cid(con)): raise ValueError('Ese creador no existe.')
             if on and not _com_trato(_com_lee(), yo, con): raise ValueError('Solo puedes compartir carpetas con creadores con los que colaboras.')
             ya = con in (c.get('comp') or []); S = [x for x in c.get('comp') or [] if x != con] + ([con] if on else [])
             if S: c['comp'] = S[:50]
@@ -1612,6 +1612,9 @@ def _com_lee():
     for x in d['sol']:   # v223: un permiso con plazo se apaga solo al vencer (se ve terminado en cuanto se lee; se guarda con el siguiente cambio)
         if isinstance(x, dict) and x.get('estado') == 'aceptada' and isinstance(x.get('hasta'), (int, float)) and x['hasta'] < ahora: x['estado'] = 'terminada'; x['caducada'] = True; x['t2'] = x['hasta']
     return d
+def _demo_cid(cid): return isinstance(cid, str) and cid.startswith('demo-') and not aria_fija() and any(c['cid'] == cid for c in COM_DEMO)   # un creador de ejemplo, y quien pregunta es del equipo
+def _com_pjs(CU, cid): return [dict(p) for c in COM_DEMO if c['cid'] == cid for p in c['personajes']] if str(cid).startswith('demo-') else _com_personajes(CU[cid])
+DEMO_HOLA = '👋 Soy un creador de ejemplo: solo lo ve el equipo. He aceptado tu solicitud automáticamente para que pruebes cómo funciona (mensajes, plazos, compartir carpetas). Con mis personajes no se puede generar.'
 PLAZOS = {1: '24 horas', 7: '7 días', 30: '30 días'}
 def _plazo(v):
     try: v = int(v)
@@ -1994,7 +1997,7 @@ class H(SimpleHTTPRequestHandler):
             return self._json(200, {'ok': True, 'n': _com_avisos(d, yo)})
         if u.path == '/api/comunidad/chat':   # la conversación con otra cuenta (y se da por leída)
             yo = _cid(); con = (q.get('con') or [''])[0]
-            if not (con == ARIA_CID or re.fullmatch(r'c[0-9a-f]{14}', con)) or con == yo: return self._json(400, {'error': 'conversación no válida'})
+            if not (con == ARIA_CID or re.fullmatch(r'c[0-9a-f]{14}', con) or _demo_cid(con)) or con == yo: return self._json(400, {'error': 'conversación no válida'})
             with _com_l:
                 d = _com_lee(); M = d['msgs'].get(_com_par(yo, con)) or []
                 if M and (d['visto'].get(yo) or {}).get(con, 0) < M[-1].get('t', 0): d['visto'].setdefault(yo, {})[con] = time.time(); _com_guarda(d)
@@ -2146,13 +2149,15 @@ class H(SimpleHTTPRequestHandler):
                     d['alias'][yo] = re.sub(r'\s+', ' ', str(body.get('nombre') or '')).strip()[:40]; _com_guarda(d); return self._json(200, {'ok': True, 'alias': d['alias'][yo]})
                 if ac == 'solicitar':
                     para = body.get('para', ''); pid = body.get('pid') or None; msg = str(body.get('msg') or '').strip()[:500]
-                    if para not in CU or para == yo: return self._json(400, {'error': 'esa cuenta no existe'})
-                    if pid and not any(x['pid'] == pid for x in _com_personajes(CU[para])): return self._json(400, {'error': 'ese personaje ya no está público'})
+                    if (para not in CU and not _demo_cid(para)) or para == yo: return self._json(400, {'error': 'esa cuenta no existe'})
+                    if pid and not any(x['pid'] == pid for x in _com_pjs(CU, para)): return self._json(400, {'error': 'ese personaje ya no está público'})
                     if any(x for x in d['sol'] if {x.get('de'), x.get('para')} == {yo, para} and (x.get('pid') or None) == pid and x.get('estado') in ('pendiente', 'aceptada')): return self._json(400, {'error': 'ya hay una solicitud o una colaboración con ese personaje'})
                     if not _com_tope('sol', 20): return self._json(429, {'error': 'demasiadas solicitudes seguidas: prueba dentro de un rato'})
                     x = {'id': 's' + hashlib.sha1(os.urandom(12)).hexdigest()[:12], 'de': yo, 'para': para, 'pid': pid, 'msg': msg, 'estado': 'pendiente', 't': time.time()}; d['sol'].append(x)
                     if msg: d['msgs'].setdefault(_com_par(yo, para), []).append({'de': yo, 'x': msg, 't': time.time(), 'sol': x['id']})
-                    PJ_ = _com_personajes(CU[para]); ab = {q['pid'] for q in PJ_ if q.get('abierto')}
+                    PJ_ = _com_pjs(CU, para); ab = {q['pid'] for q in PJ_ if q.get('abierto')}
+                    if _demo_cid(para):   # v228: un creador de ejemplo acepta solo, para poder probar el recorrido entero
+                        x['estado'] = 'aceptada'; x['demo'] = True; x['t2'] = time.time(); d['msgs'].setdefault(_com_par(yo, para), []).append({'de': para, 'x': DEMO_HOLA, 't': time.time() + 0.01, 'auto': True}); _com_guarda(d); return self._json(200, {'ok': True, 'solicitud': x})
                     if (pid in ab) if pid else (bool(PJ_) and len(ab) == len(PJ_)):   # v223: personaje abierto a colaborar → entra directo, sin esperar (solo SFW: el NSFW siempre lo activan los dos a mano)
                         x['estado'] = 'aceptada'; x['abierta'] = True; x['t2'] = time.time(); nom = next((q['nombre'] for q in PJ_ if q['pid'] == pid), None) if pid else None
                         d['msgs'].setdefault(_com_par(yo, para), []).append({'de': yo, 'x': '🤝 He empezado a colaborar con ' + (nom or 'tus personajes') + ' (lo tienes abierto a colaborar). Puedes retirar el permiso cuando quieras, aquí arriba.', 't': time.time() + 0.01, 'auto': True})
@@ -2195,8 +2200,8 @@ class H(SimpleHTTPRequestHandler):
                     _com_guarda(d); return self._json(200, {'ok': True, 'solicitud': x, 'nsfw': _sol_nsfw(x)})
                 if ac == 'mensaje':
                     con = body.get('con', ''); txt = str(body.get('texto') or '').strip()[:2000]
-                    if (con not in CU and con != ARIA_CID) or con == yo or not txt: return self._json(400, {'error': 'mensaje no válido'})
-                    if con != ARIA_CID and not _com_personajes(CU[con]) and not any(x for x in d['sol'] if {x.get('de'), x.get('para')} == {yo, con} and x.get('estado') in ('pendiente', 'aceptada')): return self._json(403, {'error': 'para escribirle, primero pídele una colaboración'})
+                    if (con not in CU and con != ARIA_CID and not _demo_cid(con)) or con == yo or not txt: return self._json(400, {'error': 'mensaje no válido'})
+                    if con != ARIA_CID and not _demo_cid(con) and not _com_personajes(CU[con]) and not any(x for x in d['sol'] if {x.get('de'), x.get('para')} == {yo, con} and x.get('estado') in ('pendiente', 'aceptada')): return self._json(403, {'error': 'para escribirle, primero pídele una colaboración'})
                     if not _com_tope('msg', 120): return self._json(429, {'error': 'demasiados mensajes seguidos: prueba dentro de un rato'})
                     M = d['msgs'].setdefault(_com_par(yo, con), []); M.append({'de': yo, 'x': txt, 't': time.time()})
                     if con == ARIA_CID and not any(m.get('x') == ARIA_RESP for m in M): M.append({'de': ARIA_CID, 'x': ARIA_RESP, 't': time.time() + 1})
