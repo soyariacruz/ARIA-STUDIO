@@ -38,7 +38,7 @@ MAX_CUERPO = 40 * 1024 * 1024    # tope de una petición en modo servidor
 MAX_BIBLIO = 200 * 1024 * 1024   # tope de un fichero de la biblioteca común al copiarlo
 KINDS = ('vestidor', 'hair', 'expr')   # las bibliotecas a las que una cuenta puede añadir lo suyo
 _UUID = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
-VERSION = 229
+VERSION = 230
 _ctx = threading.local()   # la cuenta del hilo: la pone cada petición (y, a mano, cada hilo de fondo)
 def uid(): return getattr(_ctx, 'uid', None)   # en local siempre None
 DUENOS = tuple(e.strip().lower() for e in (os.environ.get('ARIA_DUENOS') or 'mix1994max@gmail.com').split(',') if e.strip())   # cuentas que pueden cambiar a Aria Cruz (en la web, la de Max)
@@ -1357,7 +1357,7 @@ def _carp_fp(): return os.path.join(_dir(), 'carpetas.json')
 def _carp_lee():
     try: L = json.load(open(_carp_fp(), encoding='utf-8')).get('carpetas') or []
     except Exception: L = []
-    return [{'id': c['id'], 'nombre': str(c.get('nombre') or 'Carpeta')[:40], 't': c.get('t') or 0, 'items': [x for x in c.get('items') or [] if isinstance(x, str)], **({'colab': c['colab']} if isinstance(c.get('colab'), str) else {}), **({'comp': [x for x in c['comp'] if isinstance(x, str)]} if isinstance(c.get('comp'), list) and c['comp'] else {})} for c in L if isinstance(c, dict) and isinstance(c.get('id'), str)]
+    return [{'id': c['id'], 'nombre': str(c.get('nombre') or 'Carpeta')[:40], 't': c.get('t') or 0, 'items': [x for x in c.get('items') or [] if isinstance(x, str)], **({'colab': c['colab']} if isinstance(c.get('colab'), str) else {}), **({'padre': c['padre']} if isinstance(c.get('padre'), str) else {}), **({'comp': [x for x in c['comp'] if isinstance(x, str)]} if isinstance(c.get('comp'), list) and c['comp'] else {})} for c in L if isinstance(c, dict) and isinstance(c.get('id'), str)]
 def _carp_haz(b):   # crear · renombrar · borrar · meter · sacar → la lista entera, ya guardada
     ac = str(b.get('accion') or ''); nombre = ' '.join(str(b.get('nombre') or '').split())[:40]
     files = list(dict.fromkeys(x.split('?')[0] for x in (b.get('files') or []) if isinstance(x, str)))[:CARP_ITEMS]
@@ -1374,7 +1374,19 @@ def _carp_haz(b):   # crear · renombrar · borrar · meter · sacar → la list
             if not nombre: raise ValueError('Ponle un nombre a la carpeta.')
             if any(x is not c and x['nombre'].lower() == nombre.lower() for x in L): raise ValueError('Ya tienes una carpeta con ese nombre.')
             c['nombre'] = nombre
-        elif ac == 'borrar': L.remove(c)
+        elif ac == 'borrar':
+            L.remove(c)
+            for x in L:
+                if x.get('padre') == c['id']: x.pop('padre', None)   # sus subcarpetas no se pierden: suben un nivel
+        elif ac == 'mover':   # v230: dentro de otra carpeta (un solo nivel) o fuera (padre vacío)
+            pa = str(b.get('padre') or '')
+            if not pa: c.pop('padre', None)
+            else:
+                p = next((x for x in L if x['id'] == pa), None)
+                if not p or p is c: raise ValueError('Esa carpeta no existe.')
+                if p.get('padre'): raise ValueError('Solo se puede un nivel: esa carpeta ya está dentro de otra.')
+                if any(x.get('padre') == c['id'] for x in L): raise ValueError('Solo se puede un nivel: esta carpeta ya tiene carpetas dentro.')
+                c['padre'] = pa
         elif ac == 'meter':
             ya = set(c['items']); nuevos = [x for x in files if x not in ya and _creacion(x)]   # solo creaciones DE LA CUENTA
             if len(c['items']) + len(nuevos) > CARP_ITEMS: raise ValueError(f'Una carpeta admite hasta {CARP_ITEMS} creaciones.')
@@ -2017,10 +2029,10 @@ class H(SimpleHTTPRequestHandler):
             uu = _com_cuentas().get(cid, '__no__')
             if uu == '__no__' or not _pid_ok(pid) or not any(x['pid'] == pid for x in _com_personajes(uu, cid == _cid())): return self._corta(404)
             with como(uu): base = os.path.join(pers_dir(), pid)
-            fp = next((os.path.join(base, n) for n in (('foto.jpg', 'vista_frente.jpg', 'avatar.jpg') if grande else ('avatar.jpg', 'foto.jpg')) if os.path.isfile(os.path.join(base, n))), None)
+            fp = next((os.path.join(base, n) for n in (('vista_frente.jpg', 'avatar.jpg', 'foto.jpg') if grande else ('avatar.jpg', 'foto.jpg')) if os.path.isfile(os.path.join(base, n))), None)   # v230: en grande, su vista de frente o la foto de perfil que ha encuadrado su dueña (no la hoja entera)
             if not fp: return self._corta(404)
             if grande:   # la foto de la ficha, en grande para la galería (copia de 640 px, hecha una vez)
-                fg = os.path.join(base, '.galeria_640.jpg')
+                fg = os.path.join(base, '.galeria_640_' + os.path.basename(fp))
                 if not os.path.isfile(fg) or os.path.getmtime(fg) < os.path.getmtime(fp):
                     try:
                         from PIL import Image
@@ -2955,6 +2967,16 @@ class H(SimpleHTTPRequestHandler):
                 threading.Thread(target=_arch, daemon=True).start()
             except Exception as e: plog('archivar Notion ✕ ' + str(e))
             plog(f'prenda borrada {pid} → papelera'); return self._json(200, {'ok': True, 'promoted': kids[0]['id'] if kids else None})
+        if self.path == '/api/fav':   # v230: marca/desmarca una creación como favorita en su ficha .json
+            n = int(self.headers.get('Content-Length') or 0); body = json.loads(self.rfile.read(n) or b'{}'); rel = body.get('file', '')
+            full = _creacion(rel)
+            if not full: return self._json(400, {'error': 'archivo no válido'})
+            meta = {}
+            if os.path.exists(full + '.json'):
+                try: meta = json.load(open(full + '.json'))
+                except Exception: meta = {}
+            meta['fav'] = bool(body.get('fav')); meta.setdefault('file', rel)
+            json.dump(meta, open(full + '.json', 'w'), ensure_ascii=False, indent=1); return self._json(200, {'ok': True, 'fav': meta['fav']})
         if self.path == '/api/ocultar':   # marca/desmarca una creación como oculta en su ficha .json
             n = int(self.headers.get('Content-Length') or 0); body = json.loads(self.rfile.read(n) or b'{}'); rel = body.get('file', '')
             full = _creacion(rel)
