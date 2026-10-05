@@ -309,7 +309,7 @@ const MODELOS = [
   ['FLUX 3', 'flux_3_image'], ['NANO BANANA PRO', 'nano_banana_pro'], ['NANO BANANA 2', 'nano_banana_2'], ['GPT IMAGE 2.5', 'gpt_image_2_5'],
   ['GPT IMAGE 2', 'gpt_image_2'], ['SEEDREAM 5.0 PRO', 'seedream_v5_pro'], ['SEEDREAM 5.0 FLASH', 'seedream_5_0_flash'], ['SEEDREAM 4.5', 'seedream_v4_5'],
   ['IDEOGRAM 4.5', 'ideogram_4_5'], ['GROK IMAGE 2.0', 'grok_image_2_0'], ['KLING O1 IMAGE', 'kling_omni_image'], ['FLUX.2', 'flux_2'], ['SOUL 2', 'soul_2']]
-  .filter(([n, id]) => !WEB || ['nano_banana_pro', 'gpt_image_2_5', 'seedream_v5_pro', 'seedream_5_0_flash'].includes(id));   // en la web: los que el servidor genera (WaveSpeed)
+;
 // ---------------------------------------------------------------- v4 · micrófono y comentarios para Claude
 const DRAFTS = {}; let MIC = null;
 function micToggle(key, ta, btn) {
@@ -341,18 +341,21 @@ function cajaPeticion(tipo, ref, placeholder, titulo) {
   return w;
 }
 // ---------------------------------------------------------------- v4 · «＋ Nuevo duelo»
-function modalNuevo() {
+async function modalNuevo() {
   const m = el('div', 'modal'); m.onclick = e => { if (e.target === m) m.remove(); };
-  const opts = MODELOS.map(([n, id]) => `<option value="${id}">${n}</option>`).join('');
+  let opts = MODELOS.map(([n, id]) => `<option value="${id}" data-n="${n}">${n}</option>`).join('');
+  if (WEB) { let L = []; try { L = (await fetch('/api/liga/modelos').then(x => x.json())).modelos || []; } catch (e) {}   // en la web: todos los generadores con referencia de WaveSpeed y Higgsfield
+    if (!L.length) { toast('No hay generadores: falta la clave de WaveSpeed en la cuenta de Aria'); return; } const G = {}; L.forEach(x => (G[x.grupo] = G[x.grupo] || []).push(x));
+    opts = Object.keys(G).map(g => `<optgroup label="${esc(g)}">` + G[g].map(x => `<option value="${esc(x.id)}" data-n="${esc(x.nombre)}">${esc(x.nombre)} · $${x.precio.toFixed(3)}</option>`).join('') + '</optgroup>').join(''); }
   const c = el('div', 'caja', `<h3>🥊 Nuevo duelo</h3><p class="sub" style="margin:0">Elige quién pelea contra quién. El modelo nuevo se genera primero; Claude te propone 3 mundos con su portada y la batería de tests.</p>
     <div class="fila"><div><label class="k">Modelo nuevo</label><select id="ma">${opts}</select></div><div class="vs">VS</div><div><label class="k">Contra</label><select id="mb">${opts}</select></div></div>`);
-  c.querySelector('#mb').value = 'nano_banana_pro';
+  c.querySelector('#mb').value = WEB ? 'google/nano-banana-pro/edit' : 'nano_banana_pro';
   c.appendChild(cajaPeticion('nuevo', 'duelo', 'Opcional: una idea de mundo, una secuencia, lo que quieras probar… (puedes dictarlo con el micro)', 'Tu idea para Claude (opcional)'));
   c.querySelector('.pet .env').remove();
   const a = el('div', 'acts'); a.style.marginTop = '14px'; const ok = el('button', 'b acc big', 'Crear duelo'); const no = el('button', 'b big', 'Cancelar'); no.onclick = () => m.remove();
   ok.onclick = async () => {
     const sa = c.querySelector('#ma'), sb = c.querySelector('#mb'); if (sa.value === sb.value) { toast('Elige dos modelos distintos'); return; }
-    const nom = s => s.options[s.selectedIndex].text; ok.disabled = true; ok.textContent = 'Creando…';
+    const nom = s => s.options[s.selectedIndex].dataset.n || s.options[s.selectedIndex].text; ok.disabled = true; ok.textContent = 'Creando…';
     try { const r = await fetch('/api/liga/nuevo', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ a: { nombre: nom(sa), modelo: sa.value }, b: { nombre: nom(sb), modelo: sb.value }, nota: (DRAFTS['nuevo:duelo'] || '').trim() }) }).then(x => x.json());
       if (!r.ok) { toast('No se pudo crear: ' + (r.error || '')); ok.disabled = false; ok.textContent = 'Crear duelo'; return; }
       DRAFTS['nuevo:duelo'] = ''; m.remove(); history.replaceState(null, '', '?id=' + r.id); D = null; await cargar(); toast('Duelo creado: Claude prepara los mundos');

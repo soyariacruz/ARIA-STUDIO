@@ -38,14 +38,16 @@ MAX_CUERPO = 40 * 1024 * 1024    # tope de una petición en modo servidor
 MAX_BIBLIO = 200 * 1024 * 1024   # tope de un fichero de la biblioteca común al copiarlo
 KINDS = ('vestidor', 'hair', 'expr')   # las bibliotecas a las que una cuenta puede añadir lo suyo
 _UUID = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
-VERSION = 210
+VERSION = 212
 _ctx = threading.local()   # la cuenta del hilo: la pone cada petición (y, a mano, cada hilo de fondo)
 def uid(): return getattr(_ctx, 'uid', None)   # en local siempre None
 DUENOS = tuple(e.strip().lower() for e in (os.environ.get('ARIA_DUENOS') or 'mix1994max@gmail.com').split(',') if e.strip())   # cuentas que pueden cambiar a Aria Cruz (en la web, la de Max)
 ARIA_UID = (os.environ.get('ARIA_UID') or '1e9592c3-a0be-420a-ae93-77b0434bf471').strip().lower()   # la cuenta principal de Aria (soyariacruz@gmail.com): ahí vive la Aria de equipo
 ARIA_PUBLICAN = DUENOS + tuple(e.strip().lower() for e in (os.environ.get('ARIA_PUBLICAN') or 'soyariacruz@gmail.com').split(',') if e.strip())   # quién pulsa «Publicar para todos»
+NSFW_OK = tuple(e.strip().lower() for e in (os.environ.get('ARIA_NSFW') or 'mix1994max@gmail.com,soyariacruz@gmail.com').split(',') if e.strip())   # las ÚNICAS cuentas con NSFW en la web (Max, 5 oct 2026)
+def nsfw_ok(): return (not SERVIDOR) or ((getattr(_ctx, 'email', '') or '').lower() in NSFW_OK and not getattr(_ctx, 'ver_miembro', False))
 def aria_fija():   # para los miembros Aria es un personaje fijo: se ve y se usa, no se edita. La editan Max, el equipo (cuentas internas) y la propia cuenta de Aria
-    return SERVIDOR and not ((getattr(_ctx, 'email', '') or '').lower() in DUENOS or getattr(_ctx, 'interno', False) or getattr(_ctx, 'uid', None) == ARIA_UID)
+    return SERVIDOR and (getattr(_ctx, 'ver_miembro', False) or not ((getattr(_ctx, 'email', '') or '').lower() in DUENOS or getattr(_ctx, 'interno', False) or getattr(_ctx, 'uid', None) == ARIA_UID))
 def _aria_casa():   # la carpeta de la Aria de equipo, para quien puede editarla (si no, None)
     if not SERVIDOR or not DATOS or aria_fija() or not re.fullmatch(r'[0-9a-f-]{36}', ARIA_UID): return None
     d = os.path.join(DATOS, 'usuarios', ARIA_UID); os.makedirs(d, mode=0o700, exist_ok=True); return d
@@ -194,6 +196,50 @@ Reglas de los prompts de imagen (en INGLÉS, largos, detallados y CREATIVOS; nad
 - Encuadre vertical 9:16 pensado para recortarse a media diapositiva: Aria Y lo que se pone a prueba en la franja central.
 - Todo en positivo (sin «no…»), el texto que deba salir escrito va entre comillas. El móvil nunca se ve en la foto. Nada de desnudos ni contenido sexual.
 - Cada prompt pone a prueba UN test de la batería; puede haber varios prompts del mismo test."""
+_LIGA_CAT = {'t': 0, 'L': []}; _LIGA_CAT_L = threading.Lock()
+_LIGA_FUERA = re.compile(r'lora|sequential|layer|genfill|fill|inpaint|blend|background|try-on|product-holding|multiple-angles|material|ic-light|pulid|redux|ai-instagram|ai-travel|patina|chrono|instant-character|ideogram-character')
+_LIGA_SABE = {'prompt', 'images', 'image', 'aspect_ratio', 'size', 'resolution', 'quality', 'output_format', 'num_images', 'seed', 'enable_base64_output', 'enable_sync_mode', 'enable_safety_checker', 'negative_prompt', 'guidance_scale', 'num_inference_steps', 'strength', 'variant', 'prompt_optimization_mode'}
+def _liga_catalogo(forzar=False):   # los generadores de imagen con referencia que se pueden usar en un duelo: WaveSpeed (su catálogo, cada 6 h) + Higgsfield por API
+    with _LIGA_CAT_L:
+        if _LIGA_CAT['L'] and not forzar and time.time() - _LIGA_CAT['t'] < 6 * 3600: return _LIGA_CAT['L']
+        L = []
+        if load_ws():
+            _ctx.ws_modo = 'propia'
+            try:
+                d = ws('GET', '/api/v3/models'); M0 = d.get('data') if isinstance(d.get('data'), list) else (d.get('data') or {}).get('items') or []
+            except Exception as e: plog('liga catálogo ✕ ' + str(e)[:160]); M0 = []
+            for m in M0:
+                try: rs = m['api_schema']['api_schemas'][0]['request_schema']; p = rs.get('properties') or {}
+                except Exception: continue
+                mid = str(m.get('model_id') or '')
+                if m.get('type') != 'image-to-image' or 'prompt' not in p or not ('images' in p or 'image' in p) or _LIGA_FUERA.search(mid) or not set(rs.get('required') or []) <= _LIGA_SABE: continue
+                L.append({'id': mid, 'nombre': str(m.get('name') or mid), 'prov': 'ws', 'grupo': mid.split('/')[0], 'precio': float(m.get('base_price') or 0), 'p': p})
+        if _hf_listo():
+            for k in ('mstudio', 'grok', 'qwen'):
+                if k in MODELS: L.append({'id': 'hf:' + k, 'nombre': MODELS[k]['name'] + ' (Higgsfield)', 'prov': 'hf', 'grupo': 'higgsfield', 'precio': float(MODELS[k]['usd']['high'])})
+        L.sort(key=lambda x: (x['grupo'], x['nombre'].lower()))
+        if L: _LIGA_CAT['L'] = L; _LIGA_CAT['t'] = time.time()
+        return L
+def _liga_cat_de(mid): return next((x for x in _LIGA_CAT['L'] or _liga_catalogo() if x['id'] == mid), None)
+def _liga_payload(c, prompt, url):   # el cuerpo de la petición a partir de lo que pide el modelo (su esquema): 9:16, 2K y calidad alta si los tiene
+    p = c['p']; b = {'prompt': prompt}
+    if 'images' in p: b['images'] = [url]
+    else: b['image'] = url
+    en = lambda k: (p.get(k) or {}).get('enum') or []
+    if 'aspect_ratio' in p and (not en('aspect_ratio') or '9:16' in en('aspect_ratio')): b['aspect_ratio'] = '9:16'
+    if 'size' in p:
+        op = en('size')
+        if op:
+            def ar(x):
+                try: w, h = [int(v) for v in re.split(r'[*x×]', str(x))]; return abs(w / h - 9 / 16) + (0 if w * h >= 1500000 else 0.2)
+                except Exception: return 9
+            b['size'] = min(op, key=ar)
+        elif (p['size'].get('type') == 'string'): b['size'] = '1152*2048'
+    for k, pref in (('resolution', ('2k', '2K', '1.5k', '1k')), ('quality', ('high', 'hd')), ('output_format', ('jpeg', 'jpg'))):
+        e = en(k)
+        if e: b[k] = next((v for v in pref if v in e), e[0] if k != 'quality' else (p[k].get('default') or e[-1]))
+    if 'num_images' in p: b['num_images'] = 1 if not en('num_images') or 1 in en('num_images') else min(en('num_images'))   # se usa la primera
+    return b
 def liga_dir(): return LIGA_WEB if SERVIDOR else LIGA_DIR
 def liga_puede(): return (not SERVIDOR) or not aria_fija()   # en la web: solo el equipo
 _liga_ll = threading.Lock(); _liga_cer = {}
@@ -218,20 +264,30 @@ def _liga_claude(sistema, texto, max_tokens=16000):   # → el JSON que devuelve
     try: return json.loads(t[t.index('{'):t.rindex('}') + 1])
     except Exception: raise RuntimeError('Claude no devolvió un JSON válido: ' + t[:160])
 def _liga_gen(did, modelo_id, prompt, dest):   # una imagen 9:16 con la ficha de Aria como referencia → (img, mini, w, h, usd); dest = 'galeria/p01'
-    mk = LIGA_WS.get(modelo_id)
-    if not mk: raise RuntimeError(f'«{modelo_id}» no se puede generar desde la web: aquí solo hay Nano Banana Pro, GPT Image 2.5 y Seedream 5.0 (WaveSpeed)')
-    if not load_ws(): raise RuntimeError('Falta la clave de WaveSpeed en la cuenta de Aria («🔑 Mis APIs»)')
-    M = WS_MODELS[mk]; _ctx.ws_modo = 'propia'
-    ficha = str((_cat_load()[1].get('perfil') or {}).get('ficha') or 'assets/perfil/ficha360.jpg').split('?')[0]
-    payload = M['body'](prompt, [resolve_ws({'path': ficha})], aspect_ok('9:16'), 'high')
-    r = ws('POST', '/api/v3/' + M['ep'], payload); rid = (r.get('data') or {}).get('id')
-    if not rid: raise RuntimeError('WaveSpeed no devolvió id')
-    url = None
-    for _ in range(240):
-        time.sleep(4); w = ws('GET', f'/api/v3/predictions/{rid}/result').get('data') or {}
-        if w.get('status') == 'completed': url = (w.get('outputs') or [None])[0]; break
-        if w.get('status') == 'failed': raise RuntimeError('WaveSpeed: ' + str(w.get('error') or 'falló')[:200])
-    if not url: raise RuntimeError('WaveSpeed no terminó a tiempo')
+    ficha = str((_cat_load()[1].get('perfil') or {}).get('ficha') or 'assets/perfil/ficha360.jpg').split('?')[0]; url = None; precio = 0.0
+    if str(modelo_id).startswith('hf:'):   # Higgsfield por API (clave de la cuenta de Aria)
+        M = MODELS.get(modelo_id[3:])
+        if not M or not _hf_listo(): raise RuntimeError('Falta la clave de Higgsfield en la cuenta de Aria («🔑 Mis APIs»)')
+        res = api('POST', '/' + M['ep'], M['body'](prompt, [resolve_image({'path': ficha})], aspect_ok('9:16'), 'high')); rid = res.get('request_id'); precio = float(M['usd']['high'])
+        for _ in range(240):
+            time.sleep(4); st = api('GET', f'/requests/{rid}/status')
+            if st.get('status') == 'completed': ims = st.get('images') or (st.get('output') or {}).get('images') or []; url = (ims[0].get('url') if ims and isinstance(ims[0], dict) else ims[0] if ims else None); break
+            if st.get('status') in ('failed', 'nsfw', 'canceled'): raise RuntimeError('Higgsfield: ' + str(st.get('error') or st.get('status'))[:200])
+    else:   # WaveSpeed: los de siempre o cualquiera de su catálogo
+        if not load_ws(): raise RuntimeError('Falta la clave de WaveSpeed en la cuenta de Aria («🔑 Mis APIs»)')
+        _ctx.ws_modo = 'propia'; ref = resolve_ws({'path': ficha}); mk = LIGA_WS.get(modelo_id)
+        if mk: M = WS_MODELS[mk]; ep = M['ep']; payload = M['body'](prompt, [ref], aspect_ok('9:16'), 'high'); precio = float(M['usd']['high'])
+        else:
+            c = _liga_cat_de(modelo_id)
+            if not c or c['prov'] != 'ws': raise RuntimeError(f'«{modelo_id}» no está en el catálogo de WaveSpeed')
+            ep = c['id']; payload = _liga_payload(c, prompt, ref); precio = c['precio']
+        r = ws('POST', '/api/v3/' + ep, payload); rid = (r.get('data') or {}).get('id')
+        if not rid: raise RuntimeError('WaveSpeed no devolvió id: ' + json.dumps(r)[:160])
+        for _ in range(240):
+            time.sleep(4); w = ws('GET', f'/api/v3/predictions/{rid}/result').get('data') or {}
+            if w.get('status') == 'completed': url = (w.get('outputs') or [None])[0]; break
+            if w.get('status') == 'failed': raise RuntimeError('WaveSpeed: ' + str(w.get('error') or 'falló')[:200])
+    if not url: raise RuntimeError('El generador no terminó a tiempo')
     data = urllib.request.urlopen(urllib.request.Request(url, headers={'User-Agent': UA}), timeout=300).read()
     from PIL import Image
     import io as _io
@@ -239,7 +295,7 @@ def _liga_gen(did, modelo_id, prompt, dest):   # una imagen 9:16 con la ficha de
     img = dest + ext; fp = os.path.join(base, *img.split('/')); os.makedirs(os.path.dirname(fp), exist_ok=True); open(fp, 'wb').write(data)
     im = Image.open(_io.BytesIO(data)).convert('RGB'); w0, h0 = im.size; mini = os.path.dirname(dest) + '/mini/' + os.path.basename(dest) + '.jpg'
     mp = os.path.join(base, *mini.split('/')); os.makedirs(os.path.dirname(mp), exist_ok=True); im.thumbnail((480, 960)); im.save(mp, quality=86)
-    return img, mini, w0, h0, float(M['usd']['high'])
+    return img, mini, w0, h0, precio
 def _liga_suma(Dd, usd):   # coste acumulado del duelo
     Dd['coste_usd'] = round(float(Dd.get('coste_usd') or 0) + usd, 3); Dd['coste'] = f"${Dd['coste_usd']:.2f} en imágenes (WaveSpeed)"
 def _liga_textos_de(M, tipos):   # comentarios del equipo de ciertos tipos (para dárselos a Claude)
@@ -282,7 +338,8 @@ def _liga_prompts(did, n=30, extra=False):   # los prompts de la galería a part
     if not P: raise RuntimeError('Claude no escribió prompts')
     k0 = len(ya)
     nuevos = [{'id': f'p{k0 + i + 1:02d}', 'test': int(p.get('test') or 1), 'escena': p.get('escena', ''), 'prompt': p.get('prompt', '')} for i, p in enumerate(P[:n])]
-    lado = Dd.get('galeria_lado') or 'b'; usd = float(WS_MODELS.get(LIGA_WS.get(Dd[lado].get('modelo')), {}).get('usd', {}).get('high', 0.14))
+    lado = Dd.get('galeria_lado') or 'b'; mo = Dd[lado].get('modelo'); c = _liga_cat_de(mo) if mo not in LIGA_WS else None
+    usd = float(WS_MODELS.get(LIGA_WS.get(mo), {}).get('usd', {}).get('high', 0)) if mo in LIGA_WS else float((c or {}).get('precio') or 0.1)
     def pon(x):
         x['prompts'] = (x.get('prompts') or []) + nuevos; x['tests'] = x.get('tests') or tests; x['trabajando'] = None
         x['coste_estimado'] = f"galería de {len(x['prompts'])} imágenes con {x[lado]['nombre']} ≈ ${len(x['prompts']) * usd:.2f} (WaveSpeed)"
@@ -647,7 +704,8 @@ def _off(name):   # API desconectada desde la pantalla: la clave sigue en el ord
     except Exception: return False
 def _env(name, home_file, aunque_off=False):   # primero lo pegado en la pantalla; si no, los ficheros de ~/.claude (los de Max) — en servidor SOLO las de la cuenta, sin caer nunca a las de Max
     if not aunque_off and _off(name): return ''
-    for fp in ((_claves_fp(),) if SERVIDOR else (CLAVES, os.path.expanduser('~/.claude/' + home_file))):
+    equipo = SERVIDOR and DATOS and not getattr(_ctx, 'ver_miembro', False) and (getattr(_ctx, 'interno', False) or (getattr(_ctx, 'email', '') or '').lower() in DUENOS) and getattr(_ctx, 'uid', None) != ARIA_UID
+    for fp in ((_claves_fp(),) + ((os.path.join(DATOS, 'usuarios', ARIA_UID, 'claves.env'),) if equipo else ()) if SERVIDOR else (CLAVES, os.path.expanduser('~/.claude/' + home_file))):   # el equipo, si no tiene la suya, usa la de la cuenta de Aria
         try:
             for line in open(fp):
                 if line.startswith(name + '='):
@@ -1510,7 +1568,7 @@ class H(SimpleHTTPRequestHandler):
         if self.command != 'HEAD': return self._json(code, {'error': msg})
         self.send_response(code); self.send_header('Content-Length', '0'); self.end_headers()
     def _pasa(self, fn):   # TODA petición (GET, POST y HEAD) entra por aquí: guarda de origen y, en servidor, tope de tamaño + sesión + cuenta del hilo
-        self._cc = self._fijo = None; _ctx.lectura = 0; _ctx.prestamo_ok = False; _ctx.prest = None
+        self._cc = self._fijo = None; _ctx.lectura = 0; _ctx.prestamo_ok = False; _ctx.prest = None; _ctx.ver_miembro = False
         if not self._guard(): return self._corta(403, 'origen no permitido')
         if not SERVIDOR: return fn()
         if self.command == 'GET' and self.path.startswith('/api/admin/copia'): return self._copia()
@@ -1521,7 +1579,9 @@ class H(SimpleHTTPRequestHandler):
             if n < 0 or n > MAX_CUERPO: self.close_connection = True; return self._corta(400 if n < 0 else 413, 'petición no válida' if n < 0 else 'petición demasiado grande')
         try: c = _quien(self)
         except _NoEntra as e: return self._corta(e.code, e.msg)
+        if self.headers.get('X-Ver-Como') == 'miembro': c = (c[0], c[1], False)   # 👁 «Ver como miembro» (equipo): sin permisos de equipo
         with como(*c):
+            _ctx.ver_miembro = self.headers.get('X-Ver-Como') == 'miembro'
             try: return fn()
             except Exception as e:
                 plog(f'{self.command} {self.path[:80]} ✕ {type(e).__name__}: {e}')
@@ -1552,7 +1612,7 @@ class H(SimpleHTTPRequestHandler):
         def do_OPTIONS(self):   # la pregunta previa del navegador (CORS) no lleva sesión; solo se contesta a los orígenes de la lista
             self._cc = None
             if not self._guard(): return self._corta(403, 'origen no permitido')
-            self.send_response(204); self.send_header('Access-Control-Allow-Methods', 'GET, POST, HEAD, OPTIONS'); self.send_header('Access-Control-Allow-Headers', 'Authorization, Content-Type'); self.send_header('Access-Control-Max-Age', '600'); self.send_header('Content-Length', '0'); self.end_headers()
+            self.send_response(204); self.send_header('Access-Control-Allow-Methods', 'GET, POST, HEAD, OPTIONS'); self.send_header('Access-Control-Allow-Headers', 'Authorization, Content-Type, X-Ver-Como'); self.send_header('Access-Control-Max-Age', '600'); self.send_header('Content-Length', '0'); self.end_headers()
     def translate_path(self, path): return getattr(self, '_fijo', None) or super().translate_path(path)   # en servidor el fichero ya viene resuelto por _estatico
     def list_directory(self, path): return super().list_directory(path) if not SERVIDOR else self.send_error(404)   # en servidor, nunca listados
     def _estatico(self, cabeza=False):   # modo servidor: solo /assets/… — primero la casa de la cuenta; si no está y es de la biblioteca común, al almacén público. Nada más (ni código, ni catálogo, ni registros, ni lo de otra cuenta)
@@ -1618,7 +1678,7 @@ class H(SimpleHTTPRequestHandler):
             with _cerrojo('mon'): m = _mon_lee()
             return self._json(200, {'ok': True, 'casa': c, 'hist': [{k: h.get(k) for k in ('t', 'usd', 'que', 'modelo', 'n')} for h in reversed(m.get('hist') or [])][:200]})
         if u.path == '/api/ping':
-            return self._json(200, {'ok': True, **({'espacio': {'usado': espacio(), 'tope': CUOTA}, 'aria_mia': not aria_fija()} if SERVIDOR else {}), 'model': MODEL, 'default': CASA_DEF if casa_on() else 'mstudio', 'models': model_list(), 'unavailable': unavailable(), 'ws': bool(load_ws()) or casa_on(), 'casa': casa_info(), 'aspects': ASPECTS, 'key': _hf_listo(), 'ark': bool(load_ark()[0]), 'ark_usd': ARK_USD, 'interno': bool(getattr(_ctx, 'interno', False)) if SERVIDOR else os.path.isfile(os.path.expanduser('~/.claude/notion.env')), **({'servidor': True} if SERVIDOR else {})})   # interno = el ordenador de Max: enseña «Workflows» (en la web alojada, solo las cuentas autorizadas)
+            return self._json(200, {'ok': True, **({'espacio': {'usado': espacio(), 'tope': CUOTA}, 'aria_mia': not aria_fija(), 'nsfw': nsfw_ok()} if SERVIDOR else {}), 'model': MODEL, 'default': CASA_DEF if casa_on() else 'mstudio', 'models': model_list(), 'unavailable': unavailable(), 'ws': bool(load_ws()) or casa_on(), 'casa': casa_info(), 'aspects': ASPECTS, 'key': _hf_listo(), 'ark': bool(load_ark()[0]), 'ark_usd': ARK_USD, 'interno': bool(getattr(_ctx, 'interno', False)) if SERVIDOR else os.path.isfile(os.path.expanduser('~/.claude/notion.env')), **({'servidor': True} if SERVIDOR else {})})   # interno = el ordenador de Max: enseña «Workflows» (en la web alojada, solo las cuentas autorizadas)
         if u.path == '/api/live':   # lo ya generado por la API (assets/live/<item>_<rid>.ext) → la app lo enseña sin volver a generar
             files = {}; allf = []; ld, vd = live_dir(), video_dir()
             for fn in sorted(os.listdir(ld), key=lambda f: os.path.getmtime(os.path.join(ld, f))):
@@ -1772,6 +1832,10 @@ class H(SimpleHTTPRequestHandler):
                    for rid, j in list(jobs.items()) if j.get('owner') == uid() and not j.get('claimed') and not j.get('failed') and str((j.get('meta') or {}).get('personaje') or '_').strip()[:1] not in ('_', '')]
             return self._json(200, {'jobs': out})
         if u.path == '/api/estado': return self._json(*_estado((q.get('id') or [''])[0]))
+        if u.path == '/api/liga/modelos':   # 🥊 generadores para «Nuevo duelo» (catálogo de WaveSpeed + Higgsfield por API, con las claves de la cuenta de Aria)
+            if not liga_puede(): return self._json(403, {'error': 'Los Workflows son solo para el equipo'})
+            with como(ARIA_UID, ARIA_EMAIL, True): L = _liga_catalogo()
+            return self._json(200, {'ok': True, 'modelos': [{k: x[k] for k in ('id', 'nombre', 'prov', 'grupo', 'precio')} for x in L]})
         if u.path == '/api/liga/zip':   # 🥊 descarga del carrusel (o de todo el duelo) en un zip
             did = (q.get('id') or [''])[0]; carpeta = os.path.join(liga_dir(), did)
             if not re.fullmatch(r'[A-Za-z0-9_.-]+', did) or did.startswith('.') or not os.path.isdir(carpeta): return self._json(400, {'error': 'duelo desconocido'})
@@ -1898,7 +1962,9 @@ class H(SimpleHTTPRequestHandler):
             if self.path == '/api/liga/nuevo':
                 a, b = body.get('a') or {}, body.get('b') or {}
                 if not a.get('nombre') or not b.get('nombre') or a.get('modelo') == b.get('modelo'): return self._json(400, {'error': 'elige dos modelos distintos'})
-                if SERVIDOR and (a.get('modelo') not in LIGA_WS or b.get('modelo') not in LIGA_WS): return self._json(400, {'error': 'En la web solo se pueden enfrentar Nano Banana Pro, GPT Image 2.5 y Seedream 5.0 (Pro o Flash)'})
+                if SERVIDOR:
+                    with como(ARIA_UID, ARIA_EMAIL, True): ids = {x['id'] for x in _liga_catalogo()} | set(LIGA_WS)
+                    if a.get('modelo') not in ids or b.get('modelo') not in ids: return self._json(400, {'error': 'Ese generador no se puede usar desde la web (no está en el catálogo de WaveSpeed ni de Higgsfield)'})
                 slug = lambda s0: re.sub(r'[^a-z0-9]+', '-', str(s0).lower()).strip('-')[:24] or 'modelo'
                 base = time.strftime('%Y-%m-%d') + f"-{slug(a['nombre'])}-vs-{slug(b['nombre'])}"; did = base; k = 2
                 while os.path.exists(os.path.join(LD, did)): did = f'{base}-{k}'; k += 1
@@ -1907,7 +1973,7 @@ class H(SimpleHTTPRequestHandler):
                 duelo = {'id': did, 'titulo': f"{a['nombre']} vs {b['nombre']}", 'fecha': f'{t.tm_mday} {meses[t.tm_mon - 1]} {t.tm_year}', 'paso': 1,
                          'a': {'nombre': str(a['nombre'])[:40], 'modelo': str(a.get('modelo', ''))[:60], 'nuevo': True}, 'b': {'nombre': str(b['nombre'])[:40], 'modelo': str(b.get('modelo', ''))[:60]},
                          'nota_inicial': str(body.get('nota') or '')[:4000], 'creado': time.strftime('%Y-%m-%d %H:%M:%S'), 'por': getattr(_ctx, 'email', '') or '',
-                         'galeria_lado': 'a' if a.get('modelo') == 'nano_banana_pro' else 'b',
+                         'galeria_lado': 'a' if a.get('modelo') in ('nano_banana_pro', 'google/nano-banana-pro/edit') else 'b',
                          'aviso': f'Duelo creado. {quien[0].upper() + quien[1:]} está preparando los mundos con su portada y sus historias; aparecen aquí solos.', 'aviso_paso': 1,
                          'trabajando': {'paso': 1, 'texto': 'Preparando los mundos con su portada y sus historias…'},
                          'mundos': [], 'tests': LIGA_TESTS if SERVIDOR else [], 'prompts': [], 'galeria': {}, 'duelo': {}, 'carrusel': [], 'cierre': []}
@@ -2644,6 +2710,7 @@ class H(SimpleHTTPRequestHandler):
             return self._json(200, {'ok': True, 'raw': r})
         if self.path != '/api/generar': return self._json(404, {'error': 'no'})
         n = int(self.headers.get('Content-Length') or 0); body = json.loads(self.rfile.read(n) or b'{}')
+        if not nsfw_ok() and ((body.get('meta') or {}).get('nsfw') or body.get('nsfw') or _es_nsfw(body.get('prompt'))): return self._json(400, {'error': 'El contenido NSFW no está disponible en esta cuenta.'})
         prest = sorted({tuple(str(i.get('path')).split('?')[0].split('/')[2:4]) for i in (body.get('images') or []) if isinstance(i, dict) and str(i.get('path') or '').startswith('assets/prestamo/')})
         if prest and ((body.get('meta') or {}).get('nsfw') or body.get('nsfw') or _es_nsfw(body.get('prompt'))): return self._json(400, {'error': 'Con el personaje de otro creador no se puede generar contenido NSFW.'})
         _ctx.prestamo_ok = bool(prest); _ctx.prest = [p for p in prest if len(p) == 2]
@@ -2690,6 +2757,7 @@ class H(SimpleHTTPRequestHandler):
 
     def do_video(self):   # {mode:i2v|r2v, prompt, image:{path|data}, refs:[{path}], duration, resolution, aspect, audio, item, usd}
         n = int(self.headers.get('Content-Length') or 0); body = json.loads(self.rfile.read(n) or b'{}')
+        if not nsfw_ok() and ((body.get('meta') or {}).get('nsfw') or body.get('nsfw') or _es_nsfw(body.get('prompt'))): return self._json(400, {'error': 'El contenido NSFW no está disponible en esta cuenta.'})
         try:
             mode = body.get('mode') if body.get('mode') in VIDEO_MODELS else 'i2v'; M = VIDEO_MODELS[mode]
             if body.get('provider') == 'ws':   # WaveSpeed: Seedance 2.0 (0,12 $/s a 480p; 720p ×2, 1080p ×5, 4K ×10)

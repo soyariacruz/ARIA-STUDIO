@@ -51,6 +51,7 @@ html.gate #gate{display:flex}
 #gate [hidden]{display:none!important}
 #console,#btnConsole{display:none!important}
 #fbw{bottom:22px!important}
+.vercomo{bottom:32px!important}
 html.sinapi #livedot,html.sinapi .meter{display:none!important}
 .webnote{font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--mut);border:1px solid var(--line);border-radius:999px;padding:6px 10px;white-space:nowrap}
 .cuentabtn{width:30px;height:30px;border-radius:50%;border:1px solid var(--line);background:var(--panel);color:var(--ink);cursor:pointer;padding:0;overflow:hidden;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:12px;flex:none}
@@ -169,7 +170,7 @@ html.sinapi #livedot,html.sinapi .meter{display:none!important}
   }
   window.fetch = (input, init) => {
     if (CU.token && typeof input === 'string' && input.startsWith('/api/')) {   // /api va directo al servidor (sin tope de tamaño ni de tiempo), con la sesión en la cabecera
-      init = Object.assign({}, init); init.headers = new Headers(init.headers || {}); init.headers.set('Authorization', 'Bearer ' + CU.token);
+      init = Object.assign({}, init); init.headers = new Headers(init.headers || {}); init.headers.set('Authorization', 'Bearer ' + CU.token); if (CU.verMiembro) init.headers.set('X-Ver-Como', 'miembro');
       return conReintento(SERVIDOR_URL + input, init);
     }
     return fetch0(input, init);
@@ -230,7 +231,10 @@ html.sinapi #livedot,html.sinapi .meter{display:none!important}
     }
     if (!m) return cara(`La cuenta ${u.email} todavía no tiene acceso. ARIA STUDIO está abierto solo a miembros de la comunidad.`, { salir: true });
     CU.interno = !!m.interno;
-    CU.ariaMia = DUENOS.includes((u.email || '').toLowerCase()) || (!!m.interno && !m.dev);   // Aria de equipo: Max y las cuentas internas la editan (solo para pintar: quien manda es el servidor)
+    CU.ariaMia = DUENOS.includes((u.email || '').toLowerCase()) || (!!m.interno && !m.dev);
+    CU.equipo = CU.ariaMia;   // 👁 el equipo puede ver la web como un miembro normal (se recuerda en este navegador)
+    try { CU.verMiembro = CU.equipo && localStorage.getItem('am_vermiembro') === '1'; } catch (e) { CU.verMiembro = false; }
+    if (CU.verMiembro) { CU.interno = false; CU.ariaMia = false; }   // Aria de equipo: Max y las cuentas internas la editan (solo para pintar: quien manda es el servidor)
     // Lo que la app recuerda en el navegador (la combinación a medias, el personaje elegido, el modelo…) es de UNA cuenta:
     // si en este navegador entra otra, empieza limpia (antes heredaba lo último de la anterior).
     try {
