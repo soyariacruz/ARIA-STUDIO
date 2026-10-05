@@ -38,7 +38,7 @@ MAX_CUERPO = 40 * 1024 * 1024    # tope de una petición en modo servidor
 MAX_BIBLIO = 200 * 1024 * 1024   # tope de un fichero de la biblioteca común al copiarlo
 KINDS = ('vestidor', 'hair', 'expr')   # las bibliotecas a las que una cuenta puede añadir lo suyo
 _UUID = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
-VERSION = 220
+VERSION = 221
 _ctx = threading.local()   # la cuenta del hilo: la pone cada petición (y, a mano, cada hilo de fondo)
 def uid(): return getattr(_ctx, 'uid', None)   # en local siempre None
 DUENOS = tuple(e.strip().lower() for e in (os.environ.get('ARIA_DUENOS') or 'mix1994max@gmail.com').split(',') if e.strip())   # cuentas que pueden cambiar a Aria Cruz (en la web, la de Max)
@@ -868,7 +868,7 @@ def img_bytes(img):   # {data:dataURL} o {path:'assets/…'} (+ crop opcional) �
         head, b64 = img['data'].split(',', 1); ctype = head.split(':')[1].split(';')[0]; data = base64.b64decode(b64)
     else:
         p = busca(img.get('path'))   # solo la casa de la cuenta o la biblioteca común
-        if not p: raise RuntimeError('Ya no tienes permiso para crear con ese personaje (su creador lo ha retirado o lo ha ocultado). Quítalo de la imagen.' if str(img.get('path') or '').startswith('assets/prestamo/') else 'ruta no válida: ' + str(img.get('path', ''))[:200])
+        if not p: raise RuntimeError('Ya no tienes permiso para crear con ese personaje (su creador lo ha retirado o lo ha ocultado). Quítalo de la imagen.' if str(img.get('path') or '').startswith('assets/prestamo/') else 'Esa imagen ya no está compartida contigo (su creador ha dejado de compartir la carpeta). Elige otra imagen a recrear.' if str(img.get('path') or '').startswith('assets/compartida/') else 'ruta no válida: ' + str(img.get('path', ''))[:200])
         data = open(p, 'rb').read(); ctype = mimetypes.guess_type(p)[0] or 'image/jpeg'
     if not ctype.startswith('image/'): return data, ctype
     return img_norm(data, ctype, img.get('crop'))
@@ -1428,7 +1428,7 @@ def _comp_lista(d, yo):   # para la Comunidad: las carpetas que me comparten los
     out = []
     for cid in sorted({(x.get('de') if x.get('para') == yo else x.get('para')) for x in d['sol'] if x.get('estado') == 'aceptada' and yo in (x.get('de'), x.get('para'))} - {yo, None}):
         u, cs = _comp_carpetas(cid, d)
-        for c in cs: out.append({'cid': cid, 'id': c['id'], 'nombre': str(c.get('nombre') or 'Carpeta')[:40], 'n': len(_comp_items(u, c))})
+        for c in cs: out.append({'cid': cid, 'id': c['id'], 'nombre': str(c.get('nombre') or 'Carpeta')[:40], 'n': len(_comp_items(u, c)), 'alias': str(d['alias'].get(cid) or '')[:40]})
     return out
 def _carp_auto(u, base, otro, alias, rel):   # mete «rel» en la carpeta automática «🤝 <otro creador>» de la cuenta u (se crea la primera vez). No depende de la cuenta en curso.
     with _cerrojos_l: lk = _cerrojos.setdefault((u, 'carp'), threading.Lock())
@@ -1989,12 +1989,12 @@ class H(SimpleHTTPRequestHandler):
                     except Exception: fg = fp
                 fp = fg
             b = open(fp, 'rb').read(); self.send_response(200); self.send_header('Content-Type', 'image/jpeg'); self.send_header('Content-Length', str(len(b))); self.send_header('Cache-Control', 'private, max-age=600'); self.end_headers(); self.wfile.write(b); return
-        if u.path == '/api/carpetas': return self._json(200, {'carpetas': _carp_lee()})
+        if u.path == '/api/carpetas': return self._json(200, {'carpetas': _carp_lee(), 'compartidas': _comp_lista(_com_lee(), _cid()) if SERVIDOR else []})   # las mías · y las que me comparten (para la Fototeca)
         if u.path == '/api/compartida':   # v220: lo que hay en una carpeta que me han compartido
             q = urllib.parse.parse_qs(u.query); cid = (q.get('cid') or [''])[0]; kid = (q.get('id') or [''])[0]
             uu, cs = _comp_carpetas(cid); c = next((x for x in cs if x['id'] == kid), None)
             if not c: return self._json(404, {'error': 'Esa carpeta ya no está compartida contigo.'})
-            return self._json(200, {'ok': True, 'nombre': str(c.get('nombre') or 'Carpeta')[:40], 'items': [{'f': f'assets/compartida/{cid}/{kid}/{L[1]}/{L[2]}', 'kind': 'video' if L[1] == 'video' else 'image'} for L in _comp_items(uu, c)]})   # las carpetas de Mis creaciones de la cuenta
+            return self._json(200, {'ok': True, 'nombre': str(c.get('nombre') or 'Carpeta')[:40], 'alias': str(_com_lee()['alias'].get(cid) or '')[:40], 'items': [{'f': f'assets/compartida/{cid}/{kid}/{L[1]}/{L[2]}', 'kind': 'video' if L[1] == 'video' else 'image'} for L in _comp_items(uu, c)]})   # las carpetas de Mis creaciones de la cuenta
         if u.path == '/api/papelera':   # lo borrado de Mis creaciones que aún se puede recuperar (30 días), lo más reciente primero
             trash = papelera(); out = []; ahora = time.time()
             for fn in os.listdir(trash):
