@@ -97,6 +97,7 @@
   // ------------------------------------------------ Perfil: la sección de complementos del personaje
   window.accPanel = function (owner = 'aria') {
     const box = el('div', 'pjgrp accpanel'); const L = list(owner).slice(); const PK = window.accPick;
+    if (owner === 'aria' && !PK && typeof WEBM === 'function' && WEBM()) box.appendChild(el('small', 'pjnote', '✨ Lo que añadas o cambies aquí es solo para tus imágenes con Aria: se queda en tu cuenta.'));
     if (PK) { // modo «elegir»: se marcan uno o varios y «Añadir» vuelve al paso a paso
       const bar = el('div', 'accpickbar'); const bk = el('button', 'btn backbtn', '← Volver sin elegir'); bk.onclick = () => { window.accPick = null; PK.cancel && PK.cancel(); }; bar.appendChild(bk);
       const ad = el('button', 'btn acc', PK.sel.length ? `＋ Añadir a ${PK.label} (${PK.sel.length})` : `＋ Añadir a ${PK.label}`); ad.disabled = !PK.sel.length; ad.onclick = () => { const ids = PK.sel.slice(); window.accPick = null; PK.done(ids); }; bar.appendChild(ad);

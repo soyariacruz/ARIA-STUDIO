@@ -38,7 +38,7 @@ MAX_CUERPO = 40 * 1024 * 1024    # tope de una petición en modo servidor
 MAX_BIBLIO = 200 * 1024 * 1024   # tope de un fichero de la biblioteca común al copiarlo
 KINDS = ('vestidor', 'hair', 'expr')   # las bibliotecas a las que una cuenta puede añadir lo suyo
 _UUID = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
-VERSION = 209
+VERSION = 210
 _ctx = threading.local()   # la cuenta del hilo: la pone cada petición (y, a mano, cada hilo de fondo)
 def uid(): return getattr(_ctx, 'uid', None)   # en local siempre None
 DUENOS = tuple(e.strip().lower() for e in (os.environ.get('ARIA_DUENOS') or 'mix1994max@gmail.com').split(',') if e.strip())   # cuentas que pueden cambiar a Aria Cruz (en la web, la de Max)
@@ -1070,7 +1070,6 @@ def _nf_autosave(j):   # «Nueva ficha»: al terminar se guarda sola en Fichas c
     nf = (j.get('meta') or {}).get('nf') or {}; rel = j.get('file')
     if not rel: return None
     owner = nf.get('owner')
-    if not owner and aria_fija(): return None   # una ficha de Aria hecha por otra cuenta se queda en sus creaciones: no entra en la ficha de Aria
     if owner:   # ficha nueva de otro personaje: a su carpeta y a su personaje.json
         if not _pid_ok(owner) or '\\' in owner: return None
         d = os.path.join(pers_dir(), owner); pf = os.path.join(d, 'personaje.json')   # siempre dentro de la casa de la cuenta del trabajo
@@ -1117,11 +1116,19 @@ def _capa():   # la capa de la cuenta sobre el catálogo común (su casa/capa.js
     except FileNotFoundError: return {}
     except Exception as e: plog('capa ilegible ✕ ' + str(e)[:120]); raise RuntimeError('la capa de la cuenta está dañada')   # mejor parar que pisarla con una vacía
     return c if isinstance(c, dict) else {}
+ARIA_MIAS = ('complementos', 'fichas', 'accTipos')   # lo que un miembro puede añadirle a SU Aria (solo en su cuenta); lo demás de Aria es fijo
 def _fusion(S, capa):   # lo que ve la cuenta = copia entera del común + su capa encima
     C = json.loads(S['txt'])
     if not aria_fija():
         P = _aria_perfil()
         if isinstance(P, dict): C['perfil'] = P
+    elif isinstance(capa.get('aria'), dict):   # miembro: sus complementos y fichas de Aria, encima de la Aria de todos (lo suyo primero)
+        A = capa['aria']; P = C.setdefault('perfil', {})
+        for k in ARIA_MIAS:
+            mias = [x for x in A.get(k) or [] if isinstance(x, dict)]; fuera = set(((A.get('ocultos') or {}).get(k)) or [])
+            if not mias and not fuera: continue
+            comun = [x for x in P.get(k) or [] if isinstance(x, dict)]; ids = {x.get('id') for x in comun}; cambio = {x.get('id'): x for x in mias if x.get('id') in ids}
+            P[k] = [x for x in mias if x.get('id') not in ids] + [cambio.get(x.get('id'), x) for x in comun if x.get('id') not in fuera]
     oc = capa.get('ocultos') or {}; fav = set(capa.get('fav') or []); padre = capa.get('padre') or {}
     for k in KINDS:
         fuera = set(oc.get(k) or []); L = [x for x in C.get(k) or [] if x.get('id') not in fuera]
@@ -1147,6 +1154,12 @@ def _capa_save(C):   # modo servidor: el catálogo común NO se escribe nunca; s
         if uid() == ARIA_UID:
             if P0 is not None or cambia: capa['perfil'] = P
         elif cambia: _aria_perfil_guarda(P)
+    else:   # miembro: de Aria solo se guarda lo suyo (lo que añade, lo que cambia y lo que quita de complementos y fichas); lo demás no se toca
+        Sp = S['perfil'] or {}; Pc = C.get('perfil') or {}; A = {'ocultos': {}}
+        for k in ARIA_MIAS:
+            base = {x.get('id'): x for x in Sp.get(k) or [] if isinstance(x, dict)}; L = [x for x in Pc.get(k) or [] if isinstance(x, dict)]
+            A[k] = [x for x in L if x.get('id') not in base or x != base[x.get('id')]]; A['ocultos'][k] = sorted(set(base) - {x.get('id') for x in L})
+        if any(A[k] for k in ARIA_MIAS) or any(A['ocultos'].values()): capa['aria'] = A
     oc = {}
     for k in KINDS:
         L = [x for x in C.get(k) or [] if isinstance(x, dict)]; ids = S['ids'][k]; hay = {x.get('id') for x in L}
@@ -1789,7 +1802,7 @@ class H(SimpleHTTPRequestHandler):
         return self._estatico() if SERVIDOR else super().do_GET()
     def _post(self):
         if self.path in ('/api/video', '/api/generar', '/api/personaje') and lleno(): return self._json(413, {'error': LLENO, 'lleno': True})
-        if self.path in ('/api/perfil', '/api/ficha_panel', '/api/fichas360', '/api/fichas_outfit') and aria_fija(): return self._json(403, {'error': FIJA, 'fija': True})   # todo esto escribe en la ficha de Aria
+        if self.path in ('/api/perfil', '/api/ficha_panel', '/api/fichas360') and aria_fija(): return self._json(403, {'error': FIJA, 'fija': True})   # todo esto escribe en la ficha de Aria
         if self.path == '/api/video': return self.do_video()
         if SERVIDOR and self.path == '/api/sesion':   # deja la sesión en una cookie HttpOnly para que las imágenes de la cuenta se puedan pedir con <img>; {salir:true} la borra
             n = int(self.headers.get('Content-Length') or 0); body = json.loads(self.rfile.read(n) or b'{}'); a = self.headers.get('Authorization') or ''; tok = a[7:].strip() if a[:7].lower() == 'bearer ' else ''
@@ -2265,7 +2278,7 @@ class H(SimpleHTTPRequestHandler):
             plog(f'perfil {act} · ' + ', '.join(changed)); return self._json(200, {'ok': True, 'changed': changed, 'perfil': {k: P.get(k) for k in ('name', 'handle', 'tagline', 'bio', 'basePrompt', 'datos', 'avatar', 'avatarSrc', 'avatarCrop', 'ig')}})
         if self.path == '/api/ficha_combo':   # ficha principal combinada: 2x2 de la cara + cuerpo entero de frente + cuerpo entero de perfil (del cuello a los pies), 4267x2400 (16:9)
             n = int(self.headers.get('Content-Length') or 0); body = json.loads(self.rfile.read(n) or b'{}'); act = body.get('action') or 'ensure'
-            if act not in ('ensure', 'preview') and aria_fija(): return self._json(403, {'error': FIJA, 'fija': True})
+            if act not in ('ensure', 'preview', 'save') and aria_fija(): return self._json(403, {'error': FIJA, 'fija': True})   # un miembro sí guarda fichas creadas en SU Aria
             import re as _re
             from PIL import Image, ImageStat
             CW, CH, GAP, BW, SW = 1600, 2400, 16, 1317, 1318; TW = CW + GAP + BW + GAP + SW; BG = (200, 198, 196); dd = perfil_dir('combo')
@@ -2515,7 +2528,6 @@ class H(SimpleHTTPRequestHandler):
             except Exception as e: return self._json(502, {'error': 'no se ha podido leer Instagram ahora. Puedes escribirlos a mano'})
         if self.path == '/api/complementos':   # complementos de un personaje: {owner:'aria'|id, list:[{id,nombre,tipo,regla,desc,img}], files:{id: dataURL}}
             n = int(self.headers.get('Content-Length') or 0); body = json.loads(self.rfile.read(n) or b'{}'); owner = body.get('owner') or 'aria'; L = body.get('list') or []
-            if owner == 'aria' and aria_fija(): return self._json(403, {'error': FIJA, 'fija': True})
             if body.get('tipos') is not None and not L:   # solo actualizar los tipos propios
                 with _cerrojo():
                     head, C = _cat_load(); C['perfil']['accTipos'] = body['tipos']
