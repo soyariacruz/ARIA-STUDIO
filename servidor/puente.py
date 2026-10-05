@@ -38,7 +38,7 @@ MAX_CUERPO = 40 * 1024 * 1024    # tope de una petición en modo servidor
 MAX_BIBLIO = 200 * 1024 * 1024   # tope de un fichero de la biblioteca común al copiarlo
 KINDS = ('vestidor', 'hair', 'expr')   # las bibliotecas a las que una cuenta puede añadir lo suyo
 _UUID = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
-VERSION = 241
+VERSION = 242
 _ctx = threading.local()   # la cuenta del hilo: la pone cada petición (y, a mano, cada hilo de fondo)
 def uid(): return getattr(_ctx, 'uid', None)   # en local siempre None
 DUENOS = tuple(e.strip().lower() for e in (os.environ.get('ARIA_DUENOS') or 'mix1994max@gmail.com').split(',') if e.strip())   # cuentas que pueden cambiar a Aria Cruz (en la web, la de Max)
@@ -1504,6 +1504,10 @@ def _comp_ficha(u, L):   # de la ficha de una creación compartida, lo que viaja
     if isinstance(m.get('prompt'), str) and m['prompt'].strip(): o['prompt'] = m['prompt'][:8000]
     e = {k: e[k][:4000] for k in ('d', 'r', 'f') if isinstance(e.get(k), str) and e[k].strip()}
     if e: o['escena'] = e
+    if m.get('model'): o['modelo'] = str(m['model'])[:60]   # v242: los mismos datos que se ven en una creación propia
+    if m.get('charName'): o['personaje'] = str(m['charName'])[:80]
+    for k_, q_ in (('t', 't'), ('ancho', 'width'), ('alto', 'height')):
+        if isinstance(m.get(q_), (int, float)): o[k_] = m[q_]
     return o
 def _compartida(rel):   # 'assets/compartida/<cid>/<carpeta>/<live|video>/<fichero>' → el fichero real en la casa de su dueña, o None. ÚNICA puerta a lo de otra cuenta.
     L = rel.split('/')
