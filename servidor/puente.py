@@ -38,7 +38,7 @@ MAX_CUERPO = 40 * 1024 * 1024    # tope de una petición en modo servidor
 MAX_BIBLIO = 200 * 1024 * 1024   # tope de un fichero de la biblioteca común al copiarlo
 KINDS = ('vestidor', 'hair', 'expr')   # las bibliotecas a las que una cuenta puede añadir lo suyo
 _UUID = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
-VERSION = 254
+VERSION = 255
 _ctx = threading.local()   # la cuenta del hilo: la pone cada petición (y, a mano, cada hilo de fondo)
 def uid(): return getattr(_ctx, 'uid', None)   # en local siempre None
 DUENOS = tuple(e.strip().lower() for e in (os.environ.get('ARIA_DUENOS') or 'mix1994max@gmail.com').split(',') if e.strip())   # cuentas que pueden cambiar a Aria Cruz (en la web, la de Max)
@@ -906,6 +906,67 @@ VIDEO_MODELS = {
     'r2v': {'ep': 'bytedance/seedance-2.0/reference-to-video', 'name': 'Seedance 2.0 · con referencias (ficha 360)'},
 }
 V_ASPECTS = ['3:4', '9:16', '16:9', '1:1', '4:3', '21:9']
+# v255 · los modelos de vídeo de WaveSpeed que se ofrecen (familia, nombre, base del id) · cada uno con sus modos: i2v (imagen inicial), t2v (texto + referencias), r2v
+VID_CUR = [('Seedance', 'Seedance 2.0 Fast', 'bytedance/seedance-2.0-fast'), ('Seedance', 'Seedance 2.5', 'bytedance/seedance-2.5'),
+           ('Kling', 'Kling 3.0 Pro', 'kwaivgi/kling-v3.0-pro'), ('Kling', 'Kling 3.0', 'kwaivgi/kling-v3.0-std'), ('Kling', 'Kling 2.6 Pro', 'kwaivgi/kling-v2.6-pro'),
+           ('Veo', 'Veo 3.1', 'google/veo3.1'), ('Veo', 'Veo 3.1 Fast', 'google/veo3.1-fast'), ('Veo', 'Veo 3.1 Lite', 'google/veo3.1-lite'),
+           ('Minimax', 'Hailuo 2.3 Pro', 'minimax/hailuo-2.3@pro'), ('Minimax', 'Hailuo 2.3', 'minimax/hailuo-2.3@standard'), ('Minimax', 'Minimax H3', 'minimax/h3'),
+           ('Wan', 'Wan 3.0', 'alibaba/wan-3.0'), ('Sora', 'Sora 2', 'openai/sora-2'), ('Grok', 'Grok Imagine 1.5', 'x-ai/grok-imagine-video-v1.5')]
+_VCAT = {'t': 0, 'M': {}}; _VCAT_L = threading.Lock()
+def _vcat(forzar=False):   # id → esquema y precio base, del catálogo de WaveSpeed (cada 6 h)
+    with _VCAT_L:
+        if _VCAT['M'] and not forzar and time.time() - _VCAT['t'] < 6 * 3600: return _VCAT['M']
+        try: d = ws('GET', '/api/v3/models'); M0 = d.get('data') if isinstance(d.get('data'), list) else (d.get('data') or {}).get('items') or []
+        except Exception as e: plog('catálogo de vídeo ✕ ' + str(e)[:160]); return _VCAT['M']
+        M = {}
+        for m in M0:
+            try: rs = m['api_schema']['api_schemas'][0]['request_schema']
+            except Exception: continue
+            M[str(m.get('model_id') or '')] = {'p': rs.get('properties') or {}, 'req': rs.get('required') or [], 'usd': m.get('base_price') or m.get('price'), 'tipo': m.get('type')}
+        if M: _VCAT['M'] = M; _VCAT['t'] = time.time()
+        return _VCAT['M']
+def _vmodos(base):   # {i2v|t2v|r2v: id} que existen en el catálogo para esa base
+    M = _vcat(); b, var = (base.split('@') + [''])[:2]
+    if var: C = {'i2v': f'{b}/i2v-{var}', 't2v': f'{b}/t2v-{var}'}
+    else: C = {'i2v': f'{b}/image-to-video', 't2v': f'{b}/text-to-video', 'r2v': f'{b}/reference-to-video'}
+    return {k: v for k, v in C.items() if v in M}
+def _vinfo():   # lo que el panel necesita para cada modelo: modos, duraciones, resoluciones, formatos, audio, precio base
+    out = []
+    for fam, nom, base in VID_CUR:
+        md = _vmodos(base)
+        if not md: continue
+        M = _vcat(); p = {}
+        for k in ('i2v', 't2v', 'r2v'):
+            if k in md: p = dict(M[md[k]]['p'], **p)
+        en = lambda k: ((p.get(k) or {}).get('enum') or [])
+        dur = en('duration') or ([x for x in range(int((p.get('duration') or {}).get('minimum') or 4), int((p.get('duration') or {}).get('maximum') or 10) + 1)] if 'duration' in p else [])
+        dur = sorted(dur, key=lambda x: float(x))
+        out.append({'id': base, 'fam': fam, 'nombre': nom, 'modos': sorted(md), 'usd': min(float(M[v]['usd'] or 0) for v in md.values()), 'dur': dur, 'durDef': (p.get('duration') or {}).get('default'),
+                    'res': en('resolution'), 'aspect': en('aspect_ratio'), 'audio': next((k for k in ('generate_audio', 'sound', 'audio') if (p.get(k) or {}).get('type') == 'boolean'), None), 'refs': 'r2v' in md or 'reference_images' in (M.get(md.get('t2v', ''), {}).get('p') or {})})
+    return out
+def _vpayload(mid, b, prompt):   # la petición para ese modelo, desde su esquema
+    sch = _vcat()[mid]; p = sch['p']; en = lambda k: ((p.get(k) or {}).get('enum') or []); out = {'prompt': prompt}
+    R = b.get('refs') or []; imgs = [r for r in by_kind(R, 'image')]; vids = by_kind(R, 'video'); auds = by_kind(R, 'audio')
+    first = b.get('image') if isinstance(b.get('image'), dict) else (imgs[0] if imgs else None)
+    if 'image' in p and first: out['image'] = resolve_ws(first)
+    if 'images' in p and imgs: out['images'] = [resolve_ws(r) for r in imgs][:9]
+    if 'reference_images' in p and imgs and 'image' not in out: out['reference_images'] = [resolve_ws(r) for r in imgs][:9]
+    if 'reference_videos' in p and vids: out['reference_videos'] = [resolve_ws(r) for r in vids][:3]
+    if 'reference_audios' in p and auds: out['reference_audios'] = [resolve_ws(r) for r in auds][:3]
+    if 'duration' in p:
+        d0 = int(b.get('duration') or 5); E = en('duration')
+        if E: out['duration'] = min(E, key=lambda x: abs(int(x) - d0))
+        else: lo, hi = (p['duration'].get('minimum') or 1), (p['duration'].get('maximum') or 60); out['duration'] = max(int(lo), min(int(hi), d0))
+    if 'resolution' in p:
+        E = en('resolution'); r0 = str(b.get('resolution') or '')
+        out['resolution'] = r0 if (not E or r0 in E) else (p['resolution'].get('default') or (E[len(E) // 2] if E else r0))
+    if 'aspect_ratio' in p and not ('image' in out and 'aspect_ratio' not in sch['req'] and b.get('aspect') in (None, '', 'auto')):
+        E = en('aspect_ratio'); a0 = b.get('aspect') or '9:16'; out['aspect_ratio'] = a0 if (not E or a0 in E) else (p['aspect_ratio'].get('default') or E[0])
+    for k in ('generate_audio', 'sound', 'audio'):
+        if (p.get(k) or {}).get('type') == 'boolean': out[k] = bool(b.get('audio'))
+    falta = [k for k in sch['req'] if k not in out]
+    if falta: raise RuntimeError('a este modelo le falta: ' + ', '.join(falta) + (' (necesita una imagen de partida)' if 'image' in falta else ''))
+    return out
 
 def load_key(): return _env('HF_API_KEY', 'higgsfield.env')
 def _hf_listo(): k = load_key(); return bool(k and ':' in k)   # ya no hay una KEY global: cada llamada mira la clave de la cuenta que la hace
@@ -2185,6 +2246,9 @@ class H(SimpleHTTPRequestHandler):
                 fp = fg
             b = open(fp, 'rb').read(); self.send_response(200); self.send_header('Content-Type', 'image/jpeg'); self.send_header('Content-Length', str(len(b))); self.send_header('Cache-Control', 'private, max-age=600'); self.end_headers(); self.wfile.write(b); return
         if u.path == '/api/carpetas': return self._json(200, {'carpetas': _carp_lee(), 'compartidas': _comp_lista(_com_lee(), _cid()) if SERVIDOR else [], 'favs': _favs_lee()})   # las mías · y las que me comparten (para la Fototeca)
+        if u.path == '/api/video/modelos':   # v255: los modelos de vídeo de WaveSpeed que se ofrecen, con sus opciones
+            try: return self._json(200, {'ok': True, 'modelos': _vinfo() if load_ws() else []})
+            except Exception as e: return self._json(200, {'ok': False, 'modelos': [], 'error': str(e)[:160]})
         if u.path == '/api/denuncias':   # v238: lo denunciado, para que el equipo lo revise (restaurar o dejarlo retirado)
             if aria_fija(): return self._json(403, {'error': 'solo el equipo'})
             d = _com_lee(); den = d.get('den') if isinstance(d.get('den'), dict) else {}; out = []
@@ -3272,6 +3336,20 @@ class H(SimpleHTTPRequestHandler):
                 if not rid: raise RuntimeError('WaveSpeed no devolvió id: ' + json.dumps(r)[:200])
                 jobs[rid] = {'t0': time.time(), 'item': body.get('item', 'video'), 'kind': 'video', 'model': mode, 'prov': 'ws', 'usd': body.get('usd'), 'bal0': bal0, 'credits': None, 'meta': body.get('meta') or {}}
                 return self._json(200, {'request_id': rid, 'model': ep, 'usd': body.get('usd'), 'payload': {k: v for k, v in payload.items() if k not in ('image', 'reference_images')}})
+            if body.get('provider') == 'wsg':   # v255: cualquier modelo de la lista (Kling, Veo, Hailuo, Wan, Sora, Grok…) por WaveSpeed
+                base = str(body.get('vm') or ''); md = _vmodos(base) if any(base == c[2] for c in VID_CUR) else {}
+                if not md: raise RuntimeError('ese modelo de vídeo no está disponible ahora mismo')
+                R = body.get('refs') or []; una = bool(body.get('image')) and mode == 'i2v'
+                M_ = _vcat(); conref = 'r2v' in md or 'reference_images' in (M_.get(md.get('t2v', ''), {}).get('p') or {}); imgs_ = by_kind(R, 'image')
+                if not una and imgs_ and not conref and 'i2v' in md: una = True; body['image'] = imgs_[0]   # sin referencias: la primera imagen, de inicio
+                mid = md.get('i2v') if una and 'i2v' in md else md.get('r2v') if (R and 'r2v' in md) else md.get('t2v') or md.get('i2v')
+                payload = _vpayload(mid, body, (body.get('prompt') or '').strip() or 'Natural subtle motion.')
+                try: bal0 = float((ws('GET', '/api/v3/balance').get('data') or {}).get('balance'))
+                except Exception: bal0 = None
+                r = ws('POST', '/api/v3/' + mid, payload); rid = (r.get('data') or {}).get('id')
+                if not rid: raise RuntimeError('WaveSpeed no devolvió id: ' + json.dumps(r)[:200])
+                jobs[rid] = {'t0': time.time(), 'item': body.get('item', 'video'), 'kind': 'video', 'model': mode, 'prov': 'ws', 'usd': body.get('usd'), 'bal0': bal0, 'credits': None, 'meta': body.get('meta') or {}}
+                return self._json(200, {'request_id': rid, 'model': mid, 'usd': body.get('usd'), 'payload': {k: v for k, v in payload.items() if k not in ('image', 'images', 'reference_images', 'reference_videos', 'reference_audios')}})
             if body.get('provider') == 'ark':   # ByteDance directo: mismo formato de trabajo, otra API
                 ver = body.get('vmodel') if body.get('vmodel') in ARK_MODELS else '2.0'; res = body.get('resolution') if body.get('resolution') in ARK_USD[ver] else '720p'
                 dur = max(4, min(30 if ver == '2.5' else 15, int(body.get('duration') or 5)))
