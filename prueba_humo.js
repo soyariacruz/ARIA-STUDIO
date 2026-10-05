@@ -35,7 +35,7 @@
   // 4b) carpetas de Mis creaciones (v218): con una carpeta de mentira, solo en memoria (no se guarda nada)
   if (window.carpAbre) { const L0 = CARP.L; const c0 = TABS.creaciones.items.find(i => !i.pending && i.src);
     paso('carpetas · pastillas', () => { CARP.L = [{ id: 'khumo', nombre: 'Humo', t: 0, items: c0 ? [c0.src.split('?')[0]] : [] }]; setTab('creaciones'); renderChips(); if (CARP.ok && ![...document.querySelectorAll('#carpSide button')].some(b => b.textContent.includes('Humo'))) throw new Error('no sale la pastilla'); });
-    paso('carpetas · abrir', () => { carpAbre('khumo'); if (view().length !== (c0 ? 1 : 0)) throw new Error('la carpeta no enseña lo suyo'); if (!document.querySelector('#gridChips').textContent.includes('Borrar carpeta')) throw new Error('sin cabecera'); });
+    paso('carpetas · abrir', () => { carpAbre('khumo'); if (view().length !== (c0 ? 1 : 0)) throw new Error('la carpeta no enseña lo suyo'); if (!document.querySelector('#gridChips .carpnom')) throw new Error('sin cabecera'); });
     paso('carpetas · menú de la selección', () => { if (!c0) return; toggleSel(c0.src, true); carpMenu(document.getElementById('selCarp')); if (CARP.ok && !document.getElementById('carpmenu')) throw new Error('no se abre'); carpPopX(); clearSel(); });
     paso('carpetas · salir', () => { state.carp = null; CARP.L = L0; renderRail(); renderChips(); }); }
   // 5) Comunidad (v199): la página, sus tres apartados, la ficha de un personaje, y que se cierre al ir a otra sección
