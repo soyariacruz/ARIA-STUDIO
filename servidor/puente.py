@@ -38,7 +38,7 @@ MAX_CUERPO = 40 * 1024 * 1024    # tope de una petición en modo servidor
 MAX_BIBLIO = 200 * 1024 * 1024   # tope de un fichero de la biblioteca común al copiarlo
 KINDS = ('vestidor', 'hair', 'expr')   # las bibliotecas a las que una cuenta puede añadir lo suyo
 _UUID = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
-VERSION = 255
+VERSION = 256
 _ctx = threading.local()   # la cuenta del hilo: la pone cada petición (y, a mano, cada hilo de fondo)
 def uid(): return getattr(_ctx, 'uid', None)   # en local siempre None
 DUENOS = tuple(e.strip().lower() for e in (os.environ.get('ARIA_DUENOS') or 'mix1994max@gmail.com').split(',') if e.strip())   # cuentas que pueden cambiar a Aria Cruz (en la web, la de Max)
@@ -2247,7 +2247,7 @@ class H(SimpleHTTPRequestHandler):
             b = open(fp, 'rb').read(); self.send_response(200); self.send_header('Content-Type', 'image/jpeg'); self.send_header('Content-Length', str(len(b))); self.send_header('Cache-Control', 'private, max-age=600'); self.end_headers(); self.wfile.write(b); return
         if u.path == '/api/carpetas': return self._json(200, {'carpetas': _carp_lee(), 'compartidas': _comp_lista(_com_lee(), _cid()) if SERVIDOR else [], 'favs': _favs_lee()})   # las mías · y las que me comparten (para la Fototeca)
         if u.path == '/api/video/modelos':   # v255: los modelos de vídeo de WaveSpeed que se ofrecen, con sus opciones
-            try: return self._json(200, {'ok': True, 'modelos': _vinfo() if load_ws() else []})
+            try: return self._json(200, {'ok': True, 'modelos': _vinfo() if (load_ws() or _casa_base()) else []})
             except Exception as e: return self._json(200, {'ok': False, 'modelos': [], 'error': str(e)[:160]})
         if u.path == '/api/denuncias':   # v238: lo denunciado, para que el equipo lo revise (restaurar o dejarlo retirado)
             if aria_fija(): return self._json(403, {'error': 'solo el equipo'})
