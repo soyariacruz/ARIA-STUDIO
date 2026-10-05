@@ -1616,7 +1616,14 @@ nav .navlib button.more span{font-size:9px}
   .cpfilrow .cpchips button{flex:0 0 auto;white-space:nowrap}
   .cpfilrow .cpbusca2{flex:1;min-width:0}
   .livedot{white-space:nowrap;font-size:10px;padding:5px 8px;letter-spacing:.08em}
-  header .casa{white-space:nowrap;padding:5px 8px;font-size:10.5px}
+  /* cabecera del móvil: solo lo justo, para que siempre quepa el botón de tu cuenta */
+  header .casa{white-space:nowrap;padding:5px 8px;font-size:0!important}
+  header .casa::before{content:'🎁';font-size:13px;margin-right:4px}
+  header .casa b{font-size:11px}
+  .livedot{font-size:0!important;padding:6px!important;gap:0!important}
+  .livedot i{margin:0}
+  header .saldobtn span,header .saldobtn i{display:none}
+  #cuentaBtn{flex:none}
   header .logo{font-size:13px;letter-spacing:.16em}
   header .right{min-width:0;flex-shrink:1;overflow:hidden}
   .themebtn{flex:none}
