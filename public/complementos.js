@@ -191,13 +191,13 @@
       let jpg; try { jpg = await toJpeg(du); } catch (e) { toast('No se pudo abrir esa imagen: prueba con JPG o PNG'); return; }
       const nueva = !!fotoSrc() && !!(E.fichas.length || E.nuevas.length);
       Object.assign(E, { foto: jpg, crop: null, cropTouched: true, cover: '__foto__', view: '__foto__' }); delete E.c.thumbSrc;
-      if (nueva && confirm('Foto nueva: ¿quitar de la colección las fichas de producto de la foto anterior?')) { E.fichas = []; E.nuevas = []; E.ref = '__foto__'; }
+      if (nueva && (await pregunta('Foto nueva: ¿quitar de la colección las fichas de producto de la foto anterior?'))) { E.fichas = []; E.nuevas = []; E.ref = '__foto__'; }
       paint(); if (!(E.c.desc || '').trim() || !(E.c.nombre || '').trim()) describe();
     }
     function prodModel() { if (state.accModel === undefined) { try { state.accModel = localStorage.getItem('am_accmodel') || ''; } catch (e) { state.accModel = ''; } } return MODELS.find(z => z.key === state.accModel) || MODELS.find(z => z.key === 'seedream') || curModel(); }   // con qué modelo se hace la ficha del producto (se recuerda; por defecto Seedream 5.0 Pro)
     async function genProd() {
       const c = E.c; const src = fotoSrc(); if (!src || E.job) return; const m = prodModel(); const usd = m.usd[state.quality];
-      if (!confirm(`¿Generar ${E.fichas.length + E.nuevas.length ? 'otra ficha' : 'la ficha'} de producto de «${c.nombre || 'este objeto'}» con ${m.name}? (${fmtUsd(usd)})`)) return;
+      if (!(await pregunta(`¿Generar ${E.fichas.length + E.nuevas.length ? 'otra ficha' : 'la ficha'} de producto de «${c.nombre || 'este objeto'}» con ${m.name}? (${fmtUsd(usd)})`))) return;
       E.job = { sending: true, t0: performance.now(), m }; paint(); const pt = prodPrompt(c);
       let r; try { r = await fetch('/api/generar', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ item: 'ficha_producto_' + (c.id || 'nuevo'), prompt: pt, images: [E.foto ? { data: E.foto } : { path: src.split('?')[0] }], aspect: '1:1', quality: state.quality, model: m.key, meta: { name: 'Ficha de producto · ' + (c.nombre || 'complemento'), tab: 'perfil', personaje: '_complementos', hidden: true, model: m.name, ep: m.ep, prompt: pt } }) }).then(z => z.json()); } catch (e) { r = { error: String(e) }; }
       if (!r || r.error) { E.job = null; forget(); toast('No se pudo generar: ' + (r ? r.error : 'sin respuesta')); if (E.open) paint(); return; }
@@ -233,7 +233,7 @@
       const media = el('div', 'fxmedia accmedia');
       if (col.length > 1 && !E.job) { // v248: una sola tira; lo que es cada imagen se marca debajo de la grande
         const tl = el('div', 'acctiles accuna'); col.forEach(([k, n]) => { const b = el('button', 'acctile' + (E.view === k ? ' on' : ''), `<img src="${srcOf(k)}" alt="">${E.cover === k ? '<em class="accbad" title="Portada">★</em>' : ''}${c.modo === 'foto' && E.ref === k ? '<em class="accbad ref" title="Se envía al generar">IA</em>' : ''}`); b.title = n; b.onclick = () => { E.view = k; paint(); };
-          if (k !== '__foto__') { const x = el('button', 'acctx', XSVG); x.title = 'Quitar esta ficha'; x.onclick = e => { e.stopPropagation(); if (!confirm(`¿Quitar «${n}»?`)) return; E.fichas = E.fichas.filter(z => z !== k); E.nuevas = E.nuevas.filter(z => z !== k); paint(); }; b.appendChild(x); } tl.appendChild(b); }); media.appendChild(tl);
+          if (k !== '__foto__') { const x = el('button', 'acctx', XSVG); x.title = 'Quitar esta ficha'; x.onclick = async e => { e.stopPropagation(); if (!(await pregunta(`¿Quitar «${n}»?`))) return; E.fichas = E.fichas.filter(z => z !== k); E.nuevas = E.nuevas.filter(z => z !== k); paint(); }; b.appendChild(x); } tl.appendChild(b); }); media.appendChild(tl);
         const ch = el('div', 'accrolechips'); const mk = (on, t, fn) => { const q = el('button', 'accrc' + (on ? ' on' : ''), (on ? '✓ ' : '') + t); q.disabled = on; q.onclick = fn; ch.appendChild(q); };
         mk(E.cover === E.view, 'Portada', () => { E.cover = E.view; E.crop = { z: 1, x: 0.5, y: 0.5 }; E.coverTouched = true; paint(); }); if (c.modo === 'foto') mk(E.ref === E.view, 'Se envía al generar', () => { E.ref = E.view; paint(); }); media.appendChild(ch); }
       if (src && isCover) {
@@ -266,7 +266,7 @@
       const side = el('div', 'fxside accside'); const x = el('button', 'galx', '×'); x.title = 'Cerrar sin guardar'; x.onclick = close; box.appendChild(x);
       const acts = el('div', 'fxacts accacts top'); const sv = el('button', 'btn acc', E.saving ? '⏳ Guardando…' : '✓ Guardar'); sv.disabled = !!(E.saving || (E.job && E.job.sending)); sv.onclick = guardar;
       const cn = el('button', 'btn', 'Cancelar'); cn.onclick = () => { if (!E.job) { delete PEND[key]; E.nuevas = []; } close(); }; acts.appendChild(sv); acts.appendChild(cn);
-      if (idx != null) { const del = el('button', 'btn accdel', '🗑 Eliminar'); del.onclick = async () => { if (!confirm(`¿Eliminar «${E.c0.nombre}» de sus complementos?`)) return; if (await save(owner, L.filter((_, k) => k !== idx))) { delete PEND[key]; E.open = false; m0.remove(); clearInterval(E.tick); renderProfile(); } }; acts.appendChild(del); }
+      if (idx != null) { const del = el('button', 'btn accdel', '🗑 Eliminar'); del.onclick = async () => { if (!(await pregunta(`¿Eliminar «${E.c0.nombre}» de sus complementos?`))) return; if (await save(owner, L.filter((_, k) => k !== idx))) { delete PEND[key]; E.open = false; m0.remove(); clearInterval(E.tick); renderProfile(); } }; acts.appendChild(del); }
       side.appendChild(acts);
       const tt = el('div', 'fxtitle', `<small>${idx == null ? 'Complemento nuevo' : 'Ficha del complemento'}</small>`); side.appendChild(tt);   // el título ES el nombre: se cambia escribiendo encima
       const fld = (label, node, sub) => { const g = el('div', 'fxsec'); const h = el('h4', '', label + (sub ? `<small>${sub}</small>` : '')); g.appendChild(h); g.appendChild(node); side.appendChild(g); return g; };

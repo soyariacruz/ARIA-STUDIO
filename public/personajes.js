@@ -464,7 +464,7 @@
   async function genPj(p, kind, spec) { // lanza una generación del personaje (3×3, definitiva, vistas o cuerpo)
     if (!LIVE) { toast('Conecta primero tu API'); return; }
     const m = spec.model || modelFor(spec.images.length); const usd = m.usd[spec.quality || state.quality];
-    if (!spec.noConfirm && !confirm(`${spec.ask} con ${m.name}? (${fmtUsd(usd)})`)) return;
+    if (!spec.noConfirm && !(await pregunta(`${spec.ask} con ${m.name}? (${fmtUsd(usd)})`))) return;
     pj.sending = kind; renderProfile();
     const body_ = { item: 'personaje_' + p.id + '_' + kind, prompt: spec.prompt, images: spec.images, aspect: spec.aspect, quality: spec.quality || state.quality, model: m.key, meta: { name: `${spec.name} · ${p.nombre}`, tab: 'perfil', personaje: p.id, pjKind: kind, pjEditor: spec.editor ? true : undefined, hidden: true, model: m.name, ep: m.ep, prompt: spec.prompt } };
     let r; try { r = await fetch('/api/generar', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body_) }).then(x => x.json()); } catch (e) { r = { error: String(e) }; }
@@ -480,7 +480,7 @@
     genPj(p, 'explora', { ask: (p.explora || []).length ? '¿Regenerar la cuadrícula (9 caras nuevas)' : '¿Generar las primeras 9 caras (3×3)', name: 'Buscar su cara · 3×3', prompt: explorePrompt(p, inspo.length), images, aspect: '16:9', model: m, quality: q });
   }
   async function elegirCara(p, ri, n) { // «Es la definitiva»: se recorta esa cara de la rejilla y pasa a ser su foto
-    const r = (p.explora || [])[ri]; if (!r) return; if (!confirm(`¿La nº ${n} es la definitiva? Con su cara se crean sus fichas.`)) return;
+    const r = (p.explora || [])[ri]; if (!r) return; if (!(await pregunta(`¿La nº ${n} es la definitiva? Con su cara se crean sus fichas.`))) return;
     const res = await persist_(Object.assign(p, { caraDe: { ronda: ri + 1, n } }), { crops: { foto: { path: clean(r.file), crop: CELL(n) } } });
     if (res && res.ok) { const m0 = $('#pjx3m'); if (m0) m0.remove(); toast('¡Esa es! Ahora, sus 4 vistas'); window.pjScrollTop = true; } else toast('No se pudo guardar: ' + (res ? res.error : 'sin respuesta'));
     renderProfile(); renderSide();
@@ -532,7 +532,7 @@
   function generate(p, kind) { if (kind !== 'frente' && !vok(p, 'frente')) { toast('Primero genera y aprueba el frente'); return; } genPj(p, kind, specVista(p, kind)); }
   async function generarTres(p) { // perfil, tres cuartos y espalda a la vez (una sola pregunta)
     const ks = ['perfil', 'tres', 'espalda'].filter(k => !vfile(p, k) && !pj.jobs[p.id + ':' + k]); if (!ks.length) return; const m = modelFor(2);
-    if (!confirm(`¿Generar ${ks.length === 3 ? 'las 3 vistas' : ks.length + ' vistas'} (perfil, tres cuartos y espalda) a la vez con ${m.name}? (${fmtUsd(m.usd[state.quality] * ks.length)})`)) return;
+    if (!(await pregunta(`¿Generar ${ks.length === 3 ? 'las 3 vistas' : ks.length + ' vistas'} (perfil, tres cuartos y espalda) a la vez con ${m.name}? (${fmtUsd(m.usd[state.quality] * ks.length)})`))) return;
     for (const k of ks) await genPj(p, k, Object.assign(specVista(p, k), { noConfirm: true }));
   }
   async function approve(p, k) {
@@ -563,7 +563,7 @@
     box.appendChild(g); return box;
   }
   async function del(p) {
-    if (!confirm(`¿Borrar a ${p.nombre}? Deja de verse y se borra del todo a los 30 días.`)) return;
+    if (!(await pregunta(`¿Borrar a ${p.nombre}? Deja de verse y se borra del todo a los 30 días.`))) return;
     const r = await fetch('/api/personaje_borrar', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: p.id }) }).then(x => x.json()).catch(e => ({ error: String(e) }));
     if (!r.ok) { toast('No se pudo borrar: ' + r.error); return; } pj.list = pj.list.filter(x => x.id !== p.id); if (state.char === p.id && window.setChar) setChar('aria', true); syncChars(); pj.sel = WEBM ? (pj.list[0] ? pj.list[0].id : 'nuevo') : 'aria'; renderProfile(); renderSide(); toast(`${p.nombre} está en la papelera`);
   }
@@ -776,7 +776,7 @@
     if (!LIVE) { toast('Conecta primero tu API'); if (window.openClaves) openClaves(); return; }
     p = pj.list.find(x => x.id === p.id) || p; if (p.autoFicha) { if (!jobsDe(p.id).length) autoSigue(p.id); else toast('Su ficha ya se está creando'); return; }
     const fv = faltaVistas(p); const n = fv + (p.cuerpo || p.cuerpoCand ? 0 : 1);
-    if (n && !confirm(`Se crea la ficha completa de ${p.nombre}, de forma automática:\n\n${fv ? '• su cara de cerca (' + fv + (fv === 1 ? ' vista' : ' vistas') + ')\n' : ''}${p.cuerpo || p.cuerpoCand ? '' : '• su cuerpo completo\n'}• su ficha principal, que se monta sola\n\nSon ${n} ${n === 1 ? 'imagen' : 'imágenes'}: alrededor de ${fmtUsd(autoCoste(p))}. Tarda unos minutos y mientras puedes seguir usando la app.\n\n¿Empezar?`)) return;
+    if (n && !(await pregunta(`Se crea la ficha completa de ${p.nombre}, de forma automática:\n\n${fv ? '• su cara de cerca (' + fv + (fv === 1 ? ' vista' : ' vistas') + ')\n' : ''}${p.cuerpo || p.cuerpoCand ? '' : '• su cuerpo completo\n'}• su ficha principal, que se monta sola\n\nSon ${n} ${n === 1 ? 'imagen' : 'imágenes'}: alrededor de ${fmtUsd(autoCoste(p))}. Tarda unos minutos y mientras puedes seguir usando la app.\n\n¿Empezar?`))) return;
     if (p.modo === 'tengo' && !p.importada) { const r = await persist_(p, { copy: { importada: clean(p.ficha360) } }); if (!r || !r.ok) { toast('No se pudo guardar la ficha importada'); return; } }
     const q = pj.list.find(x => x.id === p.id); q.autoFicha = true; q.autoErr = null; await persist_(q); renderProfile(); autoSigue(p.id);
   }
@@ -842,7 +842,7 @@
     { const g = el('div', 'f3grid'); const jobs = window.nfJobs ? nfJobs(p.id) : [];
       jobs.forEach(jb => g.appendChild(el('div', 'f3card wide gen', `<div class="f3img sm"><img src="${p.combo || p.ficha360}" alt=""><span class="f3busy"><i class="spin"></i>Generando · <i data-t0="${jb.t0}">${Math.round((performance.now() - jb.t0) / 1000)} s</i></span></div><b>${esc(jb.it.name)}</b><small>se guardará aquí sola al terminar</small>`)));
       const bajar = f => { const x = document.createElement('a'); x.href = f.img; x.download = f.img.split('/').pop().split('?')[0]; document.body.appendChild(x); x.click(); x.remove(); };
-      const quitar = async f => { if (!confirm(`¿Borrar «${f.nombre}»? Deja de verse y se borra del todo a los 30 días.`)) return; const r = await fetch('/api/personaje_fichas', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: p.id, action: 'delete', fid: f.id }) }).then(x => x.json()).catch(x => ({ error: String(x) })); if (r && r.ok) { await load(); renderProfile(); } else toast('No se pudo borrar: ' + (r ? r.error : 'sin respuesta')); };
+      const quitar = async f => { if (!(await pregunta(`¿Borrar «${f.nombre}»? Deja de verse y se borra del todo a los 30 días.`))) return; const r = await fetch('/api/personaje_fichas', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: p.id, action: 'delete', fid: f.id }) }).then(x => x.json()).catch(x => ({ error: String(x) })); if (r && r.ok) { await load(); renderProfile(); } else toast('No se pudo borrar: ' + (r ? r.error : 'sin respuesta')); };
       const infoDe = f => [f.t, f.modelo, f.size && f.size[0] >= 1500 ? '2K' : ''].filter(Boolean).join(' · ');
       const V = arr(p.fichas).map(f => ({ src: f.img, nombre: f.nombre, info: infoDe(f), acts: [['✨', () => fichaAImagen(f.img, f.nombre), 'Usar en Crear imagen'], ['🎬', () => fichaAVideo(f.img, f.nombre), 'Usar en Crear vídeo'], ['⬇', () => bajar(f), 'Descargar'], ['🗑', () => quitar(f), 'Borrar']] }));
       arr(p.fichas).forEach((f, k) => { const d = el('div', 'f3card wide', `<div class="f3img sm"><img src="${f.thumb || f.img}" alt=""></div><b>${esc(f.nombre)}</b><small>${infoDe(f)}</small>`); d.querySelector('.f3img').onclick = () => visorFichas(V, k);
@@ -878,7 +878,7 @@
     if (w.editId) { const p0 = pj.list.find(x => x.id === w.editId); const bb = el('button', 'btn fxback', `← Volver a ${esc((p0 && p0.nombre) || 'su ficha')} sin guardar`); bb.onclick = () => { pj.wiz = null; saveDraft(); pj.sel = w.editId; window.pjScrollTop = true; renderProfile(); renderSide(); }; host.appendChild(bb); }
     host.appendChild(hd); host.appendChild(stp.ids ? stepMulti(stp, d) : stepBody(stp.id, d));
     const nav = el('div', 'pjnav'); const first = w.step === 0;
-    const bk = el('button', 'btn', first ? '✕ Salir' : '← Atrás'); bk.onclick = () => { if (first) { if (confirm('¿Salir del creador? El borrador se queda guardado.')) { pj.wiz = null; renderProfile(); renderSide(); } return; } w.step--; saveDraft(); paintWiz(); updSide(); host.scrollTop = 0; }; nav.appendChild(bk);
+    const bk = el('button', 'btn', first ? '✕ Salir' : '← Atrás'); bk.onclick = async () => { if (first) { if ((await pregunta('¿Salir del creador? El borrador se queda guardado.'))) { pj.wiz = null; renderProfile(); renderSide(); } return; } w.step--; saveDraft(); paintWiz(); updSide(); host.scrollTop = 0; }; nav.appendChild(bk);
     if (stp.id === 'fin' || stp.id === 'tdatos') { const sv = el('button', 'btn acc', w.editId ? '✓ Guardar cambios' : stp.id === 'tdatos' ? '✓ Guardar mi personaje' : '✓ Guardar y crear su imagen'); sv.onclick = () => savePersona(); nav.appendChild(sv); }
     if (w.step < S.length - 1) { const nx = el('button', 'btn acc', 'Siguiente →'); nx.onclick = () => { if (stp.id === 'tficha' && !d.ficha) { toast('Sube primero su ficha 360'); return; } w.step++; saveDraft(); paintWiz(); updSide(); host.scrollTop = 0; }; nav.appendChild(nx); }
     host.appendChild(nav); host.scrollTop = keep; // elegir una tarjeta no mueve la vista
@@ -913,7 +913,7 @@
   function ariaPill() { if (!(window.CUENTA && CUENTA.web && CUENTA.ariaMia) || pj.sel !== 'aria') return null; ariaEstado(); const d = ARIAED.d; if (!d || !d.editor || !d.pendiente) return null;   /* v252: solo cuando hay cambios */
     const w = el('div', 'ariaed' + (d.pendiente ? ' pend' : ''), d.pendiente ? '<span>●</span><b>Cambios sin publicar</b>' : `<span>✓</span><b>Publicada</b>${d.publicado ? `<small>${esc(d.publicado.slice(5, 10).split('-').reverse().join('/'))}${d.por ? ' · ' + esc(d.por) : ''}</small>` : ''}`);
     w.title = 'Aria es de equipo: lo que cambiéis Max, Laura o la cuenta de Aria lo veis todos al momento. Los miembros ven la versión publicada.';
-    if (d.pendiente && d.publica) { const b = el('button', 'btn acc', 'Publicar para todos'); b.onclick = async () => { if (!confirm('¿Publicar a Aria para todos los miembros?\n\nVerán sus cambios (fichas, perfil, complementos) desde ahora.')) return; b.disabled = true; b.textContent = 'Publicando…'; let r; try { r = await fetch('/api/aria/publicar', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }).then(x => x.json()); } catch (e) { r = { error: String(e) }; } if (r && r.ok) toast(r.ensayo ? 'Ensayo de publicación hecho (servidor de pruebas)' : 'Aria publicada: los miembros ya la ven'); else toast('No se pudo publicar: ' + ((r && r.error) || 'sin respuesta')); await ariaEstado(true); renderProfile(); }; w.appendChild(b); }
+    if (d.pendiente && d.publica) { const b = el('button', 'btn acc', 'Publicar para todos'); b.onclick = async () => { if (!(await pregunta('¿Publicar a Aria para todos los miembros?\n\nVerán sus cambios (fichas, perfil, complementos) desde ahora.'))) return; b.disabled = true; b.textContent = 'Publicando…'; let r; try { r = await fetch('/api/aria/publicar', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }).then(x => x.json()); } catch (e) { r = { error: String(e) }; } if (r && r.ok) toast(r.ensayo ? 'Ensayo de publicación hecho (servidor de pruebas)' : 'Aria publicada: los miembros ya la ven'); else toast('No se pudo publicar: ' + ((r && r.error) || 'sin respuesta')); await ariaEstado(true); renderProfile(); }; w.appendChild(b); }
     else if (d.pendiente) w.appendChild(el('small', '', 'los publica Max'));
     return w; }
   function tabsBar() { const p = pj.sel === 'aria' ? null : cur(); const creando = !!(p && stageOf(p) !== 'lista'); if (!creando) cierraModal(); const list = pj.sel === 'aria' ? TABS_ARIA : TABS_PJ; let cur_ = pj.tabBy[pj.sel] || 'ficha'; if (creando) cur_ = 'ficha'; const bar = el('div', 'pjtabs');
