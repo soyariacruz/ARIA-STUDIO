@@ -37,7 +37,7 @@ MAX_CUERPO = 40 * 1024 * 1024    # tope de una petición en modo servidor
 MAX_BIBLIO = 200 * 1024 * 1024   # tope de un fichero de la biblioteca común al copiarlo
 KINDS = ('vestidor', 'hair', 'expr')   # las bibliotecas a las que una cuenta puede añadir lo suyo
 _UUID = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
-VERSION = 207
+VERSION = 208
 _ctx = threading.local()   # la cuenta del hilo: la pone cada petición (y, a mano, cada hilo de fondo)
 def uid(): return getattr(_ctx, 'uid', None)   # en local siempre None
 DUENOS = tuple(e.strip().lower() for e in (os.environ.get('ARIA_DUENOS') or 'mix1994max@gmail.com').split(',') if e.strip())   # cuentas que pueden cambiar a Aria Cruz (en la web, la de Max)
@@ -1003,7 +1003,11 @@ def _add_estilo(j, live_path):   # peinado o expresión creados soltando una fot
     return it
 APIS = (('ws', 'WaveSpeed', 'WS_API_KEY', 'wavespeed.env', 'Nano Banana Pro, GPT Image, Seedream y Qwen'),
         ('hf', 'Higgsfield', 'HF_API_KEY', 'higgsfield.env', 'Marketing Studio, Grok y Qwen'),
-        ('ark', 'BytePlus', 'ARK_API_KEY', 'byteplus.env', 'vídeo con Seedance'))
+        ('ark', 'BytePlus', 'ARK_API_KEY', 'byteplus.env', 'vídeo con Seedance'),
+        ('claude', 'Claude (Anthropic)', 'ANTHROPIC_API_KEY', 'anthropic.env', 'escribir mundos, historias y prompts de los Workflows'))
+def _claude_ok(k):   # comprueba una clave de Anthropic listando sus modelos (no genera ni cobra nada)
+    rq = urllib.request.Request('https://api.anthropic.com/v1/models?limit=1', headers={'x-api-key': k, 'anthropic-version': '2023-06-01', 'User-Agent': UA})
+    urllib.request.urlopen(rq, timeout=30).read(); return True
 def _hf_ok(k):   # comprueba una clave de Higgsfield pidiendo un presupuesto (no genera ni cobra nada)
     M = MODELS['qwen']; rq = urllib.request.Request(BASE + '/estimate/' + M['ep'], data=json.dumps(M['body']('a photo', ['https://example.com/a.jpg'], '3:4', 'std')).encode(), method='POST')
     rq.add_header('Authorization', 'Key ' + k); rq.add_header('Content-Type', 'application/json'); rq.add_header('User-Agent', UA); urllib.request.urlopen(rq, timeout=30).read()
@@ -1013,7 +1017,7 @@ def _ark_ok(k):   # comprueba una clave de BytePlus pidiendo su lista de trabajo
 def _de_quien(k):   # ¿de qué proveedor es esta clave? Se prueba con cada uno; None si ninguno la acepta
     if not re.fullmatch(r'[\x21-\x7e]{16,400}', k): return None
     duda = False
-    for aid, prueba in ((('hf', _hf_ok),) if ':' in k else (('ws', _ws_saldo), ('ark', _ark_ok))):
+    for aid, prueba in ((('claude', _claude_ok),) if k.startswith('sk-ant-') else (('hf', _hf_ok),) if ':' in k else (('ws', _ws_saldo), ('ark', _ark_ok))):
         for intento in (1, 2):   # «no la acepta» (401/403…) es un no; cualquier otro fallo (red, 5xx, tardanza) se reintenta una vez
             try: prueba(k); return aid
             except urllib.error.HTTPError as e:
@@ -1567,7 +1571,7 @@ class H(SimpleHTTPRequestHandler):
             if body.get('id') == 'auto':   # la pantalla ya no pregunta de quién es la clave
                 body['id'] = _de_quien(str(body.get('key') or '').strip())
                 if body['id'] == 'duda': return self._json(400, {'error': 'el proveedor no ha respondido al comprobar la clave. No es que esté mal: vuelve a pulsar Conectar'})
-                if not body['id']: return self._json(400, {'error': 'no reconozco esa clave. Hoy funcionan las de WaveSpeed, Higgsfield (con la forma ID:SECRET) y BytePlus: revisa que esté copiada entera'})
+                if not body['id']: return self._json(400, {'error': 'no reconozco esa clave. Hoy funcionan las de WaveSpeed, Higgsfield (con la forma ID:SECRET), BytePlus y Claude (empieza por sk-ant-): revisa que esté copiada entera'})
             api_ = next((a for a in APIS if a[0] == body.get('id')), None)
             if not api_: return self._json(400, {'error': 'API desconocida'})
             aid, nombre, envn, homef, _para = api_
@@ -1577,6 +1581,7 @@ class H(SimpleHTTPRequestHandler):
             if len(k) < 16 or ' ' in k or '\n' in k or (SERVIDOR and not re.fullmatch(r'[\x21-\x7e]{16,400}', k)): return self._json(400, {'error': 'eso no parece una clave'})
             try:
                 if aid == 'ws': _ws_saldo(k)
+                elif aid == 'claude': _claude_ok(k)
                 elif aid == 'hf':
                     if ':' not in k: return self._json(400, {'error': 'la clave de Higgsfield tiene la forma ID:SECRET'})
                     _hf_ok(k)

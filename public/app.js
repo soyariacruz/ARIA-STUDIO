@@ -1696,7 +1696,7 @@ let CASA = null;   // 🎁 saldo regalo (solo en la web, y solo si la cuenta no 
 const dolar = n => '$' + Number(n || 0).toFixed(2);   // el dólar, siempre delante (como en el resto de la app)
 // 💰 Saldo de las APIs (v204): en la cabecera, junto al gasto. Al pulsarlo, el saldo de cada API conectada
 const SALDO = { apis: null, t: 0 };
-const SALDO_RECARGA = { ws: 'https://wavespeed.ai/top-up', hf: 'https://higgsfield.ai/pricing', ark: 'https://console.byteplus.com/ark' };
+const SALDO_RECARGA = { ws: 'https://wavespeed.ai/top-up', hf: 'https://higgsfield.ai/pricing', ark: 'https://console.byteplus.com/ark', claude: 'https://console.anthropic.com/settings/billing' };
 async function saldoCarga(forzar) { if (!state.ready) return; if (!forzar && SALDO.apis && Date.now() - SALDO.t < 120000) return saldoPinta();
   try { const j = await fetch('/api/claves').then(x => x.json()); if (j && j.ok) { SALDO.apis = j.apis || []; SALDO.t = Date.now(); } } catch (e) {} saldoPinta(); }
 function saldoPinta() { const m = document.querySelector('header .meter'); if (!m) return; let b = $('#saldoBtn');
@@ -2001,7 +2001,7 @@ async function openClaves() { // «Tus APIs»: las que tienes conectadas (con su
     const go = async () => { const k = inp.value.trim(); if (!k) { inp.focus(); return; } sv.disabled = true; sv.textContent = 'Comprobando…'; await post({ id: 'auto', key: k }); };
     const sv = el('button', 'btn acc', 'Conectar'); sv.onclick = go; inp.onkeydown = e => { if (e.key === 'Enter') go(); }; row.appendChild(sv);
     if (hayMas) { const z = el('button', 'btn', 'Cancelar'); z.onclick = () => { add = false; msg = {}; draw(); }; row.appendChild(z); }
-    c.appendChild(row); c.appendChild(el('small', 'apinote', 'ARIA STUDIO reconoce sola de quién es. Hoy funciona con claves de <b>WaveSpeed</b>, <b>Higgsfield</b> (con la forma ID:SECRET) y <b>BytePlus</b>.'));
+    c.appendChild(row); c.appendChild(el('small', 'apinote', 'ARIA STUDIO reconoce sola de quién es. Hoy funciona con claves de <b>WaveSpeed</b>, <b>Higgsfield</b> (con la forma ID:SECRET), <b>BytePlus</b> y <b>Claude</b> (Anthropic, empieza por sk-ant-).'));
     if (msg.auto) c.appendChild(el('div', 'claveserr', esc(msg.auto))); setTimeout(() => inp.focus(), 0); return c; };
   const draw = () => { b.innerHTML = ''; const n = A.filter(a => a.on).length; const mias = A.filter(a => a.on || a.off), resto = A.filter(a => !a.on && !a.off);
     b.appendChild(el('div', 'devemo', '🔑')); b.appendChild(el('h3', '', 'Tus APIs')); b.appendChild(el('p', '', `ARIA STUDIO genera con <b>tus propias cuentas</b>: tú pones la clave y pagas solo lo que generas. Las claves se guardan cifradas en tu cuenta de ARIA STUDIO y solo se usan para tus generaciones. ${n ? `Ahora tienes <b>${n}</b> conectada${n === 1 ? '' : 's'}.` : 'Todavía no tienes ninguna conectada.'}`));
