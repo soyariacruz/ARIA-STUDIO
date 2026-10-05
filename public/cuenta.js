@@ -50,6 +50,7 @@ html.gate #gate{display:flex}
 #gate .gerr{color:#e0566a;font-size:13px}
 #gate [hidden]{display:none!important}
 #console,#btnConsole{display:none!important}
+#fbw{bottom:22px!important}
 html.sinapi #livedot,html.sinapi .meter{display:none!important}
 .webnote{font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--mut);border:1px solid var(--line);border-radius:999px;padding:6px 10px;white-space:nowrap}
 .cuentabtn{width:30px;height:30px;border-radius:50%;border:1px solid var(--line);background:var(--panel);color:var(--ink);cursor:pointer;padding:0;overflow:hidden;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:12px;flex:none}
