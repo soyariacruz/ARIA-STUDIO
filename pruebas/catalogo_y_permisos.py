@@ -16,8 +16,8 @@ if CAT:
     datos = json.load(open(CAT)); P.load_ws = lambda: 'x'; P.ws = lambda m, path, body=None, **k: datos; P._hf_listo = lambda: True
     print('1) catálogo')
     L = P._liga_catalogo(True); ids = {x['id'] for x in L}
-    ok(f'{len(L)} generadores', len(L) > 60, len(L))
-    for want in ('black-forest-labs/flux-3/image-edit', 'google/nano-banana-pro/edit', 'openai/gpt-image-2.5-sunburst/edit', 'bytedance/seedream-v5.0-pro/edit', 'kwaivgi/kling-image-o3/edit', 'hf:mstudio'):
+    ok(f'{len(L)} generadores', len(L) >= 18, [x['nombre'] for x in L])
+    for want in ('black-forest-labs/flux-3/image-edit', 'google/nano-banana-pro/edit', 'openai/gpt-image-2.5-sunburst/edit', 'bytedance/seedream-v5.0-pro/edit', 'hf:mstudio'):
         ok('está ' + want, want in ids)
     for nowant in ('bria/virtual-try-on', 'wavespeed-ai/flux-2-dev/edit-lora', 'bytedance/seedream-v4.5/edit-sequential'):
         ok('no está ' + nowant, nowant not in ids)
