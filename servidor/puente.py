@@ -37,7 +37,7 @@ MAX_CUERPO = 40 * 1024 * 1024    # tope de una petición en modo servidor
 MAX_BIBLIO = 200 * 1024 * 1024   # tope de un fichero de la biblioteca común al copiarlo
 KINDS = ('vestidor', 'hair', 'expr')   # las bibliotecas a las que una cuenta puede añadir lo suyo
 _UUID = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
-VERSION = 203
+VERSION = 204
 _ctx = threading.local()   # la cuenta del hilo: la pone cada petición (y, a mano, cada hilo de fondo)
 def uid(): return getattr(_ctx, 'uid', None)   # en local siempre None
 DUENOS = tuple(e.strip().lower() for e in (os.environ.get('ARIA_DUENOS') or 'mix1994max@gmail.com').split(',') if e.strip())   # cuentas que pueden cambiar a Aria Cruz (en la web, la de Max)
@@ -1785,9 +1785,20 @@ class H(SimpleHTTPRequestHandler):
                     ad = os.path.join(casa(), 'feedback_audio') if SERVIDOR else os.path.join(ROOT, 'assets', 'feedback'); os.makedirs(ad, exist_ok=True)
                     an = time.strftime('%Y%m%d-%H%M%S') + '.' + ext; open(os.path.join(ad, an), 'wb').write(base64.b64decode(b64)); arel = ('feedback_audio/' if SERVIDOR else 'assets/feedback/') + an
                 except Exception as e: plog('feedback: audio ✕ ' + str(e))
+            adj = []   # archivos adjuntos (v204): hasta 3, de 10 MB; en la cuenta, fuera de assets/ (no se sirven)
+            for a in (body.get('archivos') or [])[:3]:
+                try:
+                    du = str(a.get('data') or ''); nom = re.sub(r'[^A-Za-z0-9._-]+', '_', str(a.get('nombre') or 'archivo')).strip('._')[-80:] or 'archivo'
+                    if not du.startswith('data:') or ',' not in du: continue
+                    raw = base64.b64decode(du.split(',', 1)[1])
+                    if len(raw) > 10 * 1024 * 1024: continue
+                    fd = os.path.join(casa(), 'feedback_archivos') if SERVIDOR else os.path.join(ROOT, 'assets', 'feedback', 'archivos'); os.makedirs(fd, exist_ok=True)
+                    fn = time.strftime('%Y%m%d-%H%M%S') + '_' + nom; open(os.path.join(fd, fn), 'wb').write(raw); adj.append(('feedback_archivos/' if SERVIDOR else 'assets/feedback/archivos/') + fn)
+                except Exception as e: plog('feedback: adjunto ✕ ' + str(e))
+            if adj: texto = (texto + '\n\n' if texto else '') + 'Adjuntos: ' + ', '.join(x.split('/')[-1] for x in adj)
             if not texto and arel: texto = '(nota de voz sin transcribir: ' + arel + ')'
             if not texto: return self._json(400, {'error': 'el comentario está vacío'})
-            rec = {'t': time.strftime('%Y-%m-%d %H:%M:%S'), 'texto': texto, 'tipo': body.get('tipo') or '💬 Comentario', 'via': body.get('via') or '⌨️ Escrito', 'seccion': (body.get('seccion') or '')[:300], 'contexto': (body.get('contexto') or '')[:1800], 'usuario': body.get('usuario') or 'Max (local)', **({'audio': arel} if arel else {})}
+            rec = {'t': time.strftime('%Y-%m-%d %H:%M:%S'), 'texto': texto, 'tipo': body.get('tipo') or '💬 Comentario', 'via': body.get('via') or '⌨️ Escrito', 'seccion': (body.get('seccion') or '')[:300], 'contexto': (body.get('contexto') or '')[:1800], 'usuario': body.get('usuario') or 'Max (local)', **({'audio': arel} if arel else {}), **({'archivos': adj} if adj else {})}
             if SERVIDOR:   # en servidor: al registro común, con el correo de la sesión (lo que diga el navegador en «usuario» no cuenta); sin Notion
                 rec.update({'texto': texto[:6000], 'tipo': str(rec['tipo'])[:60], 'via': str(rec['via'])[:60], 'usuario': getattr(_ctx, 'email', ''), 'uid': uid()})
                 open(os.path.join(DATOS, 'feedback.jsonl'), 'a').write(json.dumps(rec, ensure_ascii=False) + '\n'); return self._json(200, {'ok': True})

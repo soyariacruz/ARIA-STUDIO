@@ -19,7 +19,7 @@
   // ---------------------------------------------------------------- botón flotante de feedback (v188: SIEMPRE a la vista, en toda la app)
   // Un círculo rosa abajo a la derecha. Al pulsarlo se despliega el panel desde ahí. La app añade sola dónde está la persona, con qué personaje y modelo,
   // qué acaba de generar y si hay algún error a la vista. Se puede escribir, dictar (si el navegador deja) o grabar una nota de voz, que se guarda para transcribirla después.
-  let SECCION = null; const F = { open: false, tipo: '💬 Comentario', voz: false, texto: '', rec: null, oyendo: false, enviando: false, audio: null, seg: 0, mr: null, sinSR: false };
+  let SECCION = null; const F = { open: false, tipo: '💬 Comentario', voz: false, texto: '', rec: null, oyendo: false, enviando: false, audio: null, seg: 0, mr: null, sinSR: false, archivos: [] };
   window.feedbackSection = function (name) { SECCION = name || null; paint(); };
   window.fbContext = null; // cada módulo puede dejar aquí una función que devuelve más contexto
   const donde = () => SECCION || ((TABS[state.tab] || {}).label || state.tab);
@@ -37,15 +37,19 @@
       const tp = el('div', 'fbtipos'); ['🐞 Algo falla', '🧩 Falta algo', '💡 Idea', '💬 Comentario'].forEach(t => { const b = el('button', F.tipo === t ? 'on' : '', t); b.onclick = () => { F.tipo = t; paint(); }; tp.appendChild(b); }); p.appendChild(tp);
       const ta = el('textarea', 'pjin fbta'); ta.rows = 5; ta.placeholder = F.oyendo ? 'Te escucho… habla con normalidad' : 'Qué ha fallado, qué echas en falta o qué mejorarías. También puedes pulsar el micro y hablar.'; ta.value = F.texto; ta.oninput = () => { F.texto = ta.value; const s = document.querySelector('#fbw .fbrow .btn.acc'); if (s) s.disabled = !puedeEnviar(); }; p.appendChild(ta);
       if (F.audio) { const an = el('div', 'fbaudio', `🎙 Nota de voz · ${F.seg} s`); const q = el('button', 'fbx2', '×'); q.title = 'Quitar la nota de voz'; q.onclick = () => { F.audio = null; F.seg = 0; paint(); }; an.appendChild(q); p.appendChild(an); }
+      if (F.archivos.length) { const fl = el('div', 'fbfiles'); F.archivos.forEach((a, i) => { const d = el('div', 'fbfile', `📎<span>${esc(a.nombre)}</span><small>${(a.tam / 1048576).toFixed(1)} MB</small>`); const q = el('button', 'fbx2', '×'); q.title = 'Quitar'; q.onclick = () => { F.archivos.splice(i, 1); paint(); }; d.appendChild(q); fl.appendChild(d); }); p.appendChild(fl); }
       const row = el('div', 'fbrow'); const SR = !F.sinSR && (window.SpeechRecognition || window.webkitSpeechRecognition); const MR = window.MediaRecorder && navigator.mediaDevices && navigator.mediaDevices.getUserMedia;
       if (SR || MR) { const mic = el('button', 'fbmic' + (F.oyendo ? ' on' : ''), F.oyendo ? `⏹ Parar${F.mr ? ' · <i class="fbseg">' + F.seg + ' s</i>' : ''}` : (SR ? '🎙 Hablar' : '🎙 Grabar nota de voz')); mic.title = F.oyendo ? 'Parar' : SR ? 'Dictar el comentario con el micrófono' : 'Grabar una nota de voz (hasta 90 segundos)'; mic.onclick = () => F.oyendo ? stopMic() : (SR ? startMic() : startRec()); row.appendChild(mic); }
       else row.appendChild(el('small', 'fbnomic', 'Este navegador no deja usar el micro: escríbelo'));
+      if (F.archivos.length < 3) { const clip = el('button', 'fbclip', '📎 Adjuntar'); clip.type = 'button'; clip.title = 'Adjuntar un archivo: texto, audio, PDF, imagen, hoja de cálculo… (hasta 3, de 10 MB como mucho cada uno)'; clip.onclick = adjuntar; row.appendChild(clip); }
       const send = el('button', 'btn acc', F.enviando ? 'Enviando…' : 'Enviar'); send.disabled = F.enviando || !puedeEnviar(); send.onclick = enviar; row.appendChild(send); p.appendChild(row);
       w.appendChild(p); setTimeout(() => { const t = w.querySelector('.fbta'); if (t && !F.oyendo) { t.focus(); t.setSelectionRange(t.value.length, t.value.length); } }, 0);
     }
     const btn = el('button', 'fbbtn' + (F.open || F.gracias ? ' on' : ''), F.gracias ? '✓' : F.open ? '×' : '💬'); btn.type = 'button'; btn.title = 'Feedback: cuéntanos qué falla, qué falta o qué mejorarías'; btn.setAttribute('aria-label', 'Feedback'); btn.onclick = () => { if (F.gracias) { F.gracias = null; clearTimeout(F.gt); paint(); return; } F.open = !F.open; if (!F.open) stopMic(); paint(); }; w.appendChild(btn);
   }
-  const puedeEnviar = () => !!(F.texto.trim() || F.audio);
+  const puedeEnviar = () => !!(F.texto.trim() || F.audio || F.archivos.length);
+  function adjuntar() { const inp = document.createElement('input'); inp.type = 'file'; inp.multiple = true; inp.onchange = () => { [...inp.files].forEach(fi => { if (F.archivos.length >= 3) { toast('Como mucho 3 archivos por comentario'); return; } if (fi.size > 10 * 1048576) { toast(`«${fi.name}» pesa más de 10 MB`); return; }
+      const r = new FileReader(); r.onload = () => { F.archivos.push({ nombre: fi.name, tam: fi.size, data: r.result }); paint(); }; r.readAsDataURL(fi); }); }; inp.click(); }
   function startMic() {
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition; if (!SR) return startRec(); stopMic();
     const r = new SR(); r.lang = 'es-ES'; r.continuous = true; r.interimResults = true; const base = F.texto ? F.texto.replace(/\s*$/, ' ') : '';
@@ -65,9 +69,9 @@
   }
   function stopMic() { if (F.mr) { try { F.mr.stop(); } catch (e) {} return; } if (F.rec) { try { F.rec.stop(); } catch (e) {} } F.rec = null; if (F.oyendo) { F.oyendo = false; if (document.getElementById('fbw')) paint(); } }
   async function enviar() {
-    if (F.mr) { stopMic(); await new Promise(r => setTimeout(r, 400)); } else stopMic(); const texto = F.texto.trim(); if (!texto && !F.audio) return; F.enviando = true; paint(); let r;
-    try { r = await fetch('/api/feedback', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ texto, audio: F.audio || undefined, tipo: F.tipo, via: F.audio ? '🎙️ Nota de voz' : F.voz ? '🎙️ Voz' : '⌨️ Escrito', seccion: donde(), contexto: contexto() }) }).then(x => x.json()); } catch (e) { r = { error: String(e) }; }
-    F.enviando = false; if (r && r.ok) { const voz = !!F.audio; Object.assign(F, { texto: '', voz: false, tipo: '💬 Comentario', open: false, audio: null, seg: 0, gracias: voz ? 'Hemos recibido tu nota de voz. La escuchamos y la tenemos en cuenta.' : 'Lo leemos todo y lo tenemos en cuenta para mejorar ARIA STUDIO.' }); clearTimeout(F.gt); F.gt = setTimeout(() => { F.gracias = null; paint(); }, 3500); } else toast('No se pudo enviar: ' + (r ? r.error : 'sin respuesta'));
+    if (F.mr) { stopMic(); await new Promise(r => setTimeout(r, 400)); } else stopMic(); const texto = F.texto.trim(); if (!texto && !F.audio && !F.archivos.length) return; F.enviando = true; paint(); let r;
+    try { r = await fetch('/api/feedback', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ texto, audio: F.audio || undefined, archivos: F.archivos.length ? F.archivos.map(a => ({ nombre: a.nombre, data: a.data })) : undefined, tipo: F.tipo, via: F.audio ? '🎙️ Nota de voz' : F.voz ? '🎙️ Voz' : '⌨️ Escrito', seccion: donde(), contexto: contexto() }) }).then(x => x.json()); } catch (e) { r = { error: String(e) }; }
+    F.enviando = false; if (r && r.ok) { const voz = !!F.audio, adj = F.archivos.length; Object.assign(F, { texto: '', voz: false, tipo: '💬 Comentario', open: false, audio: null, seg: 0, archivos: [], gracias: adj ? (adj === 1 ? 'Hemos recibido tu archivo. Lo revisamos y lo tenemos en cuenta.' : 'Hemos recibido tus archivos. Los revisamos y los tenemos en cuenta.') : voz ? 'Hemos recibido tu nota de voz. La escuchamos y la tenemos en cuenta.' : 'Lo leemos todo y lo tenemos en cuenta para mejorar ARIA STUDIO.' }); clearTimeout(F.gt); F.gt = setTimeout(() => { F.gracias = null; paint(); }, 3500); } else toast('No se pudo enviar: ' + (r ? r.error : 'sin respuesta'));
     paint();
   }
   const arranca = () => { if (typeof state !== 'undefined' && document.body) paint(); else setTimeout(arranca, 400); }; setTimeout(arranca, 800);

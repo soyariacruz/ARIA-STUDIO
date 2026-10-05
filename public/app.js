@@ -119,7 +119,7 @@ function buildNav() {
   { nav.appendChild(el('div', 'nav-sep')); const cb = el('button', 'more soon combtn' + (COM && COM.on ? ' on' : ''), '<span>🤝</span>Comunidad<i>pronto</i>'); cb.title = 'Comunidad: los creadores y sus personajes, colaboraciones y mensajes';
       cb.onclick = () => { if (COM.on) return; if (!COM.visto && window.devIntro) { devIntro('Comunidad', () => { COM.visto = true; comAbre(); }); return; } comAbre(); }; nav.appendChild(cb); }
   if (state.interno) {
-    const wb = el('button', 'more', '<span>🧰</span>Workflows'); wb.title = 'Programas internos del equipo (solo cuentas autorizadas)'; wb.onclick = () => navMore(wb, [['🥊', 'Duelos', () => { location.href = 'liga.html'; }, 'interno']]); nav.appendChild(wb); }
+    const wb = el('button', 'more', '<span>🧰</span>Workflows'); wb.title = 'Programas internos del equipo (solo cuentas autorizadas)'; wb.onclick = () => navMore(wb, [['🥊', 'Duelos', () => { if (window.CUENTA && CUENTA.web) { toast('Los Duelos funcionan de momento en la app del ordenador de Max; en la web, muy pronto'); return; } location.href = 'liga.html'; }, 'interno']]); nav.appendChild(wb); }
   nav.appendChild(el('div', 'sp')); comPonAvisos();
 }
 function setTab(k) {
@@ -1691,6 +1691,24 @@ function hydrateLive() { // lo ya generado se recupera (it.live) pero NO se reve
 }
 let CASA = null;   // 🎁 saldo regalo (solo en la web, y solo si la cuenta no tiene su propia clave): {saldo, mensual, resto, bienvenida, mes, imagen, imagenes}
 const dolar = n => '$' + Number(n || 0).toFixed(2);   // el dólar, siempre delante (como en el resto de la app)
+// 💰 Saldo de las APIs (v204): en la cabecera, junto al gasto. Al pulsarlo, el saldo de cada API conectada
+const SALDO = { apis: null, t: 0 };
+const SALDO_RECARGA = { ws: 'https://wavespeed.ai/top-up', hf: 'https://higgsfield.ai/pricing', ark: 'https://console.byteplus.com/ark' };
+async function saldoCarga(forzar) { if (!state.ready) return; if (!forzar && SALDO.apis && Date.now() - SALDO.t < 120000) return saldoPinta();
+  try { const j = await fetch('/api/claves').then(x => x.json()); if (j && j.ok) { SALDO.apis = j.apis || []; SALDO.t = Date.now(); } } catch (e) {} saldoPinta(); }
+function saldoPinta() { const m = document.querySelector('header .meter'); if (!m) return; let b = $('#saldoBtn');
+  if (!b) { b = el('button', 'saldobtn'); b.id = 'saldoBtn'; b.type = 'button'; b.onclick = e => { e.stopPropagation(); saldoMenu(b); }; m.parentElement.insertBefore(b, m); }
+  const on = (SALDO.apis || []).filter(a => a.on); const con = on.filter(a => typeof a.saldo === 'number'); const tot = con.reduce((x, a) => x + a.saldo, 0);
+  b.style.display = on.length ? '' : 'none'; b.classList.toggle('bajo', con.length > 0 && tot < 1); b.title = 'Lo que te queda en tus APIs. Pulsa para ver el detalle';
+  b.innerHTML = `<span>Saldo</span><b>${con.length ? dolar(tot) : '—'}</b><i>▾</i>`; }
+function saldoMenu(btn) { let m = $('#saldoMenu'); if (m) { m.remove(); return; } m = el('div', 'saldomenu'); m.id = 'saldoMenu'; document.body.appendChild(m); const r = btn.getBoundingClientRect(); m.style.top = Math.round(r.bottom + 8) + 'px'; m.style.right = Math.max(8, Math.round(innerWidth - r.right)) + 'px';
+  const pinta = () => { const on = (SALDO.apis || []).filter(a => a.on); m.innerHTML = '<b class="smh">Saldo de tus APIs</b>';
+    if (!on.length) m.appendChild(el('div', 'smv', 'No tienes ninguna API conectada.'));
+    on.forEach(a => { const f = el('div', 'smf', `<div><b>${esc(a.nombre)}</b><small>${a.error ? esc(a.error) : typeof a.saldo === 'number' ? 'clave ····' + esc(a.fin) : 'esta API no informa de su saldo'}</small></div><em>${typeof a.saldo === 'number' ? dolar(a.saldo) : '—'}</em>`); if (SALDO_RECARGA[a.id]) { const l = el('a', 'smr', 'Recargar ↗'); l.href = SALDO_RECARGA[a.id]; l.target = '_blank'; l.rel = 'noopener'; f.appendChild(l); } m.appendChild(f); });
+    const pie = el('div', 'smpie'); const k = el('button', 'btn', '🔑 Mis APIs'); k.onclick = () => { m.remove(); openClaves(); }; const re = el('button', 'btn', '↻ Actualizar'); re.onclick = async () => { re.disabled = true; await saldoCarga(true); pinta(); }; pie.appendChild(k); pie.appendChild(re); m.appendChild(pie); };
+  pinta(); saldoCarga(true).then(() => { if (m.isConnected) pinta(); });
+  setTimeout(() => document.addEventListener('click', function fuera(e) { if (!m.isConnected) { document.removeEventListener('click', fuera); return; } if (!m.contains(e.target)) { m.remove(); document.removeEventListener('click', fuera); } }), 0); }
+setTimeout(() => saldoCarga(true), 4000); setInterval(() => { if (!document.hidden) saldoCarga(true); }, 180000);
 function casaPinta() { const b = document.getElementById('casa'); if (!b) return; if (!CASA) { b.style.display = 'none'; return; }
   const vacio = CASA.pausa || CASA.imagenes < 1; b.style.display = ''; b.classList.toggle('vacio', vacio); b.onclick = openMonedero;
   b.innerHTML = CASA.pausa ? '🎁 Saldo regalo en pausa' : vacio ? '🎁 Saldo regalo agotado · se repone el día 1' : `🎁 Saldo regalo <b>${dolar(CASA.saldo)}</b> · ~${CASA.imagenes} imágenes`;
