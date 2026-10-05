@@ -38,7 +38,7 @@ MAX_CUERPO = 40 * 1024 * 1024    # tope de una petición en modo servidor
 MAX_BIBLIO = 200 * 1024 * 1024   # tope de un fichero de la biblioteca común al copiarlo
 KINDS = ('vestidor', 'hair', 'expr')   # las bibliotecas a las que una cuenta puede añadir lo suyo
 _UUID = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
-VERSION = 234
+VERSION = 235
 _ctx = threading.local()   # la cuenta del hilo: la pone cada petición (y, a mano, cada hilo de fondo)
 def uid(): return getattr(_ctx, 'uid', None)   # en local siempre None
 DUENOS = tuple(e.strip().lower() for e in (os.environ.get('ARIA_DUENOS') or 'mix1994max@gmail.com').split(',') if e.strip())   # cuentas que pueden cambiar a Aria Cruz (en la web, la de Max)
@@ -1618,7 +1618,7 @@ def _com_lee():
     try: d = json.load(open(COM_F, encoding='utf-8'))
     except Exception: d = {}
     if not isinstance(d, dict): d = {}
-    for k, v in (('sol', []), ('msgs', {}), ('alias', {}), ('visto', {}), ('foto', {})):
+    for k, v in (('sol', []), ('msgs', {}), ('alias', {}), ('visto', {}), ('foto', {}), ('sig', {})):
         if not isinstance(d.get(k), type(v)): d[k] = v
     ahora = time.time()
     for x in d['sol']:   # v223: un permiso con plazo se apaga solo al vencer (se ve terminado en cuanto se lee; se guarda con el siguiente cambio)
@@ -1992,6 +1992,11 @@ class H(SimpleHTTPRequestHandler):
                 pjs = _com_personajes(uu, cid == yo)
                 if pjs or cid == yo: cuentas.append({'cid': cid, 'alias': str(d['alias'].get(cid) or '')[:40], 'yo': cid == yo, 'personajes': pjs, 'foto': int(d['foto'].get(cid) or 0)})
             cuentas.sort(key=lambda c: (not c['yo'], (c['alias'] or 'zzz').lower()))
+            nsig = {}
+            for L_ in d['sig'].values():
+                for k_ in L_ if isinstance(L_, list) else []: nsig[k_] = nsig.get(k_, 0) + 1
+            for c_ in cuentas:
+                for p_ in c_['personajes']: p_['seguidores'] = nsig.get(f"{c_['cid']}:{p_['pid']}", 0)
             if not aria_fija(): cuentas += [dict(c, personajes=[dict(p) for p in c['personajes']]) for c in COM_DEMO]   # 👁 demo: solo el equipo
             chats = []
             for k, M in d['msgs'].items():
@@ -2000,7 +2005,7 @@ class H(SimpleHTTPRequestHandler):
                 otra = [c for c in par if c != yo]; otra = otra[0] if otra else yo; visto = (d['visto'].get(yo) or {}).get(otra, 0)
                 chats.append({'con': otra, 'ultimo': M[-1], 'sin_leer': sum(1 for m in M if m.get('de') != yo and m.get('t', 0) > visto)})
             chats.sort(key=lambda c: -c['ultimo'].get('t', 0))
-            return self._json(200, {'ok': True, 'yo': yo, 'alias': str(d['alias'].get(yo) or ''), 'cuentas': cuentas, 'solicitudes': [x for x in d['sol'] if yo in (x.get('de'), x.get('para'))][-200:], 'chats': chats, 'avisos': _com_avisos(d, yo), 'carpetas': _comp_lista(d, yo), 'prestados': _prest_lista(d, yo)})
+            return self._json(200, {'ok': True, 'yo': yo, 'alias': str(d['alias'].get(yo) or ''), 'cuentas': cuentas, 'solicitudes': [x for x in d['sol'] if yo in (x.get('de'), x.get('para'))][-200:], 'chats': chats, 'avisos': _com_avisos(d, yo), 'siguiendo': [x for x in d['sig'].get(yo) or [] if isinstance(x, str)], 'carpetas': _comp_lista(d, yo), 'prestados': _prest_lista(d, yo)})
         if u.path == '/api/comunidad/avisos':   # (la solicitud de ejemplo de Aria nace aquí también: así el aviso sale sin haber abierto la comunidad)
             yo = _cid()
             with _com_l:
@@ -2175,6 +2180,10 @@ class H(SimpleHTTPRequestHandler):
                         im.crop(((w - m) // 2, (h - m) // 2, (w - m) // 2 + m, (h - m) // 2 + m)).resize((320, 320), Image.LANCZOS).save(fp, 'JPEG', quality=88)
                     except Exception: return self._json(400, {'error': 'No se ha podido leer esa imagen.'})
                     d['foto'][yo] = int(time.time()); _com_guarda(d); return self._json(200, {'ok': True, 'foto': d['foto'][yo]})
+                if ac == 'seguir':   # v235: sigo (o dejo de seguir) a un influencer. No da ningún permiso: solo lo tengo a mano. Su dueña ve cuántos le siguen, no quiénes.
+                    k = f"{str(body.get('cid') or '')[:40]}:{str(body.get('pid') or '')[:80]}"; L = [x for x in d['sig'].get(yo) or [] if isinstance(x, str) and x != k]
+                    if body.get('on', True) and re.fullmatch(r'[a-z0-9-]+:[A-Za-z0-9_.-]+', k): L.append(k)
+                    d['sig'][yo] = L[-500:]; _com_guarda(d); return self._json(200, {'ok': True, 'siguiendo': d['sig'][yo]})
                 if ac == 'alias':
                     d['alias'][yo] = re.sub(r'\s+', ' ', str(body.get('nombre') or '')).strip()[:40]; _com_guarda(d); return self._json(200, {'ok': True, 'alias': d['alias'][yo]})
                 if ac == 'solicitar':
