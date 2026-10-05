@@ -38,7 +38,7 @@ MAX_CUERPO = 40 * 1024 * 1024    # tope de una petición en modo servidor
 MAX_BIBLIO = 200 * 1024 * 1024   # tope de un fichero de la biblioteca común al copiarlo
 KINDS = ('vestidor', 'hair', 'expr')   # las bibliotecas a las que una cuenta puede añadir lo suyo
 _UUID = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
-VERSION = 218
+VERSION = 219
 _ctx = threading.local()   # la cuenta del hilo: la pone cada petición (y, a mano, cada hilo de fondo)
 def uid(): return getattr(_ctx, 'uid', None)   # en local siempre None
 DUENOS = tuple(e.strip().lower() for e in (os.environ.get('ARIA_DUENOS') or 'mix1994max@gmail.com').split(',') if e.strip())   # cuentas que pueden cambiar a Aria Cruz (en la web, la de Max)
@@ -960,7 +960,8 @@ def resolve_image(img):
 JOBS_LOG = os.path.join(DATOS or RAIZ, 'jobs.jsonl') if SERVIDOR else os.path.join(ROOT, 'assets', 'jobs.jsonl')
 class _Jobs(dict):   # cada trabajo se apunta en disco al crearse: un reinicio del puente ya no pierde generaciones pagadas
     def __setitem__(self, k, v):
-        if isinstance(v, dict): v.setdefault('owner', uid()); v.setdefault('email', getattr(_ctx, 'email', '') or ''); v.setdefault('interno', bool(getattr(_ctx, 'interno', False)))   # de quién es (None en local): solo su cuenta lo ve, lo cancela y lo recoge
+        if isinstance(v, dict): v.setdefault('owner', uid()); v.setdefault('email', getattr(_ctx, 'email', '') or ''); v.setdefault('interno', bool(getattr(_ctx, 'interno', False)))
+        if isinstance(v, dict) and getattr(_ctx, 'prest', None) and 'prest' not in v: v['prest'] = [list(p) for p in _ctx.prest]   # v219: creada con el personaje de otro creador → al terminar aparece también en su cuenta   # de quién es (None en local): solo su cuenta lo ve, lo cancela y lo recoge
         super().__setitem__(k, v)
         try:
             with open(JOBS_LOG, 'a') as f: f.write(json.dumps({'rid': k, 'job': v}, ensure_ascii=False, default=str) + '\n')
@@ -1355,7 +1356,7 @@ def _carp_fp(): return os.path.join(_dir(), 'carpetas.json')
 def _carp_lee():
     try: L = json.load(open(_carp_fp(), encoding='utf-8')).get('carpetas') or []
     except Exception: L = []
-    return [{'id': c['id'], 'nombre': str(c.get('nombre') or 'Carpeta')[:40], 't': c.get('t') or 0, 'items': [x for x in c.get('items') or [] if isinstance(x, str)]} for c in L if isinstance(c, dict) and isinstance(c.get('id'), str)]
+    return [{'id': c['id'], 'nombre': str(c.get('nombre') or 'Carpeta')[:40], 't': c.get('t') or 0, 'items': [x for x in c.get('items') or [] if isinstance(x, str)], **({'colab': c['colab']} if isinstance(c.get('colab'), str) else {})} for c in L if isinstance(c, dict) and isinstance(c.get('id'), str)]
 def _carp_haz(b):   # crear · renombrar · borrar · meter · sacar → la lista entera, ya guardada
     ac = str(b.get('accion') or ''); nombre = ' '.join(str(b.get('nombre') or '').split())[:40]
     files = list(dict.fromkeys(x.split('?')[0] for x in (b.get('files') or []) if isinstance(x, str)))[:CARP_ITEMS]
@@ -1381,6 +1382,47 @@ def _carp_haz(b):   # crear · renombrar · borrar · meter · sacar → la list
         fp = _carp_fp(); tmp = f'{fp}.tmp{threading.get_ident()}'
         json.dump({'carpetas': L}, open(tmp, 'w', encoding='utf-8'), ensure_ascii=False, indent=1); os.replace(tmp, fp)
         return L
+def _carp_auto(u, base, otro, alias, rel):   # mete «rel» en la carpeta automática «🤝 <otro creador>» de la cuenta u (se crea la primera vez). No depende de la cuenta en curso.
+    with _cerrojos_l: lk = _cerrojos.setdefault((u, 'carp'), threading.Lock())
+    with lk:
+        fp = os.path.join(base, 'carpetas.json')
+        try: L = [c for c in json.load(open(fp, encoding='utf-8')).get('carpetas') or [] if isinstance(c, dict) and isinstance(c.get('id'), str)]
+        except Exception: L = []
+        c = next((x for x in L if x.get('colab') == otro), None)
+        if not c: c = {'id': 'k' + hashlib.sha1(os.urandom(12)).hexdigest()[:12], 'nombre': ('🤝 ' + (alias or 'Colaboración'))[:40], 't': int(time.time()), 'items': [], 'colab': otro}; L.append(c)
+        if rel not in (c.get('items') or []): c['items'] = [rel] + [x for x in c.get('items') or [] if isinstance(x, str)][:CARP_ITEMS - 1]
+        tmp = f'{fp}.tmp{threading.get_ident()}'; json.dump({'carpetas': L}, open(tmp, 'w', encoding='utf-8'), ensure_ascii=False, indent=1); os.replace(tmp, fp)
+def _conjunta(j, rel, rid):   # v219: la imagen recién guardada (rel, en la casa de quien la ha creado) se copia a las creaciones de la dueña de cada personaje prestado
+    pares = [p for p in (j.get('prest') or []) if isinstance(p, (list, tuple)) and len(p) == 2]
+    if not SERVIDOR or not DATOS or not pares: return
+    try:
+        yo_u = uid(); yo = _cid(); d = _com_lee(); CU = _com_cuentas(); src = os.path.join(casa(), rel); ext = os.path.splitext(rel)[1].lower()
+        if not os.path.isfile(src) or ext not in ('.png', '.jpg', '.jpeg', '.webp'): return
+        try: mia = json.load(open(src + '.json'))
+        except Exception: mia = {}
+        mi_alias = str(d['alias'].get(yo) or '')[:40]; con = []; hechas = set()
+        for cid, pid in pares:
+            u = CU.get(cid)
+            if not u or u == yo_u or not _pid_ok(pid): continue
+            base = os.path.join(DATOS, 'usuarios', u); nombre = pid
+            try: pj = json.load(open(os.path.join(base, 'assets', 'personajes', pid, 'personaje.json'), encoding='utf-8')); nombre = str(pj.get('nombre') or pj.get('name') or pid)[:60]
+            except Exception: pass
+            su_alias = str(d['alias'].get(cid) or '')[:40]; con.append({'con': cid, 'alias': su_alias, 'pid': pid, 'personaje': nombre})
+            if cid in hechas: continue
+            hechas.add(cid)
+            ld = os.path.join(base, 'assets', 'live'); os.makedirs(ld, exist_ok=True); fn = f"colab_{re.sub(r'[^a-z0-9]', '', str(j.get('model') or 'qwen'))}-{rid[:8]}{ext}"; dst = os.path.join(ld, fn)
+            if not os.path.exists(dst):
+                shutil.copyfile(src, dst)
+                # su ficha lleva lo justo: ni las referencias ni la combinación de quien la creó (son de SU biblioteca)
+                meta = {'file': 'assets/live/' + fn, 'kind': 'image', 'item': 'colab', 'name': 'Con ' + (mi_alias or 'otro creador'), 'request_id': rid, 'usd': 0, 't': time.time(), 'model_key': j.get('model'), 'model': mia.get('model'), 'width': mia.get('width'), 'height': mia.get('height'),
+                        'colab': {'con': yo, 'alias': mi_alias, 'pid': pid, 'personaje': nombre, 'mia': False}}
+                json.dump({k: v for k, v in meta.items() if v is not None}, open(dst + '.json', 'w'), ensure_ascii=False, indent=1)
+            _carp_auto(u, base, yo, mi_alias, 'assets/live/' + fn); _peso.pop(u, None)
+            _carp_auto(yo_u, casa(), cid, su_alias, rel)
+        if con:   # y la mía queda marcada como conjunta
+            mia['colab'] = dict(con[0], mia=True, todos=con); json.dump(mia, open(src + '.json', 'w'), ensure_ascii=False, indent=1)
+            plog(f'conjunta → {len(hechas)} cuenta(s) · {rel}')
+    except Exception as e: plog('conjunta ✕ ' + str(e))
 def poster_for(path):   # fotograma del vídeo para la galería (ffmpeg si está)
     out = os.path.splitext(path)[0] + '.jpg'
     if os.path.exists(out): return out
@@ -1470,7 +1512,7 @@ def _estado(rid):   # estado de un trabajo; si ha terminado, lo descarga a la ca
             url = imgs[0]['url'] if isinstance(imgs[0], dict) else imgs[0]
             data = urllib.request.urlopen(urllib.request.Request(url, headers={'User-Agent': UA}), timeout=300).read()
             ext = '.png' if url.lower().split('?')[0].endswith('.png') else '.jpg'
-            fn = f"{_safe_item(j['item'])}_{j.get('model', 'qwen')}-{rid[:8]}{ext}"; open(os.path.join(live_dir(), fn), 'wb').write(data); j['file'] = 'assets/live/' + fn; write_meta(j, j['file'], rid, st); _job_done(rid)
+            fn = f"{_safe_item(j['item'])}_{j.get('model', 'qwen')}-{rid[:8]}{ext}"; open(os.path.join(live_dir(), fn), 'wb').write(data); j['file'] = 'assets/live/' + fn; write_meta(j, j['file'], rid, st); _conjunta(j, j['file'], rid); _job_done(rid)
             if (j.get('meta') or {}).get('estilo'):
                 try: j['estilo'] = _add_estilo(j, os.path.join(live_dir(), fn))
                 except Exception as e: plog('estilo nuevo ✕ ' + str(e))
