@@ -38,7 +38,7 @@ MAX_CUERPO = 40 * 1024 * 1024    # tope de una petición en modo servidor
 MAX_BIBLIO = 200 * 1024 * 1024   # tope de un fichero de la biblioteca común al copiarlo
 KINDS = ('vestidor', 'hair', 'expr')   # las bibliotecas a las que una cuenta puede añadir lo suyo
 _UUID = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
-VERSION = 256
+VERSION = 257
 _ctx = threading.local()   # la cuenta del hilo: la pone cada petición (y, a mano, cada hilo de fondo)
 def uid(): return getattr(_ctx, 'uid', None)   # en local siempre None
 DUENOS = tuple(e.strip().lower() for e in (os.environ.get('ARIA_DUENOS') or 'mix1994max@gmail.com').split(',') if e.strip())   # cuentas que pueden cambiar a Aria Cruz (en la web, la de Max)
@@ -911,7 +911,7 @@ VID_CUR = [('Seedance', 'Seedance 2.0 Fast', 'bytedance/seedance-2.0-fast'), ('S
            ('Kling', 'Kling 3.0 Pro', 'kwaivgi/kling-v3.0-pro'), ('Kling', 'Kling 3.0', 'kwaivgi/kling-v3.0-std'), ('Kling', 'Kling 2.6 Pro', 'kwaivgi/kling-v2.6-pro'),
            ('Veo', 'Veo 3.1', 'google/veo3.1'), ('Veo', 'Veo 3.1 Fast', 'google/veo3.1-fast'), ('Veo', 'Veo 3.1 Lite', 'google/veo3.1-lite'),
            ('Minimax', 'Hailuo 2.3 Pro', 'minimax/hailuo-2.3@pro'), ('Minimax', 'Hailuo 2.3', 'minimax/hailuo-2.3@standard'), ('Minimax', 'Minimax H3', 'minimax/h3'),
-           ('Wan', 'Wan 3.0', 'alibaba/wan-3.0'), ('Sora', 'Sora 2', 'openai/sora-2'), ('Grok', 'Grok Imagine 1.5', 'x-ai/grok-imagine-video-v1.5')]
+           ('Wan', 'Wan 3.0', 'alibaba/wan-3.0'), ('Grok', 'Grok Imagine 1.5', 'x-ai/grok-imagine-video-v1.5')]
 _VCAT = {'t': 0, 'M': {}}; _VCAT_L = threading.Lock()
 def _vcat(forzar=False):   # id → esquema y precio base, del catálogo de WaveSpeed (cada 6 h)
     with _VCAT_L:
@@ -941,8 +941,10 @@ def _vinfo():   # lo que el panel necesita para cada modelo: modos, duraciones, 
         en = lambda k: ((p.get(k) or {}).get('enum') or [])
         dur = en('duration') or ([x for x in range(int((p.get('duration') or {}).get('minimum') or 4), int((p.get('duration') or {}).get('maximum') or 10) + 1)] if 'duration' in p else [])
         dur = sorted(dur, key=lambda x: float(x))
+        mx = lambda k: max([int(((M[v]['p'].get(k) or {}).get('maxItems')) or 0) for v in md.values()] + [0])
+        maxi = {'img': max(mx('reference_images'), mx('images'), 1 if 'i2v' in md else 0), 'vid': mx('reference_videos'), 'aud': mx('reference_audios')}
         out.append({'id': base, 'fam': fam, 'nombre': nom, 'modos': sorted(md), 'usd': min(float(M[v]['usd'] or 0) for v in md.values()), 'dur': dur, 'durDef': (p.get('duration') or {}).get('default'),
-                    'res': en('resolution'), 'aspect': en('aspect_ratio'), 'audio': next((k for k in ('generate_audio', 'sound', 'audio') if (p.get(k) or {}).get('type') == 'boolean'), None), 'refs': 'r2v' in md or 'reference_images' in (M.get(md.get('t2v', ''), {}).get('p') or {})})
+                    'res': en('resolution'), 'aspect': en('aspect_ratio'), 'audio': next((k for k in ('generate_audio', 'sound', 'audio') if (p.get(k) or {}).get('type') == 'boolean'), None), 'refs': 'r2v' in md or 'reference_images' in (M.get(md.get('t2v', ''), {}).get('p') or {}), 'max': maxi})
     return out
 def _vpayload(mid, b, prompt):   # la petición para ese modelo, desde su esquema
     sch = _vcat()[mid]; p = sch['p']; en = lambda k: ((p.get(k) or {}).get('enum') or []); out = {'prompt': prompt}
@@ -964,6 +966,11 @@ def _vpayload(mid, b, prompt):   # la petición para ese modelo, desde su esquem
         E = en('aspect_ratio'); a0 = b.get('aspect') or '9:16'; out['aspect_ratio'] = a0 if (not E or a0 in E) else (p['aspect_ratio'].get('default') or E[0])
     for k in ('generate_audio', 'sound', 'audio'):
         if (p.get(k) or {}).get('type') == 'boolean': out[k] = bool(b.get('audio'))
+    if not mid.startswith('bytedance/'):   # Seedance entiende @Image1; los demás no
+        if 'image' in out and not any(k in out for k in ('images', 'reference_images')): out['prompt'] = re.sub(r'@Image1\b', 'the input image', out['prompt'])
+        elif mid.startswith('x-ai/'): out['prompt'] = re.sub(r'@Image(\d+)', lambda m_: '<IMAGE_%d>' % (int(m_.group(1)) - 1), out['prompt'])
+        elif mid.startswith('alibaba/'): out['prompt'] = re.sub(r'@(Image|Video|Audio)(\d+)', lambda m_: '%s %s' % (m_.group(1), m_.group(2)), out['prompt'])
+        else: out['prompt'] = re.sub(r'@(Image|Video|Audio)(\d+)', lambda m_: '%s %s' % (m_.group(1).lower(), m_.group(2)), out['prompt'])
     falta = [k for k in sch['req'] if k not in out]
     if falta: raise RuntimeError('a este modelo le falta: ' + ', '.join(falta) + (' (necesita una imagen de partida)' if 'image' in falta else ''))
     return out
