@@ -38,7 +38,7 @@ MAX_CUERPO = 40 * 1024 * 1024    # tope de una petición en modo servidor
 MAX_BIBLIO = 200 * 1024 * 1024   # tope de un fichero de la biblioteca común al copiarlo
 KINDS = ('vestidor', 'hair', 'expr')   # las bibliotecas a las que una cuenta puede añadir lo suyo
 _UUID = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
-VERSION = 251
+VERSION = 252
 _ctx = threading.local()   # la cuenta del hilo: la pone cada petición (y, a mano, cada hilo de fondo)
 def uid(): return getattr(_ctx, 'uid', None)   # en local siempre None
 DUENOS = tuple(e.strip().lower() for e in (os.environ.get('ARIA_DUENOS') or 'mix1994max@gmail.com').split(',') if e.strip())   # cuentas que pueden cambiar a Aria Cruz (en la web, la de Max)
@@ -2411,7 +2411,7 @@ class H(SimpleHTTPRequestHandler):
                         else: x.pop('hasta', None)
                         M.append({'de': yo, 'x': f'⏱ El permiso dura ahora {PLAZOS[pz]}.' if pz else '⏱ El permiso ya no tiene fecha de fin.', 't': time.time(), 'auto': True})
                     else:
-                        antes = _sol_nsfw(x); on = bool(body.get('on')); x['nsfw_de' if x.get('de') == yo else 'nsfw_para'] = on
+                        antes = _sol_nsfw(x); on = bool(body.get('on')); mi_k = 'nsfw_de' if x.get('de') == yo else 'nsfw_para'; mi_antes = bool(x.get(mi_k)); x[mi_k] = on
                         if on and x.get('para') == yo:
                             if pz: x['nsfw_hasta'] = time.time() + pz * 86400
                             else: x.pop('nsfw_hasta', None)
@@ -2420,7 +2420,7 @@ class H(SimpleHTTPRequestHandler):
                         ahora_ = _sol_nsfw(x)
                         if ahora_ and not antes: M.append({'de': yo, 'x': '🔞 Modo NSFW activado en esta colaboración: lo habéis activado los dos.' + (f' Dura {PLAZOS[pz]}.' if pz and x.get('para') == yo else ''), 't': time.time(), 'auto': True})
                         elif antes and not ahora_: M.append({'de': yo, 'x': 'He desactivado el modo NSFW de esta colaboración.', 't': time.time(), 'auto': True})
-                        elif on: M.append({'de': yo, 'x': '🔞 He activado el modo NSFW por mi parte. Se enciende cuando lo actives tú también, aquí arriba.', 't': time.time(), 'auto': True})
+                        elif on and not mi_antes: M.append({'de': yo, 'x': '🔞 He activado el modo NSFW por mi parte. Se enciende cuando lo actives tú también, aquí arriba.', 't': time.time(), 'auto': True})
                     _com_guarda(d); return self._json(200, {'ok': True, 'solicitud': x, 'nsfw': _sol_nsfw(x)})
                 if ac == 'mensaje':
                     con = body.get('con', ''); txt = str(body.get('texto') or '').strip()[:2000]
