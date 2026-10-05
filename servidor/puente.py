@@ -38,7 +38,7 @@ MAX_CUERPO = 40 * 1024 * 1024    # tope de una petición en modo servidor
 MAX_BIBLIO = 200 * 1024 * 1024   # tope de un fichero de la biblioteca común al copiarlo
 KINDS = ('vestidor', 'hair', 'expr')   # las bibliotecas a las que una cuenta puede añadir lo suyo
 _UUID = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
-VERSION = 215
+VERSION = 216
 _ctx = threading.local()   # la cuenta del hilo: la pone cada petición (y, a mano, cada hilo de fondo)
 def uid(): return getattr(_ctx, 'uid', None)   # en local siempre None
 DUENOS = tuple(e.strip().lower() for e in (os.environ.get('ARIA_DUENOS') or 'mix1994max@gmail.com').split(',') if e.strip())   # cuentas que pueden cambiar a Aria Cruz (en la web, la de Max)
@@ -1502,7 +1502,14 @@ COM_DEMO = [   # creadores de DEMO para ver cómo queda la Comunidad con gente: 
         {'pid': 'nora-blanc', 'nombre': 'Nora Blanc', 'usuario': '@nora.blanc', 'edad': 25, 'bio': 'Fitness, recetas rápidas y mucho humor.', 'avatar': True},
         {'pid': 'ruby-sanz', 'nombre': 'Ruby Sanz', 'usuario': '@rubysanz', 'edad': 22, 'bio': 'Pelirroja, música indie y vintage.', 'avatar': True}]},
     {'cid': 'demo-vera', 'alias': 'Vera Lys Studio', 'demo': True, 'personajes': [
-        {'pid': 'vera-lys', 'nombre': 'Vera Lys', 'usuario': '@veralys', 'edad': 26, 'bio': 'Belleza y skincare, rutinas reales.', 'avatar': True}]}]
+        {'pid': 'vera-lys', 'nombre': 'Vera Lys', 'usuario': '@veralys', 'edad': 26, 'bio': 'Belleza y skincare, rutinas reales.', 'avatar': True}]},
+    {'cid': 'demo-brisa', 'alias': 'Studio Brisa', 'demo': True, 'personajes': [{'pid': p, 'nombre': n, 'usuario': u, 'edad': e, 'bio': b, 'avatar': True} for p, n, u, e, b in (
+        ('sofia-lumen', 'Sofía Lumen', '@sofialumen', 24, 'Comida callejera y viajes por Asia.'), ('paula-ortiz', 'Paula Ortiz', '@paulaortiz', 23, 'Selfies de espejo y outfits del día.'), ('iris-gomez', 'Iris Gómez', '@irisgomez', 22, 'Humor y caras raras.'))]},
+    {'cid': 'demo-marta', 'alias': 'Marta & Co', 'demo': True, 'personajes': [{'pid': p, 'nombre': n, 'usuario': u, 'edad': e, 'bio': b, 'avatar': True} for p, n, u, e, b in (
+        ('marta-sol', 'Marta Sol', '@martasol', 27, 'Ejecutiva de día, cine de noche.'), ('elena-brisa', 'Elena Brisa', '@elenabrisa', 21, 'Fantasía, cosplay y bosques.'), ('noa-ferrer', 'Noa Ferrer', '@noaferrer', 25, 'Nieve, montaña y aventura.'))]},
+    {'cid': 'demo-noa', 'alias': 'Noa Creates', 'demo': True, 'personajes': [{'pid': p, 'nombre': n, 'usuario': u, 'edad': e, 'bio': b, 'avatar': True} for p, n, u, e, b in (
+        ('julia-mar', 'Julia Mar', '@juliamar', 24, 'Skincare honesto.'), ('dani-rivas', 'Dani Rivas', '@danirivas', 26, 'Tecnología y noches de ordenador.'), ('alba-nieto', 'Alba Nieto', '@albanieto', 23, 'Moda minimal en blanco y negro.'),
+        ('clara-voss', 'Clara Voss', '@claravoss', 25, 'Gaming y ciencia ficción.'), ('ines-palma', 'Inés Palma', '@inespalma', 22, 'Coches clásicos y road trips.'), ('zoe-marin', 'Zoe Marín', '@zoemarin', 24, 'Vida real, sin filtros.'))]}]
 ARIA_CID = 'caria'   # Aria en la comunidad: no es una cuenta, es el personaje de muestra. Le manda a cada cuenta una solicitud de ejemplo y contesta con un mensaje fijo
 ARIA_HOLA = '¡Hola! Soy Aria 💕 Te mando esta solicitud para que veas cómo funcionan las colaboraciones: acéptala y podremos crear imágenes juntas.'
 ARIA_RESP = '¡Genial! Conmigo puedes crear cuando quieras: elígeme en Crear imagen junto a tu personaje. (Soy el personaje de muestra: este chat es un ejemplo de cómo hablarás con otros creadores.)'
@@ -1988,7 +1995,7 @@ class H(SimpleHTTPRequestHandler):
                 if ac == 'mensaje':
                     con = body.get('con', ''); txt = str(body.get('texto') or '').strip()[:2000]
                     if (con not in CU and con != ARIA_CID) or con == yo or not txt: return self._json(400, {'error': 'mensaje no válido'})
-                    if not any(x for x in d['sol'] if {x.get('de'), x.get('para')} == {yo, con} and x.get('estado') in ('pendiente', 'aceptada')): return self._json(403, {'error': 'para escribirle, primero pídele una colaboración'})
+                    if con != ARIA_CID and not _com_personajes(CU[con]) and not any(x for x in d['sol'] if {x.get('de'), x.get('para')} == {yo, con} and x.get('estado') in ('pendiente', 'aceptada')): return self._json(403, {'error': 'para escribirle, primero pídele una colaboración'})
                     if not _com_tope('msg', 120): return self._json(429, {'error': 'demasiados mensajes seguidos: prueba dentro de un rato'})
                     M = d['msgs'].setdefault(_com_par(yo, con), []); M.append({'de': yo, 'x': txt, 't': time.time()})
                     if con == ARIA_CID and not any(m.get('x') == ARIA_RESP for m in M): M.append({'de': ARIA_CID, 'x': ARIA_RESP, 't': time.time() + 1})

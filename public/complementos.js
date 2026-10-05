@@ -82,7 +82,7 @@
     w.appendChild(el('small', '', 'Complementos')); w.appendChild(mini); w.appendChild(el('span', 'cnt', on.length ? `${on.length} de ${L.length}` : 'ninguno seleccionado')); w.appendChild(el('span', 'caret', '▾'));
     const dd = el('div', 'accdd');
     if (!L.length) dd.appendChild(el('div', 'accnone', '<b>Ninguno seleccionado</b><span>Este personaje todavía no tiene complementos.</span>'));
-    L.forEach(c => { const t = tipoOf(c.tipo), a = auto(c), is = isOn(c); const why = c.id in o ? 'a mano' : c.regla === 'siempre' ? 'siempre' : c.regla === 'nunca' ? 'nunca' : a ? 'auto' : 'en escena';
+    const RG = { siempre: 0, escena: 1, nunca: 2 }; L.slice().sort((x, y) => (RG[x.regla] ?? 1) - (RG[y.regla] ?? 1)).forEach(c => { const t = tipoOf(c.tipo), a = auto(c), is = isOn(c); const why = c.id in o ? 'a mano' : c.regla === 'siempre' ? 'siempre' : c.regla === 'nunca' ? 'nunca' : a ? 'auto' : 'en escena';
       const r = el('div', 'it' + (is ? ' on' : ''), `${(c.thumb || c.img) ? `<img src="${c.thumb || c.img}" alt="">` : `<span class="emo">${t.emo}</span>`}<b>${c.nombre}</b><em class="${c.regla === 'escena' && a && !(c.id in o) ? 'auto' : ''}">${why}</em><span class="ck">✓</span>`);
       r.title = c.regla === 'escena' ? (a ? 'Encendido solo porque la escena lo tiene' : 'Se enciende solo si la escena lo tiene') : ''; r.onclick = e => { e.stopPropagation(); o[c.id] = !is; state.accOpen = true; renderSide(); paint(cur(), true); }; dd.appendChild(r); });
     const irPerfil = e => { e.stopPropagation(); state.accOpen = false; const ow = window.cfocusId ? cfocusId() : window.CH ? CH().id : 'aria'; if (window.PJ) { PJ.sel = ow; PJ.wiz = null; PJ.tabBy = Object.assign(PJ.tabBy || {}, { [ow]: 'complementos' }); } setTab('perfil'); };
