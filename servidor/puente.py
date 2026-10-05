@@ -43,7 +43,7 @@ MAX_CUERPO = 40 * 1024 * 1024    # tope de una petición en modo servidor
 MAX_BIBLIO = 200 * 1024 * 1024   # tope de un fichero de la biblioteca común al copiarlo
 KINDS = ('vestidor', 'hair', 'expr')   # las bibliotecas a las que una cuenta puede añadir lo suyo
 _UUID = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
-VERSION = 265
+VERSION = 266
 _ctx = threading.local()   # la cuenta del hilo: la pone cada petición (y, a mano, cada hilo de fondo)
 def uid(): return getattr(_ctx, 'uid', None)   # en local siempre None
 DUENOS = tuple(e.strip().lower() for e in (os.environ.get('ARIA_DUENOS') or 'mix1994max@gmail.com').split(',') if e.strip())   # cuentas que pueden cambiar a Aria Cruz (en la web, la de Max)
@@ -859,6 +859,7 @@ def _casa_puerta(path, ctype=None):   # qué se puede pedir a WaveSpeed con la c
         return
     if '/any-llm' in path: casa_puede(LECTURA_USD); casa_cobra(LECTURA_USD, 'lectura'); return
     if getattr(_ctx, 'casa_ok', False) and any(path == '/api/v3/' + WS_MODELS[k]['ep'] for k in CASA_MODELOS): return
+    if getattr(_ctx, 'casa_ok', False) and path == '/api/v3/' + UPSCALE_EP: return   # v266: ampliar a 4K también con el saldo regalo
     raise RuntimeError('Esto no entra en el saldo regalo: conecta tu propia clave en «Mis APIs».')
 def ws(method, path, body=None, raw=None, ctype=None):
     modo = getattr(_ctx, 'ws_modo', None); k = '' if modo == 'casa' else load_ws()   # ws_modo: un trabajo se consulta con la misma clave con la que se lanzó
@@ -1925,6 +1926,7 @@ def _com_tope(que, n):   # freno por cuenta y hora (solicitudes, mensajes)
     L.append(ahora); return True
 def _pj_guarda(fp, P):   # v260: personaje.json de una vez (fichero temporal + cambio de nombre): nunca queda a medias
     tmp = f'{fp}.tmp{threading.get_ident()}'; json.dump(P, open(tmp, 'w', encoding='utf-8'), ensure_ascii=False, indent=1); os.replace(tmp, fp)
+UPSCALE_EP = 'wavespeed-ai/image-upscaler'; UPSCALE_USD = 0.01   # v266: ampliar a 4K
 _TOPES = {}; _TOPES_L = threading.Lock()
 def _tope(que, n, seg):   # v260: como mucho n veces cada seg segundos por cuenta (en memoria)
     k = (uid(), que); ahora = time.time()
@@ -2846,6 +2848,37 @@ class H(SimpleHTTPRequestHandler):
                     with open(fp, 'a', encoding='utf-8') as fh: fh.write(json.dumps(reg, ensure_ascii=False) + '\n')
             except Exception: pass
             return self._json(200, {'ok': True})
+        if self.path == '/api/ampliar':   # v266: {f:'assets/live/…'} → la misma creación a 4K (una creación nueva, con su ficha)
+            n = int(self.headers.get('Content-Length') or 0); body = json.loads(self.rfile.read(n) or b'{}')
+            try:
+                if lleno(): return self._json(413, {'error': LLENO, 'lleno': True})
+                rel = _rel_ok(str(body.get('f') or '')); p = os.path.join(casa(), *rel.split('/')) if rel else ''
+                if not rel or not rel.startswith('assets/live/') or not _dentro(casa(), p) or not os.path.isfile(p): return self._json(404, {'error': 'Esa creación no está en tu cuenta.'})
+                try: m0 = json.load(open(p + '.json', encoding='utf-8'))
+                except Exception: m0 = {}
+                regalo = casa_on()
+                if regalo:
+                    if m0.get('nsfw'): raise RuntimeError('El saldo regalo no vale para contenido NSFW.')
+                    casa_puede(UPSCALE_USD)
+                url = resolve_ws({'path': rel})
+                try: bal0 = None if regalo else float((ws('GET', '/api/v3/balance').get('data') or {}).get('balance'))
+                except Exception: bal0 = None
+                payload = {'image': url, 'target_resolution': '4k', 'output_format': 'jpeg'}
+                if regalo:
+                    with _cerrojo('gen'):
+                        casa_puede(UPSCALE_USD); _ctx.casa_ok = True
+                        try: r = ws('POST', '/api/v3/' + UPSCALE_EP, payload)
+                        finally: _ctx.casa_ok = False
+                else: r = ws('POST', '/api/v3/' + UPSCALE_EP, payload)
+                rid = (r.get('data') or {}).get('id')
+                if not rid: raise RuntimeError('WaveSpeed no devolvió id: ' + json.dumps(r)[:200])
+                base = os.path.basename(rel).rsplit('.', 1)[0][:60]
+                meta = {k: m0[k] for k in ('char', 'chars', 'charName', 'comp', 'prompt', 'nsfw', 'hidden', 'aspect') if k in m0}
+                meta.update({'name': (m0.get('name') or 'Creación') + ' · 4K', 'tab': 'creaciones', 'model': 'Ampliada a 4K', 'ampliada_de': rel, 'quality': '4K'})
+                jobs[rid] = {'t0': time.time(), 'item': base + '_4k', 'kind': 'image', 'model': 'up4k', 'prov': 'ws', 'usd': UPSCALE_USD, 'bal0': bal0, 'casa': regalo, 'credits': None, 'meta': meta}
+                return self._json(200, {'request_id': rid, 'usd': UPSCALE_USD, 'casa': casa_info() if regalo else None})
+            except Exception as e:
+                plog('ampliar ✕ ' + str(e)); return self._json(400, {'error': str(e)})
         if self.path == '/api/feedback':   # feedback de las secciones en desarrollo → base «💬 Feedback de ARIA STUDIO» de Notion (+ copia en assets/feedback)
             n = int(self.headers.get('Content-Length') or 0); body = json.loads(self.rfile.read(n) or b'{}')
             texto = (body.get('texto') or '').strip(); audio = body.get('audio') or ''; arel = ''

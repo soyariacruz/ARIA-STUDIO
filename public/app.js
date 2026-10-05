@@ -169,7 +169,13 @@ function railFallidas() { // v263: las que no se han podido generar, arriba de l
   const L = fallidas().filter(x => t === 'creaciones' || x.tab === t); if (!L.length) return;
   L.slice().reverse().forEach(x => { const ee = errEs(x.err); const c = el('div', 'cell fallida'); c.innerHTML = `${x.thumb ? `<img class="im" src="${esc(x.thumb)}" alt="">` : ''}<div class="fallt"><b>No se ha podido generar</b><small>${esc(ee.txt)}</small>${ee.tips[0] ? `<i>💡 ${esc(ee.tips[0])}</i>` : ''}<button class="btn">Eliminar</button></div>`;
     c.title = x.name + (x.modelo ? ' · ' + x.modelo : ''); c.querySelector('button').onclick = e => { e.stopPropagation(); fallidaQuita(x.id); }; c.onclick = () => toast([ee.txt].concat(ee.tips).join(' · ')); rail.insertBefore(c, rail.firstChild); }); }
+function espacioBar() { // v266: cuánto ocupan tus creaciones (solo en la web: cada cuenta tiene su cuota)
+  const t0 = $('#pickTitle'); if (!t0) return; let b = $('#espBar'); if (state.tab !== 'creaciones' || !(window.CUENTA && CUENTA.web)) { if (b) b.remove(); return; }
+  const pon = E => { if (!E || !E.tope) return; b = $('#espBar'); if (!b) { b = el('span', 'espbar'); b.id = 'espBar'; t0.after(b); } const g = x => x < 1024 ** 3 ? Math.max(1, Math.round(x / 1024 ** 2)) + ' MB' : (x / 1024 ** 3).toLocaleString('es-ES', { maximumFractionDigits: 1, minimumFractionDigits: 1 }) + ' GB'; const p = Math.min(100, E.usado / E.tope * 100);
+    b.className = 'espbar' + (p > 90 ? ' lleno' : p > 75 ? ' casi' : ''); b.title = p > 90 ? 'Casi no te queda espacio: borra creaciones que no quieras (o las ocultas) para liberar sitio' : 'El espacio de tu cuenta'; b.innerHTML = `<i><u style="width:${p.toFixed(1)}%"></u></i><span>${g(E.usado)} de ${g(E.tope)}</span>`; };
+  pon(window.ESPACIO); if (!espacioBar._t || Date.now() - espacioBar._t > 60000) { espacioBar._t = Date.now(); fetch('/api/ping').then(r => r.json()).then(j => { if (j && j.espacio) { window.ESPACIO = j.espacio; pon(j.espacio); } }).catch(() => {}); } }
 function renderRail() { // cuadrícula vertical con scroll (estilo Freepik)
+  try { setTimeout(espacioBar, 0); } catch (e) {}
   try { setTimeout(railFallidas, 0); } catch (e) {}
   const t = TABS[state.tab]; const v = view(); if (t !== TABS.perfil && t !== TABS.crear && t !== TABS.creaciones && t !== TABS.video) $('#pickTitle').textContent = `${t.label} · ${v.length}`; rail.innerHTML = ''; rail.className = 'grid ' + (t.shape === 'round' ? '' : t.shape) + ' t-' + state.tab + ' sz-' + gsize();
   if (!v.length && t === TABS.video && state.filter.video === 'Vídeos') { // v254: sin vídeos todavía: la Filmoteca para empezar
@@ -587,6 +593,7 @@ function promptWithMenu(ta, box, listFn) { // al escribir «@» sale el menú co
 
 }
 C.chars = C.chars || [{ id: 'aria', name: C.perfil.name || 'Aria Cruz', avatar: C.perfil.avatar || C.base.thumb, ficha: C.perfil.ficha }];
+document.addEventListener('DOMContentLoaded', () => { const mt = document.querySelector('header .meter'); if (mt) { mt.style.cursor = 'pointer'; mt.addEventListener('click', () => openGasto()); } });   // v266: «Gasto» abre el registro
 document.addEventListener('DOMContentLoaded', () => { const d = document.getElementById('livedot'); if (d) { d.style.cursor = 'pointer'; d.title = 'Tu API: clave y saldo'; d.addEventListener('click', () => openClaves()); } });
 const esPrest = id => typeof id === 'string' && id.startsWith('com:');   // «com:<creador>:<personaje>» = el personaje de otro creador, prestado por una colaboración aceptada
 function prestInfo(id) { // un personaje prestado: solo entra como persona AÑADIDA; su ficha la pone el servidor al generar (aquí solo llega su avatar)
@@ -1152,7 +1159,9 @@ function creationMeta(it, host) { if (it.ajena) return ajenaMeta(it, host); // p
     host.appendChild(sec('', dt)); }
   { const rs = el('div', 'stack'); const rec_ = recComp(m); if (Object.keys(rec_).length) { const rb = el('button', 'btn w acc', '✨ Recrear'); rb.title = 'Carga en Crear imagen todo lo de esta creación: personaje, prenda, peinado, referencia, complementos y ajustes'; rb.onclick = () => { closeGal(); recrear(it); }; rs.appendChild(rb); } if (window.CUENTA && CUENTA.web && it.kind !== undefined && !it.pending && it.src && !m.colab && !m.importada) { const f0 = it.src.split('?')[0]; const enPub = CARP.L.some(k => k.pub && k.items.includes(f0)); const veto = it.hidden ? 'está oculta' : m.nsfw ? 'es NSFW' : ''; const pb = el('button', 'btn w outline' + (enPub ? ' pubon' : ''), enPub ? '🌐 Publicada en la comunidad · quitar' : '🌐 Publicar en la comunidad'); pb.title = veto ? 'No se puede publicar: ' + veto : 'Sale en la Fototeca / Filmoteca de la comunidad con su prompt: cualquiera podrá verla, recrearla e importarla'; pb.disabled = !!veto && !enPub;
       pb.onclick = async () => { const auto = CARP.L.find(k => k.pubauto); if (enPub && !(auto && auto.items.includes(f0))) { toast('Está publicada dentro de una carpeta: quítala desde «Compartir» de esa carpeta'); return; } if (await carpHaz({ accion: 'publicar_una', files: [f0], on: !enPub }, enPub ? 'Ya no está en la comunidad' : 'Publicada en la comunidad')) { creationMeta(it, host); carpLado(); } }; rs.appendChild(pb); }
-    const d0 = el('button', 'btn w outline', '⬇ Descargar'); d0.onclick = () => { const a = document.createElement('a'); a.href = it.src; a.download = it.src.split('/').pop(); document.body.appendChild(a); a.click(); a.remove(); }; rs.appendChild(d0); host.appendChild(sec('', rs)); }
+    const d0 = el('button', 'btn w outline', '⬇ Descargar'); d0.onclick = () => { const a = document.createElement('a'); a.href = it.src; a.download = it.src.split('/').pop(); document.body.appendChild(a); a.click(); a.remove(); }; rs.appendChild(d0);
+    if (LIVE && it.kind !== 'video' && !it.video && String(it.src || '').split('?')[0].startsWith('assets/live/') && !m.ampliada_de && !/ · 4K$/.test(m.name || '')) { const up = el('button', 'btn w outline', '🔍 Ampliar a 4K · ' + fmtUsd(0.01)); up.title = 'Una copia nueva a 4K, con más detalle (la original no se toca)'; up.onclick = () => ampliar(it, up); rs.appendChild(up); }   /* v266 */
+    host.appendChild(sec('', rs)); }
   if (m.prompt) { const pb = el('div', 'stack'); pb.appendChild(el('div', 'promptbox', atHtml(m.prompt, m.refs))); pb.querySelectorAll('b.at.link').forEach(b => { b.title = 'Ver la imagen · ' + b.title; b.onclick = e => { e.stopPropagation(); openRefN(m, +b.dataset.n); }; }); const cp = el('button', 'btn w', 'Copiar prompt'); cp.onclick = () => { navigator.clipboard && navigator.clipboard.writeText(m.prompt); toast('Prompt copiado'); }; pb.appendChild(cp); host.appendChild(sec('Prompt', pb)); }
   if (m.model || MN[m.model_key]) rows.push(['Modelo', m.model || MN[m.model_key]]); if (m.quality) rows.push(['Calidad', m.quality]); if (m.resolution) rows.push(['Resolución', m.resolution]); if (m.aspect) rows.push(['Formato', m.aspect]); if (m.width && m.height) rows.push(['Tamaño', `${m.width} × ${m.height} px`]); if (m.duration) rows.push(['Duración', m.duration + ' s']);
   if (m.usd != null || m.usd_est != null) rows.push(['Coste', (it.kind === 'video' ? '≈' : '') + fmtUsd(m.usd != null ? m.usd : m.usd_est)]); if (m.ms) rows.push(['Tiempo', (m.ms / 1000).toFixed(0) + ' s']); if (fecha) rows.push(['Fecha', fecha]); if (m.refs && m.refs.length) rows.push(['Referencias', m.refs.join(', ')]); rows.push(['Archivo', it.src.split('/').pop()]);
@@ -1464,7 +1473,7 @@ function jobBg(it) { const js = [...JOBS.values()].filter(j => !j.end && j.it ==
 async function submitGen() { // un clic = una petición: el botón se bloquea hasta que la generación ha arrancado (se ve «Generando» en la imagen principal)
   if (state.submitting || Date.now() - (submitGen.t || 0) < 500) return; submitGen.t = Date.now(); state.submitting = true; renderSide();
   { const b = state.comp.biblio; if (state.tab === 'crear' && b && b._leyendo) { toast('Leyendo la foto… genero en cuanto termine'); try { await b._leyendo; } catch (e) {} } }
-  try { await tryOn(false); } finally { state.submitting = false; renderSide(); } }
+  try { const N = state.tab === 'crear' ? (state.nimg || 1) : 1; for (let k = 0; k < N; k++) { await tryOn(k > 0); if (k < N - 1) await new Promise(r => setTimeout(r, 400)); } } finally { state.submitting = false; renderSide(); } }   // v266: de 1 a 4 seguidas
 function flyToNav(src, r0, tab) { // la imagen «vuela» hasta el botón del menú y el contador rojo se enciende al llegar
   const nb = document.querySelector(`#nav button[data-tab="${tab}"]`); if (!nb || !r0 || !r0.width) { navBadges(); return; }
   const r1 = nb.getBoundingClientRect(); const f = document.createElement('img'); f.src = src; f.className = 'flyimg';
@@ -1777,7 +1786,9 @@ function crearPanel(it) { // todo en una sección compacta: sin scroll en el pan
   { const w = el('div'); w.appendChild(lab('Referencias')); w.appendChild(refsNode()); box.appendChild(w); }
   box.appendChild(genSettings('crear', it));
   const ex = existingImage('crear', it); const revealed = !!ex; const nJobs = [...JOBS.values()].filter(j => !j.end && j.it === it).length;
-  const foot = el('div', 'genfoot'); const b = el('button', 'btn w acc', state.submitting ? '⏳ Generando imagen…' : `${ex && revealed ? 'Generar nueva' : 'Generar imagen'} · ${fmtUsd(m.usd[state.quality])}${nJobs ? ' · ⏳ ' + nJobs : ''}`); b.disabled = !!state.submitting; b.title = 'Lanza una petición real'; b.dataset.gen = '1'; b.onclick = () => submitGen(); foot.appendChild(b); box.appendChild(foot);
+  if (!state.nimg) { try { state.nimg = Math.min(4, Math.max(1, +localStorage.getItem('am_nimg') || 1)); } catch (e) { state.nimg = 1; } }
+  const N = state.nimg; const foot = el('div', 'genfoot'); { const ns = el('div', 'nimg'); ns.title = 'Cuántas imágenes a la vez'; [1, 2, 3, 4].forEach(k => { const x = el('button', k === N ? 'on' : '', String(k)); x.type = 'button'; x.onclick = () => { state.nimg = k; persist('am_nimg', k); renderSide(); }; ns.appendChild(x); }); foot.appendChild(ns); }   /* v266 */
+  const b = el('button', 'btn w acc', state.submitting ? '⏳ Generando imagen…' : `${ex && revealed ? 'Generar nueva' : 'Generar'}${N > 1 ? ' ' + N + ' imágenes' : ' imagen'} · ${fmtUsd(m.usd[state.quality] * N)}${nJobs ? ' · ⏳ ' + nJobs : ''}`); b.disabled = !!state.submitting; b.title = 'Lanza una petición real'; b.dataset.gen = '1'; b.onclick = () => submitGen(); foot.appendChild(b); box.appendChild(foot);
   return sec('', box);
 }
 async function dropAny(e, dz) { const dt = e.dataTransfer; const f = dt.files && dt.files[0]; if (f) return useDrop(f);
@@ -2023,11 +2034,37 @@ function saldoPinta() { const m = document.querySelector('header .meter'); if (!
   const on = (SALDO.apis || []).filter(a => a.on); const con = on.filter(a => typeof a.saldo === 'number'); const tot = con.reduce((x, a) => x + a.saldo, 0);
   b.style.display = on.length ? '' : 'none'; b.classList.toggle('bajo', con.length > 0 && tot < 1); b.title = 'Lo que te queda en tus APIs. Pulsa para ver el detalle';
   b.innerHTML = `<span>Saldo</span><b>${con.length ? dolar(tot) : '—'}</b><i>▾</i>`; }
+async function ampliar(it, btn) { // v266: la misma creación a 4K → aparece en Mis creaciones como «… · 4K»
+  const f = String(it && it.src || '').split('?')[0]; if (!f.startsWith('assets/live/')) { toast('Solo se pueden ampliar tus imágenes'); return; }
+  if (!(await pregunta(`¿Ampliar «${it.name || 'esta imagen'}» a 4K?\n\nCuesta unos ${fmtUsd(0.01)}. Se crea una copia nueva a 4K en Mis creaciones; la original no se toca.`))) return;
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Ampliando…'; }
+  let r; try { r = await fetch('/api/ampliar', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ f }) }).then(x => x.json()); } catch (e) { r = { error: String(e) }; }
+  if (!r || r.error || !r.request_id) { const ee = errEs(r ? r.error : 'sin respuesta'); toast('No se ha podido ampliar: ' + ee.txt); if (btn) { btn.disabled = false; btn.textContent = '🔍 Ampliar a 4K'; } return; }
+  if (r.casa) casaPon(r.casa); toast('Ampliando a 4K… tarda unos segundos');
+  for (let k = 0; k < 60; k++) { await new Promise(z => setTimeout(z, 4000)); let st; try { st = await fetch('/api/estado?id=' + encodeURIComponent(r.request_id)).then(x => x.json()); } catch (e) { continue; }
+    if (st && st.file) { if (st.casa) casaPon(st.casa); refreshLive(); toast('✓ Ampliada a 4K: ya está en Mis creaciones'); if (btn && btn.isConnected) { btn.textContent = '✓ Ampliada a 4K'; } return; }
+    if (st && st.error && !st.retry) { toast('No se ha podido ampliar: ' + errEs(st.error).txt); if (btn && btn.isConnected) { btn.disabled = false; btn.textContent = '🔍 Ampliar a 4K'; } return; } }
+  toast('La ampliación está tardando: aparecerá en Mis creaciones cuando termine'); }
+window.ampliar = ampliar;
+function openGasto() { // v266: el registro de gasto — cada generación con lo que costó (lo que guarda su ficha)
+  let m0 = $('#gastom'); if (m0) m0.remove(); m0 = el('div', 'fxm'); m0.id = 'gastom'; document.body.appendChild(m0); m0.onclick = e => { if (e.target === m0) m0.remove(); };
+  const b = el('div', 'devbox gastobox'); m0.appendChild(b); const x = el('button', 'btn carpverx', '✕'); x.onclick = () => m0.remove(); b.appendChild(x);
+  const L = (TABS.creaciones.items || []).filter(i => i.meta && typeof i.meta.usd === 'number' && i.meta.usd > 0).map(i => ({ it: i, t: (i.meta.t || 0) * 1000, usd: i.meta.usd })).sort((a, z) => z.t - a.t);
+  const hoy = new Date(); const d0 = new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate()).getTime(), m1 = new Date(hoy.getFullYear(), hoy.getMonth(), 1).getTime(); const suma = a => a.reduce((s_, z) => s_ + z.usd, 0);
+  b.appendChild(el('div', 'devemo', '📒')); b.appendChild(el('h3', '', 'Registro de gasto'));
+  b.appendChild(el('div', 'gastot', `<div><small>Hoy</small><b>${fmtUsd(suma(L.filter(z => z.t >= d0)))}</b></div><div><small>Este mes</small><b>${fmtUsd(suma(L.filter(z => z.t >= m1)))}</b></div><div><small>Total</small><b>${fmtUsd(suma(L))}</b></div>`));
+  b.appendChild(el('small', 'gastonota', `${L.length} generaciones con su coste guardado. Lo que falla no se cobra. Las lecturas de fotos (≈0,002 $) no salen aquí.`));
+  const lst = el('div', 'gastol'); let dia = '';
+  L.slice(0, 300).forEach(z => { const d = new Date(z.t).toLocaleDateString('es-ES', { weekday: 'short', day: 'numeric', month: 'short' }); if (d !== dia) { dia = d; const sd = suma(L.filter(y => new Date(y.t).toLocaleDateString('es-ES', { weekday: 'short', day: 'numeric', month: 'short' }) === d)); lst.appendChild(el('div', 'gastod', `<span>${esc(d)}</span><b>${fmtUsd(sd)}</b>`)); }
+    const r = el('div', 'gastor', `${z.it.thumb ? `<img src="${esc(z.it.thumb)}" alt="">` : '<i></i>'}<div><b>${esc(z.it.meta.name || z.it.name || 'Creación')}</b><small>${esc(z.it.meta.model || '')}${z.it.kind === 'video' || z.it.video ? ' · vídeo' : ''} · ${new Date(z.t).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}</small></div><em>${fmtUsd(z.usd)}</em>`); r.onclick = () => { m0.remove(); if (window.galMias) galMias(L.map(y => y.it), z.it); }; lst.appendChild(r); });
+  if (!L.length) lst.appendChild(el('p', '', 'Todavía no has generado nada con coste.')); b.appendChild(lst);
+  const pie = el('div', 'pjacts'); if (CASA) { const g = el('button', 'btn', '🎁 Mi saldo regalo'); g.onclick = () => { m0.remove(); openMonedero(); }; pie.appendChild(g); } const rc = el('a', 'btn acc', 'Recargar WaveSpeed ↗'); rc.href = 'https://wavespeed.ai/top-up'; rc.target = '_blank'; rc.rel = 'noopener'; pie.appendChild(rc); b.appendChild(pie); }
+window.openGasto = openGasto;
 function saldoMenu(btn) { let m = $('#saldoMenu'); if (m) { m.remove(); return; } m = el('div', 'saldomenu'); m.id = 'saldoMenu'; document.body.appendChild(m); const r = btn.getBoundingClientRect(); m.style.top = Math.round(r.bottom + 8) + 'px'; m.style.right = Math.max(8, Math.round(innerWidth - r.right)) + 'px';
   const pinta = () => { const on = (SALDO.apis || []).filter(a => a.on); m.innerHTML = '<b class="smh">Saldo de tus APIs</b>';
     if (!on.length) m.appendChild(el('div', 'smv', 'No tienes ninguna API conectada.'));
     on.forEach(a => { const f = el('div', 'smf', `<div><b>${esc(a.nombre)}</b><small>${a.error ? esc(a.error) : typeof a.saldo === 'number' ? 'clave ····' + esc(a.fin) : 'esta API no informa de su saldo'}</small></div><em>${typeof a.saldo === 'number' ? dolar(a.saldo) : '—'}</em>`); if (SALDO_RECARGA[a.id]) { const l = el('a', 'smr', 'Recargar ↗'); l.href = SALDO_RECARGA[a.id]; l.target = '_blank'; l.rel = 'noopener'; f.appendChild(l); } m.appendChild(f); });
-    const pie = el('div', 'smpie'); const k = el('button', 'btn', '🔑 Mis APIs'); k.onclick = () => { m.remove(); openClaves(); }; const re = el('button', 'btn', '↻ Actualizar'); re.onclick = async () => { re.disabled = true; await saldoCarga(true); pinta(); }; pie.appendChild(k); pie.appendChild(re); m.appendChild(pie); };
+    const pie = el('div', 'smpie'); const k = el('button', 'btn', '🔑 Mis APIs'); k.onclick = () => { m.remove(); openClaves(); }; const re = el('button', 'btn', '↻ Actualizar'); re.onclick = async () => { re.disabled = true; await saldoCarga(true); pinta(); }; const gg = el('button', 'btn', '📒 Registro de gasto'); gg.onclick = () => { m.remove(); openGasto(); }; pie.appendChild(k); pie.appendChild(gg); pie.appendChild(re); m.appendChild(pie); };   /* v266 */
   pinta(); saldoCarga(true).then(() => { if (m.isConnected) pinta(); });
   setTimeout(() => document.addEventListener('click', function fuera(e) { if (!m.isConnected) { document.removeEventListener('click', fuera); return; } if (!m.contains(e.target)) { m.remove(); document.removeEventListener('click', fuera); } }), 0); }
 setTimeout(() => saldoCarga(true), 4000); setInterval(() => { if (!document.hidden) saldoCarga(true); }, 180000);
@@ -2047,6 +2084,7 @@ async function openMonedero() { // 🎁 el saldo regalo: cuánto queda, de dónd
     b.appendChild(el('div', 'casal', `<span>De ${esc(mesNom)} · se repone el día 1 y no se acumula</span><b>${dolar(c.resto)} de ${dolar(c.mensual)}</b>`));
     b.appendChild(el('div', 'casal', `<span>De bienvenida · no caduca</span><b>${dolar(c.bienvenida)}</b>`));
     b.appendChild(el('div', 'casal', '<span>No vale para NSFW ni para vídeo. Con tu propia clave no hay límite.</span>')); }
+  { const gg = el('button', 'btn', '📒 Todo mi registro de gasto'); gg.onclick = () => { m0.remove(); openGasto(); }; b.appendChild(gg); }   /* v266 */
   const H = (r && r.hist) || []; if (H.length) { b.appendChild(el('h4', '', 'En qué se ha ido')); const hb = el('div', 'casah'); const MN = Object.fromEntries(MODELS.map(m => [m.key, m.name]));
     H.slice(0, 60).forEach(h => hb.appendChild(el('div', 'casal', `<span>${new Date(h.t * 1000).toLocaleDateString('es-ES', { day: 'numeric', month: 'short' })} · ${h.que === 'lectura' ? `${h.n || 1} lectura${(h.n || 1) === 1 ? '' : 's'} de imagen` : 'Imagen' + (h.modelo ? ' · ' + esc(MN[h.modelo] || h.modelo) : '')}</span><b>${fmtUsd(h.usd)}</b>`))); b.appendChild(hb); }
   const ft = el('div', 'pjacts'); if (c) { const k = el('button', 'btn acc big', 'Conectar mi propia clave'); k.onclick = () => { m0.remove(); openClaves(); }; ft.appendChild(k); } const x = el('button', 'btn' + (c ? '' : ' acc big'), 'Cerrar'); x.onclick = () => m0.remove(); ft.appendChild(x); b.appendChild(ft); }
