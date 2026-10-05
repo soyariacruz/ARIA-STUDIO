@@ -112,8 +112,19 @@ def main():
     try: hecho = json.load(open(APUNTE, encoding='utf-8'))
     except (OSError, ValueError): hecho = {}
 
+    # Aria de equipo (v205): si en la web hay una Aria publicada, manda la de la web
+    st0, remoto = pide('GET', '/storage/v1/object/catalogo/catalog.js', key=key)
+    aria_web = None
+    if st0 == 200 and b'"ariaWeb"' in remoto:
+        r = remoto.decode('utf-8'); R = json.loads(r[r.index('{'):r.rindex('}') + 1]); aria_web = (R.get('perfil'), R.get('ariaWeb'))
+        print(f"Aria: se mantiene la de la web (publicada el {aria_web[1].get('t', '?')}). Los cambios de Aria se hacen ahora en la web.")
+        ims = [i for i in ims if not i[0].startswith('perfil/')]
     if 'catalogo' in que:
-        st, out = sube('catalogo', 'catalog.js', os.path.join(SRC, 'catalog.js'), key, cache='0')
+        fp = os.path.join(SRC, 'catalog.js')
+        if aria_web:
+            t = open(fp, encoding='utf-8').read(); C = json.loads(t[t.index('{'):t.rindex('}') + 1]); C['perfil'], C['ariaWeb'] = aria_web
+            fp = os.path.join(AQUI, '.catalogo_subir.js'); open(fp, 'w', encoding='utf-8').write(t[:t.index('{')] + json.dumps(C, ensure_ascii=False) + t[t.rindex('}') + 1:])
+        st, out = sube('catalogo', 'catalog.js', fp, key, cache='0')
         print('catálogo:', 'subido' if st == 200 else f'ERROR {st} {out}')
 
     if ims:

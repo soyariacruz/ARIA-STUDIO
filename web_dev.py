@@ -47,7 +47,8 @@ class H(BaseHTTPRequestHandler):
         hd = {k: v for k, v in self.headers.items() if k.lower() not in SALTO and k.lower() not in ('host', 'origin', 'referer')}
         hd['Host'] = f'{PUENTE[0]}:{PUENTE[1]}'
         if DEV_UID: hd['X-Dev-Uid'] = DEV_UID
-        if DEV_UID and 'sin-casa' in sys.argv: hd['X-Dev-Casa'] = '0'   # como la web publicada hoy: sin saldo regalo
+        if DEV_UID and 'sin-casa' in sys.argv: hd['X-Dev-Casa'] = '0'
+        if DEV_UID and 'interno' in sys.argv: hd['X-Dev-Interno'] = '1'   # pruebas: la cuenta como del equipo (edita la Aria de equipo)   # como la web publicada hoy: sin saldo regalo
         if origin: hd['Origin'] = origin if SERVIDOR else f'http://{PUENTE[0]}:{PUENTE[1]}'   # el puente local solo acepta su propio origen; el de varias cuentas, los de su lista
         c = http.client.HTTPConnection(*PUENTE, timeout=600)
         try:

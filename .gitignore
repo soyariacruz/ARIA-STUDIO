@@ -6,3 +6,4 @@ __pycache__/
 .vercel
 *.bak_*
 .subido.json
+.catalogo_subir.js

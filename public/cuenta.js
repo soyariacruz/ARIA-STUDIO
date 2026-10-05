@@ -226,11 +226,11 @@ html.sinapi #livedot,html.sinapi .meter{display:none!important}
     try { const { data, error } = await CU.sb.from('miembros').select('email,interno').maybeSingle(); if (error) throw error; m = data; }
     catch (e) {
       if (!LOCAL) { dentro = null; return cara('', { salir: true, error: 'No se ha podido comprobar tu acceso. Recarga la página.' }); }
-      console.warn('[cuenta] sin lista de miembros (desarrollo): se entra igualmente', e); m = { interno: true };
+      console.warn('[cuenta] sin lista de miembros (desarrollo): se entra igualmente', e); m = { interno: true, dev: true };
     }
     if (!m) return cara(`La cuenta ${u.email} todavía no tiene acceso. ARIA STUDIO está abierto solo a miembros de la comunidad.`, { salir: true });
     CU.interno = !!m.interno;
-    CU.ariaMia = DUENOS.includes((u.email || '').toLowerCase());   // solo para pintar: quien manda es el servidor (ARIA_DUENOS)
+    CU.ariaMia = DUENOS.includes((u.email || '').toLowerCase()) || (!!m.interno && !m.dev);   // Aria de equipo: Max y las cuentas internas la editan (solo para pintar: quien manda es el servidor)
     // Lo que la app recuerda en el navegador (la combinación a medias, el personaje elegido, el modelo…) es de UNA cuenta:
     // si en este navegador entra otra, empieza limpia (antes heredaba lo último de la anterior).
     try {

@@ -15,7 +15,7 @@ Modo servidor (ARIA_SERVIDOR=1): el mismo puente para muchas cuentas. Cada una e
 ($ARIA_DATOS/usuarios/<uid>: sus carpetas, sus claves, su capa sobre el catálogo común) y sus trabajos. Sin la variable, todo sigue como siempre.
     GET  /api/catalogo         → el catálogo que ve la cuenta (el común + su capa)        · solo en modo servidor
 """
-import os, re, sys, hmac, json, math, time, base64, hashlib, tarfile, mimetypes, threading, urllib.request, urllib.error, urllib.parse
+import os, shutil, re, sys, hmac, json, math, time, base64, hashlib, tarfile, mimetypes, threading, urllib.request, urllib.error, urllib.parse
 from http.server import ThreadingHTTPServer, SimpleHTTPRequestHandler
 
 RAIZ = os.path.dirname(os.path.abspath(__file__)); ROOT = RAIZ   # la carpeta del código y de la biblioteca común (ROOT = lo mismo; solo para lo que es de todos)
@@ -37,11 +37,19 @@ MAX_CUERPO = 40 * 1024 * 1024    # tope de una petición en modo servidor
 MAX_BIBLIO = 200 * 1024 * 1024   # tope de un fichero de la biblioteca común al copiarlo
 KINDS = ('vestidor', 'hair', 'expr')   # las bibliotecas a las que una cuenta puede añadir lo suyo
 _UUID = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
-VERSION = 204
+VERSION = 205
 _ctx = threading.local()   # la cuenta del hilo: la pone cada petición (y, a mano, cada hilo de fondo)
 def uid(): return getattr(_ctx, 'uid', None)   # en local siempre None
 DUENOS = tuple(e.strip().lower() for e in (os.environ.get('ARIA_DUENOS') or 'mix1994max@gmail.com').split(',') if e.strip())   # cuentas que pueden cambiar a Aria Cruz (en la web, la de Max)
-def aria_fija(): return SERVIDOR and (getattr(_ctx, 'email', '') or '').lower() not in DUENOS   # para el resto de cuentas Aria es un personaje fijo: se ve y se usa, no se edita
+ARIA_UID = (os.environ.get('ARIA_UID') or '1e9592c3-a0be-420a-ae93-77b0434bf471').strip().lower()   # la cuenta principal de Aria (soyariacruz@gmail.com): ahí vive la Aria de equipo
+ARIA_PUBLICAN = DUENOS + tuple(e.strip().lower() for e in (os.environ.get('ARIA_PUBLICAN') or 'soyariacruz@gmail.com').split(',') if e.strip())   # quién pulsa «Publicar para todos»
+def aria_fija():   # para los miembros Aria es un personaje fijo: se ve y se usa, no se edita. La editan Max, el equipo (cuentas internas) y la propia cuenta de Aria
+    return SERVIDOR and not ((getattr(_ctx, 'email', '') or '').lower() in DUENOS or getattr(_ctx, 'interno', False) or getattr(_ctx, 'uid', None) == ARIA_UID)
+def _aria_casa():   # la carpeta de la Aria de equipo, para quien puede editarla (si no, None)
+    if not SERVIDOR or not DATOS or aria_fija() or not re.fullmatch(r'[0-9a-f-]{36}', ARIA_UID): return None
+    d = os.path.join(DATOS, 'usuarios', ARIA_UID); os.makedirs(d, mode=0o700, exist_ok=True); return d
+def _pabs(rel):   # fichero de la ficha de Aria (assets/perfil/…): para el equipo, en la carpeta de la Aria de equipo
+    return os.path.join(_aria_casa() or casa(), *rel.split('/'))
 FIJA = 'Aria Cruz es un personaje fijo: su ficha no se puede cambiar. Crea o edita tu propio personaje.'
 class como:   # «with como(uid): …» → lo de dentro corre como esa cuenta
     def __init__(self, u, email='', interno=False): self.n = (u, email, interno)
@@ -60,7 +68,10 @@ def pers_dir(): return _dir('assets', 'personajes')
 def refs_dir(): return _dir('assets', 'refs')
 def mini_dir(): return os.path.join(live_dir(), '.mini')
 def papelera(): return _dir('assets', 'papelera')
-def perfil_dir(*sub): return _dir('assets', 'perfil', *sub)
+def perfil_dir(*sub):   # la ficha de Aria: para el equipo, en la Aria de equipo (todos ven lo mismo)
+    ac = _aria_casa()
+    if not ac: return _dir('assets', 'perfil', *sub)
+    d = os.path.join(ac, 'assets', 'perfil', *sub); os.makedirs(d, exist_ok=True); return d
 def mio(kind):   # (carpeta, prefijo en el catálogo) de lo que la cuenta AÑADE a una biblioteca: en local entra en la de siempre; en servidor se queda en su casa (assets/mio/<tipo>/)
     return (_dir('assets', 'mio', kind), f'assets/mio/{kind}/') if SERVIDOR else (_dir('assets', kind), f'assets/{kind}/')
 _cerrojos = {}; _cerrojos_l = threading.Lock()
@@ -88,7 +99,79 @@ def busca(rel, propio=False):   # ÚNICA puerta para las rutas que manda el nave
     if rel.startswith('assets/prestamo/'): return _prestado(rel) if getattr(_ctx, 'prestamo_ok', False) and not propio else None   # el personaje de otro creador: solo al generar, y solo con su permiso
     base = casa(); full = os.path.join(base, *rel.split('/'))
     if _dentro(base, full) and os.path.isfile(full): return full
+    if not propio:
+        fa = _aria_fich(rel)
+        if fa: return fa
     return _biblio(rel) if SERVIDOR and not propio else None   # en local la biblioteca común ES la carpeta de siempre
+def _aria_fich(rel):   # para el equipo: un fichero de la Aria de equipo (su ficha en assets/perfil, o una imagen de assets/live que su perfil nombra)
+    ac = _aria_casa()
+    if not ac or ac == casa() or not (rel.startswith('assets/perfil/') or (rel.startswith('assets/live/') and rel in _aria_refs(_aria_perfil()))): return None
+    full = os.path.join(ac, *rel.split('/'))
+    return full if _dentro(ac, full) and os.path.isfile(full) else None
+def _aria_refs(P):   # las rutas assets/… que nombra un perfil
+    out = set()
+    def anda(x):
+        if isinstance(x, str): out.update(p.split('?')[0] for p in x.split('|') if p.startswith('assets/'))
+        elif isinstance(x, list): [anda(y) for y in x]
+        elif isinstance(x, dict): [anda(y) for y in x.values()]
+    anda(P); return out
+_aria_l = threading.Lock()
+def _aria_capa_fp(): return os.path.join(DATOS, 'usuarios', ARIA_UID, 'capa.json')
+def _aria_perfil():   # el perfil de la Aria de equipo (None si nadie la ha cambiado aún: entonces vale la publicada)
+    try: P = json.load(open(_aria_capa_fp(), encoding='utf-8')).get('perfil')
+    except Exception: return None
+    return P if isinstance(P, dict) else None
+def _aria_perfil_guarda(P):   # alguien del equipo ha cambiado a Aria: a la capa de la cuenta de Aria (y las imágenes de su live que nombre, copiadas allí)
+    ac = os.path.join(DATOS, 'usuarios', ARIA_UID)
+    for rel in _aria_refs(P):
+        if not rel.startswith('assets/live/'): continue
+        dst = os.path.join(ac, *rel.split('/')); src = os.path.join(casa(), *rel.split('/'))
+        if not os.path.isfile(dst) and _dentro(casa(), src) and os.path.isfile(src): os.makedirs(os.path.dirname(dst), exist_ok=True); shutil.copyfile(src, dst)
+    with _aria_l:
+        fp = _aria_capa_fp()
+        try: capa = json.load(open(fp, encoding='utf-8'))
+        except FileNotFoundError: capa = {'v': 1}
+        capa['perfil'] = P; os.makedirs(os.path.dirname(fp), mode=0o700, exist_ok=True); tmp = f'{fp}.tmp{threading.get_ident()}'
+        with os.fdopen(os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600), 'w', encoding='utf-8') as fh: json.dump(capa, fh, ensure_ascii=False); fh.flush(); os.fsync(fh.fileno())
+        os.replace(tmp, fp)
+    plog('Aria de equipo guardada por ' + (getattr(_ctx, 'email', '') or '?'))
+def _sb_sube(bucket, ruta, data, ctype, cache):   # sube un fichero al almacén de Supabase (con la clave secreta del servidor; nunca sale de aquí)
+    sec = os.environ.get('SUPABASE_SECRET') or ''
+    rq = urllib.request.Request(SB_URL + f'/storage/v1/object/{bucket}/' + urllib.parse.quote(ruta), data=data, method='POST',
+                                headers={'Authorization': 'Bearer ' + sec, 'apikey': sec, 'Content-Type': ctype, 'x-upsert': 'true', 'cache-control': 'max-age=' + cache, 'User-Agent': UA})
+    with urllib.request.urlopen(rq, timeout=120) as r: return r.status
+def _aria_publica():   # la Aria de equipo → catálogo común. Ficheros cambiados con nombre nuevo (su huella): nada se pisa y la caché no estorba
+    P = _aria_perfil()
+    if not isinstance(P, dict): raise RuntimeError('No hay cambios de Aria que publicar')
+    ensayo = bool(os.environ.get('ARIA_CATALOGO')) or not os.environ.get('SUPABASE_SECRET')   # servidor de pruebas: no se toca ni el catálogo de Max ni el almacén
+    ac = os.path.join(DATOS, 'usuarios', ARIA_UID); mapa = {}; dest = os.path.join(DATOS, 'aria_ensayo') if ensayo else ''
+    for rel in sorted(_aria_refs(P)):
+        full = os.path.join(ac, *rel.split('/'))
+        if not (_dentro(ac, full) and os.path.isfile(full)): continue   # lo que no está en la Aria de equipo ya está publicado
+        data = open(full, 'rb').read(); ext = os.path.splitext(rel)[1].lower() or '.jpg'; nuevo = f'assets/perfil/web/{hashlib.sha1(data).hexdigest()[:16]}{ext}'
+        if ensayo: fp = os.path.join(dest, *nuevo.split('/')); os.makedirs(os.path.dirname(fp), exist_ok=True); open(fp, 'wb').write(data)
+        else: _sb_sube('assets', nuevo[len('assets/'):], data, mimetypes.guess_type(full)[0] or 'application/octet-stream', '31536000')
+        bf = os.path.join(DATOS, 'biblioteca', *nuevo.split('/')); os.makedirs(os.path.dirname(bf), exist_ok=True); shutil.copyfile(full, bf)   # y ya en la copia local de la biblioteca del servidor
+        mapa[rel] = nuevo
+    def cambia(x):
+        if isinstance(x, str): return '|'.join(mapa.get(p.split('?')[0], p) for p in x.split('|'))
+        if isinstance(x, list): return [cambia(y) for y in x]
+        if isinstance(x, dict): return {k: cambia(v) for k, v in x.items()}
+        return x
+    Pub = cambia(P); quien = getattr(_ctx, 'email', '') or ''
+    if ensayo: os.makedirs(dest, exist_ok=True); json.dump({'perfil': Pub}, open(os.path.join(dest, 'catalogo.json'), 'w', encoding='utf-8'), ensure_ascii=False)
+    else:
+        sec = os.environ.get('SUPABASE_SECRET') or ''
+        rq = urllib.request.Request(SB_URL + '/storage/v1/object/catalogo/catalog.js', headers={'Authorization': 'Bearer ' + sec, 'apikey': sec, 'User-Agent': UA})
+        with urllib.request.urlopen(rq, timeout=60) as r: raw = r.read().decode('utf-8')
+        cab, fin = raw[:raw.index('{')], raw[raw.rindex('}') + 1:]; C = json.loads(raw[raw.index('{'):raw.rindex('}') + 1])
+        os.makedirs(os.path.join(DATOS, 'aria_copias'), exist_ok=True); open(os.path.join(DATOS, 'aria_copias', time.strftime('%Y%m%d-%H%M%S') + '_catalog.js'), 'w', encoding='utf-8').write(raw)   # el catálogo de antes, por si hay que volver atrás
+        C['perfil'] = Pub; C['ariaWeb'] = {'t': time.strftime('%Y-%m-%d %H:%M'), 'por': quien}
+        _sb_sube('catalogo', 'catalog.js', (cab + json.dumps(C, ensure_ascii=False) + fin).encode('utf-8'), 'application/javascript', '0')
+        with _comun_l: _comun_c.clear()
+    json.dump({'t': time.strftime('%Y-%m-%d %H:%M'), 'por': quien, 'borrador': P, 'ensayo': ensayo}, open(os.path.join(DATOS, 'aria_publicado.json'), 'w', encoding='utf-8'), ensure_ascii=False)
+    plog(f'Aria publicada para todos por {quien} · {len(mapa)} ficheros nuevos' + (' (ENSAYO)' if ensayo else ''))
+    return {'ok': True, 'ficheros': len(mapa), 'ensayo': ensayo}
 def _biblio_ok(rel):
     if rel.startswith(BIBLIO_OK) or rel == 'assets/personajes/_lienzo.jpg': return True
     try: return rel.startswith('assets/live/') and rel in _comun()['live']
@@ -578,7 +661,7 @@ def resolve_image(img):
 JOBS_LOG = os.path.join(DATOS or RAIZ, 'jobs.jsonl') if SERVIDOR else os.path.join(ROOT, 'assets', 'jobs.jsonl')
 class _Jobs(dict):   # cada trabajo se apunta en disco al crearse: un reinicio del puente ya no pierde generaciones pagadas
     def __setitem__(self, k, v):
-        if isinstance(v, dict): v.setdefault('owner', uid())   # de quién es (None en local): solo su cuenta lo ve, lo cancela y lo recoge
+        if isinstance(v, dict): v.setdefault('owner', uid()); v.setdefault('email', getattr(_ctx, 'email', '') or ''); v.setdefault('interno', bool(getattr(_ctx, 'interno', False)))   # de quién es (None en local): solo su cuenta lo ve, lo cancela y lo recoge
         super().__setitem__(k, v)
         try:
             with open(JOBS_LOG, 'a') as f: f.write(json.dumps({'rid': k, 'job': v}, ensure_ascii=False, default=str) + '\n')
@@ -809,7 +892,9 @@ def _capa():   # la capa de la cuenta sobre el catálogo común (su casa/capa.js
     return c if isinstance(c, dict) else {}
 def _fusion(S, capa):   # lo que ve la cuenta = copia entera del común + su capa encima
     C = json.loads(S['txt'])
-    if isinstance(capa.get('perfil'), dict) and not aria_fija(): C['perfil'] = capa['perfil']
+    if not aria_fija():
+        P = _aria_perfil()
+        if isinstance(P, dict): C['perfil'] = P
     oc = capa.get('ocultos') or {}; fav = set(capa.get('fav') or []); padre = capa.get('padre') or {}
     for k in KINDS:
         fuera = set(oc.get(k) or []); L = [x for x in C.get(k) or [] if x.get('id') not in fuera]
@@ -830,7 +915,11 @@ def _cat_load():   # (cabecera, catálogo): en local, catalog.js de siempre; en 
     return 'window.CATALOG = ', _fusion(S, _capa())
 def _capa_save(C):   # modo servidor: el catálogo común NO se escribe nunca; se calcula y se guarda la capa de la cuenta
     S = getattr(_ctx, 'comun', None) or _comun(); vieja = _capa(); capa = {'v': 1}
-    if not aria_fija() and ('perfil' in vieja or C.get('perfil') != S['perfil']): capa['perfil'] = C.get('perfil') or {}   # el perfil entero, desde el primer cambio
+    if not aria_fija():   # Aria de equipo: el perfil va a la cuenta de Aria (si quien guarda es ella misma, a su propia capa)
+        P0 = _aria_perfil(); P = C.get('perfil') or {}; cambia = P != (P0 if P0 is not None else S['perfil'])
+        if uid() == ARIA_UID:
+            if P0 is not None or cambia: capa['perfil'] = P
+        elif cambia: _aria_perfil_guarda(P)
     oc = {}
     for k in KINDS:
         L = [x for x in C.get(k) or [] if isinstance(x, dict)]; ids = S['ids'][k]; hay = {x.get('id') for x in L}
@@ -1225,6 +1314,8 @@ class H(SimpleHTTPRequestHandler):
     def _estatico(self, cabeza=False):   # modo servidor: solo /assets/… — primero la casa de la cuenta; si no está y es de la biblioteca común, al almacén público. Nada más (ni código, ni catálogo, ni registros, ni lo de otra cuenta)
         ruta = urllib.parse.unquote(urllib.parse.urlparse(self.path).path); rel = _rel_ok(ruta[1:]) if ruta.startswith('/assets/') else None
         if not rel: return self._corta(404)
+        fa = _aria_fich(rel) if not os.path.isfile(os.path.join(casa(), *rel.split('/'))) else None
+        if fa: self._cc = 'private, no-cache'; self._fijo = fa; return super().do_HEAD() if cabeza else super().do_GET()
         if rel.startswith('assets/prestamo/'):   # del personaje de otro creador, al navegador solo se le sirve el avatar (su ficha y su cuerpo los lee el servidor al generar)
             full = _prestado(rel) if rel.endswith('/foto.jpg') else None
             if not full: return self._corta(404)
@@ -1266,6 +1357,12 @@ class H(SimpleHTTPRequestHandler):
         if u.path == '/api/claves':   # estado de las APIs, sin enseñar nunca las claves
             A = _apis_estado(); w = A[0]
             return self._json(200, {'ok': True, 'apis': A, 'ws': w['on'], 'ws_fin': w['fin'], 'saldo': w['saldo'], 'casa': casa_info()})
+        if u.path == '/api/aria/estado':   # Aria de equipo: ¿puedo editarla, puedo publicarla, hay cambios sin publicar?
+            if aria_fija(): return self._json(200, {'ok': True, 'editor': False})
+            P = _aria_perfil()
+            try: pub = json.load(open(os.path.join(DATOS, 'aria_publicado.json'), encoding='utf-8'))
+            except Exception: pub = {}
+            return self._json(200, {'ok': True, 'editor': True, 'publica': (getattr(_ctx, 'email', '') or '').lower() in ARIA_PUBLICAN, 'pendiente': P is not None and P != pub.get('borrador'), 'publicado': pub.get('t'), 'por': pub.get('por', '').split('@')[0]})
         if u.path == '/api/monedero':   # 🎁 el saldo regalo de la cuenta y su historial de gasto (lo más nuevo primero)
             c = casa_info()
             if not c and not _casa_base(): return self._json(200, {'ok': True, 'casa': None, 'hist': []})
@@ -1545,6 +1642,10 @@ class H(SimpleHTTPRequestHandler):
                     if con == ARIA_CID and not any(m.get('x') == ARIA_RESP for m in M): M.append({'de': ARIA_CID, 'x': ARIA_RESP, 't': time.time() + 1})
                     del M[:-500]; _com_guarda(d); return self._json(200, {'ok': True})
             return self._json(400, {'error': 'acción desconocida'})
+        if self.path == '/api/aria/publicar':   # «Publicar para todos»: la Aria de equipo pasa a ser la que ven todos los miembros
+            if aria_fija() or (getattr(_ctx, 'email', '') or '').lower() not in ARIA_PUBLICAN: return self._json(403, {'error': 'Publicar a Aria para todos solo lo puede hacer Max'})
+            try: return self._json(200, _aria_publica())
+            except Exception as e: plog('Aria publicar ✕ ' + str(e)[:200]); return self._json(400, {'error': str(e)[:300]})
         if self.path == '/api/restaurar':   # saca una creación de la papelera y la devuelve a Mis creaciones
             n = int(self.headers.get('Content-Length') or 0); body = json.loads(self.rfile.read(n) or b'{}'); fn = os.path.basename(str(body.get('file') or ''))
             trash = papelera(); src = os.path.join(trash, fn)
@@ -1702,10 +1803,10 @@ class H(SimpleHTTPRequestHandler):
                         else: box = ((i % 2) * (W // 2), (i // 2) * (H // 2), (i % 2 + 1) * (W // 2) if i % 2 == 0 else W, (i // 2 + 1) * (H // 2) if i < 2 else H)
                         base.paste(_cover(panel, box[2] - box[0], box[3] - box[1]), box[:2])
                         if body.get('target') == 'cuerpo':
-                            d = perfil_dir('cuerpos'); rel = f'assets/perfil/cuerpos/cuerpo-{stamp}.jpg'; base.save(os.path.join(casa(), rel), quality=92)
+                            d = perfil_dir('cuerpos'); rel = f'assets/perfil/cuerpos/cuerpo-{stamp}.jpg'; base.save(_pabs(rel), quality=92)
                             it = {'id': 'cuerpo-' + stamp, 'nombre': body.get('nombre') or 'Ficha de cuerpo', 'img': rel, 't': time.strftime('%Y-%m-%d %H:%M')}; P.setdefault('cuerpos', []).insert(0, it)
                         else:
-                            d = perfil_dir('fichas360'); rel = f'assets/perfil/fichas360/ficha-{stamp}.jpg'; base.save(os.path.join(casa(), rel), quality=92)
+                            d = perfil_dir('fichas360'); rel = f'assets/perfil/fichas360/ficha-{stamp}.jpg'; base.save(_pabs(rel), quality=92)
                             it = {'id': 'ficha-' + stamp, 'nombre': body.get('nombre') or 'Ficha 360', 'img': rel, 't': time.strftime('%Y-%m-%d %H:%M')}; P.setdefault('fichas360', []).insert(0, it)
                     elif act == 'alt_add':   # guarda una vista generada en el historial de esa ficha (360 o cuerpo)
                         A = P.setdefault('alt', {}).setdefault(body.get('kind') or '360', {}).setdefault(body.get('view') or 'frente', [])
@@ -1713,7 +1814,7 @@ class H(SimpleHTTPRequestHandler):
                         if f and f not in A: A.insert(0, f)
                         it = None
                     elif act == 'add_cuerpo':
-                        d = perfil_dir('cuerpos'); rel = f'assets/perfil/cuerpos/cuerpo-{stamp}.jpg'; Image.open(_abs(body.get('panel'))).convert('RGB').save(os.path.join(casa(), rel), quality=92)
+                        d = perfil_dir('cuerpos'); rel = f'assets/perfil/cuerpos/cuerpo-{stamp}.jpg'; Image.open(_abs(body.get('panel'))).convert('RGB').save(_pabs(rel), quality=92)
                         it = {'id': 'cuerpo-' + stamp, 'nombre': body.get('nombre') or 'Ficha de cuerpo nueva', 'img': rel, 't': time.strftime('%Y-%m-%d %H:%M')}; P.setdefault('cuerpos', []).insert(0, it)
                     elif act == 'principal_cuerpo':
                         L = P.setdefault('cuerpos', []); it = next((c for c in L if c['id'] == body.get('id')), None)
@@ -1949,9 +2050,9 @@ class H(SimpleHTTPRequestHandler):
                             a = Image.open(_abs(it['vistas'])).convert('RGB'); b = Image.open(_abs(it['cuerpo'])).convert('RGB') if it.get('cuerpo') else None; c = Image.open(_abs(it['lado'])).convert('RGB') if it.get('lado') else None
                         else: a, b, c = _split(Image.open(_abs(it['img'])).convert('RGB'))
                         d3 = perfil_dir('fichas360'); st = str(int(time.time()))
-                        fa = f'assets/perfil/fichas360/ficha-{st}.jpg'; _cover(a, CW, CH, 0.2).save(os.path.join(casa(), fa), quality=92); P['ficha'] = fa
+                        fa = f'assets/perfil/fichas360/ficha-{st}.jpg'; _cover(a, CW, CH, 0.2).save(_pabs(fa), quality=92); P['ficha'] = fa
                         for img_, k, stem in ((b, 'comboBody', 'cuerpo'), (c, 'comboSide', 'lado')):
-                            if img_ is not None: fb = f'assets/perfil/combo/{stem}-{st}.jpg'; img_.save(os.path.join(casa(), fb), quality=92); P[k] = fb
+                            if img_ is not None: fb = f'assets/perfil/combo/{stem}-{st}.jpg'; img_.save(_pabs(fb), quality=92); P[k] = fb
                             else: P.pop(k, None)
                         if it.get('vistas') or (it.get('size') and it['size'][0] / it['size'][1] < 1.55): _recompose()   # las antiguas se recomponen al formato nuevo
                         else: P['combo'], P['comboThumb'] = it['img'], it.get('thumb') or it['img']; P['comboSig'] = SIG()
@@ -2345,7 +2446,7 @@ class H(SimpleHTTPRequestHandler):
 _vig_en = set(); _vig_sem = threading.BoundedSemaphore(8)
 def _vigila_uno(rid, j):   # modo servidor: sin llamarse por HTTP — el estado se pide directamente, como la cuenta dueña del trabajo (hasta 8 a la vez)
     try:
-        with como(j.get('owner')): _estado(rid)
+        with como(j.get('owner'), j.get('email') or '', bool(j.get('interno'))): _estado(rid)
     except Exception: pass
     finally: _vig_en.discard(rid); _vig_sem.release()
 _papelera_t = [0.0]
