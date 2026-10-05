@@ -38,7 +38,7 @@ MAX_CUERPO = 40 * 1024 * 1024    # tope de una petición en modo servidor
 MAX_BIBLIO = 200 * 1024 * 1024   # tope de un fichero de la biblioteca común al copiarlo
 KINDS = ('vestidor', 'hair', 'expr')   # las bibliotecas a las que una cuenta puede añadir lo suyo
 _UUID = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
-VERSION = 243
+VERSION = 244
 _ctx = threading.local()   # la cuenta del hilo: la pone cada petición (y, a mano, cada hilo de fondo)
 def uid(): return getattr(_ctx, 'uid', None)   # en local siempre None
 DUENOS = tuple(e.strip().lower() for e in (os.environ.get('ARIA_DUENOS') or 'mix1994max@gmail.com').split(',') if e.strip())   # cuentas que pueden cambiar a Aria Cruz (en la web, la de Max)
@@ -2116,6 +2116,15 @@ class H(SimpleHTTPRequestHandler):
                 d = _com_lee()
                 if _com_aria(d, yo): _com_guarda(d)
             return self._json(200, {'ok': True, 'n': _com_avisos(d, yo)})
+        if u.path == '/api/comunidad/busca':   # v244: en cuáles de MIS conversaciones se ha dicho eso (el último mensaje que lo contiene)
+            yo = _cid(); t = ' '.join(((urllib.parse.parse_qs(u.query).get('q') or [''])[0]).lower().split())[:80]; out = []
+            if len(t) >= 2:
+                for k, M in _com_lee()['msgs'].items():
+                    par = k.split('|')
+                    if yo not in par or not isinstance(M, list): continue
+                    hit = next((m for m in reversed(M) if isinstance(m, dict) and t in str(m.get('x') or '').lower()), None)
+                    if hit: otra = [c for c in par if c != yo]; out.append({'con': otra[0] if otra else yo, 'x': str(hit.get('x') or '')[:160], 't': hit.get('t') or 0, 'mio': hit.get('de') == yo})
+            return self._json(200, {'ok': True, 'q': t, 'hits': out})
         if u.path == '/api/comunidad/chat':   # la conversación con otra cuenta (y se da por leída)
             yo = _cid(); con = (q.get('con') or [''])[0]
             if not (con == ARIA_CID or re.fullmatch(r'c[0-9a-f]{14}', con) or _demo_cid(con)) or con == yo: return self._json(400, {'error': 'conversación no válida'})
