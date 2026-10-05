@@ -6,9 +6,8 @@
   const VERSION = 'v188';
   // ---------------------------------------------------------------- tarjeta «en desarrollo»
   window.devGate = function (card, label, onEnter) { // card = el botón/tarjeta de la función; onEnter = lo que hacía al pulsarlo
-    card.classList.add('devsoon'); card.onclick = e => { e.preventDefault(); toast('Esta sección está en desarrollo: pulsa «Ver igualmente» para entrar'); };
-    const tag = el('div', 'devtags', '<em>Próximamente</em><small>En desarrollo</small>'); const go = el('button', 'devgo', 'Ver igualmente');
-    go.onclick = e => { e.stopPropagation(); devIntro(label, onEnter); }; tag.appendChild(go); card.appendChild(tag); return card;
+    card.classList.add('devsoon'); card.onclick = e => { e.preventDefault(); toast('Próximamente'); };
+    const tag = el('div', 'devtags', '<em>Próximamente</em><small>En desarrollo</small>'); card.appendChild(tag); return card;   // v260 (Max): lo que está «Próximamente» no se abre
   };
   window.devIntro = devIntro; // v123: también para botones del menú (🥊 Duelos)
   function devIntro(label, onEnter) {

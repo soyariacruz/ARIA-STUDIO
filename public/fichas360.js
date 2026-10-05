@@ -46,7 +46,7 @@
     extra().filter(f => !same(f.img, P().ficha)).forEach(f => card(f.img, f.nombre, '4 vistas', f.t, [['★ Principal', async () => { if (confirm(`¿Usar «${f.nombre}» como sus 4 vistas principales en toda la app? Las de ahora se quedan aquí.`)) { if (await api({ action: 'principal', id: f.id })) { await comboApi({ action: 'ensure' }); toast('Vistas principales cambiadas'); renderProfile(); renderSide(); } } }, 'Hacerla principal'], ['⬇', () => dl(f.img), 'Descargar'], ['🗑', async () => { if (confirm(`¿Borrar «${f.nombre}»?`)) { if (await api({ action: 'delete', id: f.id })) renderProfile(); } }, 'Borrar']]));
     (P().cuerpos || []).filter(c => !same(c.img, P().cuerpo)).forEach(c => card(c.img, c.nombre, 'Cuerpo', c.t, [['★ Principal', async () => { if (confirm(`¿Usar «${c.nombre}» como su ficha de cuerpo principal?`)) { const r = await panelApi({ action: 'principal_cuerpo', id: c.id }); if (r) { await comboApi({ action: 'ensure' }); toast('Ficha de cuerpo principal cambiada'); renderProfile(); } } }, 'Hacerla principal'], ['⬇', () => dl(c.img), 'Descargar']]));
     if (!g.children.length) g.appendChild(el('div', 'accempty', 'Todavía no has creado ninguna. Empieza con «＋ Nueva ficha».'));
-    sec2.appendChild(g); if (F3.solo === 'creadas' || !window.TABS_TIENE_FICHAS) w.appendChild(sec2); return w;
+    sec2.appendChild(g); if ((F3.solo === 'creadas' || !window.TABS_TIENE_FICHAS) && !(window.CUENTA && CUENTA.web)) w.appendChild(sec2); return w;   // v260: el Creador de fichas, solo en local hasta que esté terminado
   };
 
   // ------------------------------------------------ editor de la ficha principal (combinada) y de la ficha de cuerpo

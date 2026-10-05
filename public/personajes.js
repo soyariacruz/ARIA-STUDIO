@@ -614,7 +614,7 @@
     if (!forced && st === 'lista') { const mk = el('button', 'btn acc', '✨ Crear imagen con ' + esc((p.nombre || '').split(' ')[0])); mk.title = 'Ir a Crear imagen con este personaje elegido'; mk.onclick = () => { if (window.setChar) setChar(p.id); setTab('crear'); }; acts.appendChild(mk); }
     acts.appendChild(ed);
     const dl = el('button', 'btn', '🗑'); dl.title = 'Borrar personaje'; dl.style.color = '#e25555'; dl.onclick = () => del(p); acts.appendChild(dl); hd.appendChild(acts); v.appendChild(hd);
-    if (!LIVE) { v.appendChild(el('div', 'pjapi', `<div class="pjvideo">▶<small>Vídeo de Aria: cómo conectar tus APIs · pronto</small></div><div><h3>Conecta tu API</h3><p>Para crear su imagen hace falta tu clave de WaveSpeed (o de Higgsfield). Conéctala arriba, en «Conecta tu API».</p></div>`)); { const kb = el('button', 'btn acc', '🔑 Conectar mi API'); kb.style.cssText = 'width:auto;margin-top:10px'; kb.onclick = () => { if (window.openClaves) openClaves(); }; v.lastChild.lastChild.appendChild(kb); } return v; }
+    if (!LIVE) { v.appendChild(el('div', 'pjapi', `<div class="pjvideo">▶<small>Vídeo de Aria: cómo conectar tus APIs · pronto</small></div><div><h3>Conecta tu API</h3><p>Para crear su imagen hace falta tu clave de WaveSpeed (o de Higgsfield). Conéctala arriba, en «Conecta tu API».</p></div>`)); { const kb = el('button', 'btn acc', '🔑 Conectar mis APIs'); kb.style.cssText = 'width:auto;margin-top:10px'; kb.onclick = () => { if (window.openClaves) openClaves(); }; v.lastChild.lastChild.appendChild(kb); } return v; }
     if (st !== 'lista' || (pj.forceStage && pj.forceStage[p.id])) v.appendChild(stagesBar(p, st));
     if (st === 'explorar') v.appendChild(panelExplorar(p));
     else if (st === 'vistas') v.appendChild(panelVistas(p));
@@ -902,7 +902,7 @@
   }
   function updSide() { if (state.tab === 'perfil' && pj.wiz) renderSide(); }
 
-  const TABS_ARIA = [['ficha', '🪪', 'Mi ficha 360'], ['complementos', '👓', 'Complementos'], ['lugares', '📍', 'Lugares', 0, 1], ['voz', '🎙', 'Voz', 1], ['mascotas', '🐾', 'Mascotas', 1]];   // v253: el «Creador de fichas» sale de aquí (se decidirá dónde va)   // [id, icono, nombre, pronto (sin contenido), en desarrollo (se entra con aviso)] // Poses irá al menú de la izquierda
+  const TABS_ARIA = [['ficha', '🪪', 'Mi ficha 360'], ['complementos', '👓', 'Complementos'], ['lugares', '📍', 'Lugares', 1], ['voz', '🎙', 'Voz', 1], ['mascotas', '🐾', 'Mascotas', 1]];   // v253: el «Creador de fichas» sale de aquí (se decidirá dónde va)   // [id, icono, nombre, pronto (sin contenido), en desarrollo (se entra con aviso)] // Poses irá al menú de la izquierda
   const TABS_PJ = TABS_ARIA; window.TABS_TIENE_FICHAS = false;   // v253: sin la pestaña, «Mi ficha 360» vuelve a enseñar también las fichas creadas   // v252: Aria también con «Creador de fichas»   // v248: las tres fichas principales, y aparte el creador de fichas // todos los personajes con la misma interfaz que Aria (el prompt base está en el panel de la izquierda)
   const SOON = { mascotas: 'Sus mascotas fijas, con su ficha: salen como una referencia más cuando las añades a una imagen, igual que crear con otro influencer.', voz: 'Su voz para los vídeos: la voz clonada, su cadencia y sus muletillas, con muestras para escuchar y elegir.', lugares: 'Sus sitios de siempre (su habitación, su cocina, su calle…) guardados como referencias, para que sus escenas sean coherentes.' };
   pj.tabBy = pj.tabBy || {};
