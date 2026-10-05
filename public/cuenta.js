@@ -108,7 +108,9 @@ html.sinapi #livedot,html.sinapi .meter{display:none!important}
     const e = document.createElement('small'); e.textContent = d.email;
     const out = document.createElement('button'); out.textContent = 'Cerrar sesión';
     out.onclick = () => { out.disabled = true; out.textContent = 'Cerrando…'; salir(); };
-    menu.append(av, n, e, out);
+    const mk = (t, fn) => { const b = document.createElement('button'); b.className = 'cmx'; b.textContent = t; b.onclick = () => { closeMenu(); fn(); }; return b; };   // v267
+    const extra = [window.openGasto ? mk('📒 Registro de gasto', () => openGasto()) : null, window.openAyuda ? mk('❓ Ayuda', () => openAyuda()) : null].filter(Boolean);
+    menu.append(av, n, e, ...extra, out);
     menu.style.top = (r.bottom + 8) + 'px'; menu.style.right = Math.max(8, innerWidth - r.right) + 'px';
     menu.onclick = (ev) => ev.stopPropagation();
     document.body.appendChild(menu); btn.classList.add('on');
