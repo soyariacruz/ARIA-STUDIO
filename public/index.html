@@ -1590,6 +1590,7 @@ nav .navlib button.more span{font-size:9px}
   /* Mis creaciones: sin el hueco de la imagen grande (tocar una abre su ventana) */
   body[data-tab=creaciones] .mirror-wrap,body[data-tab=creaciones] aside#side{display:none!important}
   body[data-tab=creaciones] .picker{min-height:calc(100vh - 110px)}
+  .stage.gallery .mirror-wrap{display:none!important}
   /* bibliotecas: la imagen un poco más baja */
   body[data-tab=biblio] .mirror-wrap,body[data-tab=videoteca] .mirror-wrap,body[data-tab=vestidor] .mirror-wrap,body[data-tab=hair] .mirror-wrap,body[data-tab=expr] .mirror-wrap,body[data-tab=photo] .mirror-wrap,body[data-tab=movie] .mirror-wrap,body[data-tab=cartoon] .mirror-wrap{height:46vh}
   /* la ventana de una creación: imagen arriba, su ficha debajo, a pantalla completa */
@@ -1614,8 +1615,16 @@ nav .navlib button.more span{font-size:9px}
   header .right{min-width:0;flex-shrink:1;overflow:hidden}
   .themebtn{flex:none}
   #compage{top:48px!important;left:0!important;right:0!important;bottom:calc(62px + env(safe-area-inset-bottom))!important;border-left:0!important}
+  /* menús que en el ordenador se abren al lado: en el móvil, una hoja que sube desde abajo */
+  .chardd.on,.atmenu,.navmore,.carpmenu{position:fixed!important;left:8px!important;right:8px!important;top:auto!important;bottom:calc(70px + env(safe-area-inset-bottom))!important;width:auto!important;max-width:none!important;max-height:60vh!important;overflow:auto!important;z-index:150!important;border-radius:16px!important;box-shadow:0 -10px 40px rgba(0,0,0,.35)!important}
+  .atmenu{max-height:45vh!important}
+  /* Mensajes: primero la lista; al tocar un chat, solo la conversación */
+  .cpchatw{display:block!important}
+  .cpchatw:not(.vehilo) .cphilo{display:none!important}
+  .cpchatw.vehilo .cpchats{display:none!important}
+  .cpvolver{display:inline-flex!important;align-items:center;gap:6px;border:0;background:none;color:var(--acc);font:inherit;font-size:13px;font-weight:700;padding:4px 0 10px;cursor:pointer}
   /* el botón de feedback, encima del menú y más pequeño */
-  #fbw{bottom:calc(72px + env(safe-area-inset-bottom))!important;right:10px!important}
+  #fbw{bottom:calc(72px + env(safe-area-inset-bottom))!important;right:10px!important;z-index:100!important}
   #fbw .fbbtn{width:44px;height:44px;font-size:18px}
   .gridhd{padding:8px 12px 6px;flex-wrap:wrap}
   .gridhd .search{width:120px}
