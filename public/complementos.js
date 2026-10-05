@@ -231,18 +231,11 @@
       const src = srcOf(E.view); const isCover = E.view === E.cover;
       // ---------- izquierda: colección (foto original + fichas de producto) con portada y referencia
       const media = el('div', 'fxmedia accmedia');
-      if (col.length > 1 && !E.job) {
-        const rows = el('div', 'accroles');
-        const row = (label, sub, role) => { const r = el('div', 'accrole'); r.appendChild(el('div', 'accroleh', `<b>${label}</b><small>${sub}</small>`)); const tl = el('div', 'acctiles');
-          col.forEach(([k, n]) => { const on = E[role] === k; const b = el('button', 'acctile' + (on ? ' on' : '') + (E.view === k ? ' view' : ''), `<img src="${srcOf(k)}" alt=""><span>${n}</span>${on ? '<i>✓</i>' : ''}`); b.title = role === 'cover' ? 'Usar como portada (la miniatura de la tarjeta)' : 'Usar como referencia al generar';
-            b.onclick = () => { if (role === 'cover' && E.cover !== k) { E.cover = k; E.crop = { z: 1, x: 0.5, y: 0.5 }; E.coverTouched = true; } if (role === 'ref') E.ref = k; E.view = k; paint(); };
-            if (k !== '__foto__') { const x = el('button', 'acctx', XSVG); x.title = 'Quitar esta ficha de la colección'; x.onclick = e => { e.stopPropagation(); if (!confirm(`¿Quitar «${n}» de la colección de este complemento?`)) return; E.fichas = E.fichas.filter(z => z !== k); E.nuevas = E.nuevas.filter(z => z !== k); paint(); }; b.appendChild(x); }
-            tl.appendChild(b); });
-          r.appendChild(tl); rows.appendChild(r); };
-        row('Portada', 'la que se ve en su tarjeta', 'cover');
-        if (c.modo === 'foto') row('Referencia al generar', 'la que se envía a la IA', 'ref');
-        media.appendChild(rows);
-      }
+      if (col.length > 1 && !E.job) { // v248: una sola tira; lo que es cada imagen se marca debajo de la grande
+        const tl = el('div', 'acctiles accuna'); col.forEach(([k, n]) => { const b = el('button', 'acctile' + (E.view === k ? ' on' : ''), `<img src="${srcOf(k)}" alt="">${E.cover === k ? '<em class="accbad" title="Portada">★</em>' : ''}${c.modo === 'foto' && E.ref === k ? '<em class="accbad ref" title="Se envía al generar">IA</em>' : ''}`); b.title = n; b.onclick = () => { E.view = k; paint(); };
+          if (k !== '__foto__') { const x = el('button', 'acctx', XSVG); x.title = 'Quitar esta ficha'; x.onclick = e => { e.stopPropagation(); if (!confirm(`¿Quitar «${n}»?`)) return; E.fichas = E.fichas.filter(z => z !== k); E.nuevas = E.nuevas.filter(z => z !== k); paint(); }; b.appendChild(x); } tl.appendChild(b); }); media.appendChild(tl);
+        const ch = el('div', 'accrolechips'); const mk = (on, t, fn) => { const q = el('button', 'accrc' + (on ? ' on' : ''), (on ? '✓ ' : '') + t); q.disabled = on; q.onclick = fn; ch.appendChild(q); };
+        mk(E.cover === E.view, 'Portada', () => { E.cover = E.view; E.crop = { z: 1, x: 0.5, y: 0.5 }; E.coverTouched = true; paint(); }); if (c.modo === 'foto') mk(E.ref === E.view, 'Se envía al generar', () => { E.ref = E.view; paint(); }); media.appendChild(ch); }
       if (src && isCover) {
         const vp = el('div', 'accvp'); const im = document.createElement('img'); im.src = src; im.draggable = false; vp.appendChild(im); vp.appendChild(el('div', 'accvpfr')); media.appendChild(vp);
         E.crop = E.crop || { z: 1, x: 0.5, y: 0.5 }; const cr = E.crop;
@@ -253,8 +246,8 @@
         window.onmouseup = () => { drag = null; };
         const zr = document.createElement('input'); zr.type = 'range'; zr.min = 1; zr.max = 8; zr.step = 0.05; zr.value = cr.z; zr.className = 'acczoom'; zr.oninput = () => { cr.z = +zr.value; E.cropTouched = true; place(); };
         vp.onwheel = e => { if (E.job) return; e.preventDefault(); cr.z = Math.min(8, Math.max(1, cr.z * (e.deltaY < 0 ? 1.08 : 0.93))); zr.value = cr.z; E.cropTouched = true; place(); };
-        const tools = el('div', 'acctools'); tools.appendChild(el('small', '', 'Portada: arrastra para encuadrar · rueda o barra para acercar')); tools.appendChild(zr); media.appendChild(tools);
-      } else if (src) { const vw = el('div', 'accview'); vw.appendChild(Object.assign(document.createElement('img'), { src, alt: '' })); vw.onclick = () => lightbox(src, c.nombre || 'Complemento'); media.appendChild(vw); media.appendChild(el('small', 'accpickh', E.view === E.ref && c.modo === 'foto' ? 'Esta es la que se envía al generar' : 'Pulsa arriba para usarla como portada o como referencia')); }
+        const tools = el('div', 'acctools'); tools.appendChild(el('small', '', 'Arrastra para encuadrar la portada')); tools.appendChild(zr); media.appendChild(tools);
+      } else if (src) { const vw = el('div', 'accview'); vw.appendChild(Object.assign(document.createElement('img'), { src, alt: '' })); vw.onclick = () => lightbox(src, c.nombre || 'Complemento'); media.appendChild(vw);  }
       else media.appendChild(el('div', 'accnoimg', `<span>${t.emo}</span><b>Arrastra aquí una foto del objeto</b><small>o súbela con el botón · se lee sola y escribe su nombre y su descripción</small>`));
       const up = el('label', 'btn', fs ? '🖼 Cambiar la foto' : '🖼 Subir una foto'); const f = document.createElement('input'); f.type = 'file'; f.accept = 'image/*'; f.hidden = true; up.appendChild(f);
       f.onchange = async () => { const file = f.files[0]; if (file) usePhoto(await readFile(file)); }; if (!E.job) media.appendChild(up);
@@ -285,21 +278,21 @@
       if (E.nuevoTipo) { const row = el('div', 'accnew'); const ti = el('input', 'pjin'); ti.placeholder = 'Nombre del tipo nuevo · ej.: Pulsera'; const ce = el('button', 'btn acc', 'Crear'); const crear = async () => { const n = ti.value.trim(); if (!n) return; const id = 'x-' + n.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, '-'); const TT = (C.perfil.accTipos || []).filter(z => z.id !== id).concat([{ id, es: n, emo: '🏷' }]); const r = await fetch('/api/complementos', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ owner: 'aria', tipos: TT }) }).then(z => z.json()).catch(() => null); if (r && r.ok) { C.perfil.accTipos = TT; c.tipo = id; E.nuevoTipo = false; toast(`Tipo «${n}» creado`); paint(); } else toast('No se pudo crear el tipo'); }; ce.onclick = crear; ti.onkeydown = e => { if (e.key === 'Enter') crear(); }; row.appendChild(ti); row.appendChild(ce); tw.appendChild(row); setTimeout(() => ti.focus(), 0); }
       fld('Tipo', tw);
       { const rg = el('select', 'sel'); REGLAS.forEach(([k, n]) => { const o = document.createElement('option'); o.value = k; o.textContent = n + (k === 'siempre' ? ' · en todas sus fotos' : k === 'escena' ? ' · solo cuando la escena lo tiene' : ' · no lo lleva'); rg.appendChild(o); }); rg.value = c.regla; rg.onchange = () => { c.regla = rg.value; paint(); }; fld('Cuándo sale', rg); }
-      if (c.regla === 'escena') { const kw = el('div', 'stack'); const chips = el('div', 'accreg acckws'); (c.claves || []).forEach((k, i) => { const ch = el('span', 'acckw', `<span>${esc(k)}</span><button title="Quitar">${XSVG}</button>`); ch.querySelector('button').onclick = () => { c.claves.splice(i, 1); paint(); }; chips.appendChild(ch); }); if (c.claves && c.claves.length) kw.appendChild(chips);
+      const kwBlock = () => { if (c.regla !== 'escena') return; const kw = el('div', 'stack'); const chips = el('div', 'accreg acckws'); (c.claves || []).forEach((k, i) => { const ch = el('span', 'acckw', `<span>${esc(k)}</span><button title="Quitar">${XSVG}</button>`); ch.querySelector('button').onclick = () => { c.claves.splice(i, 1); paint(); }; chips.appendChild(ch); }); if (c.claves && c.claves.length) kw.appendChild(chips);
         const row = el('div', 'accnew'); const ki = el('input', 'pjin acckwin'); ki.placeholder = 'Ej.: selfie'; const ka = el('button', 'btn', 'Añadir'); const addK = () => { const v = ki.value.trim(); if (!v) return; c.claves = (c.claves || []).filter(z => z.toLowerCase() !== v.toLowerCase()).concat([v]); paint(); setTimeout(() => { const n = $('#accm .acckwin'); if (n) n.focus(); }, 0); }; ka.onclick = addK; ki.onkeydown = e => { if (e.key === 'Enter') addK(); }; row.appendChild(ki); row.appendChild(ka); kw.appendChild(row);
-        fld('Palabras que lo activan', kw, 'si la escena las nombra, se enciende solo (además de las de su tipo)'); }
-      const md = el('div', 'accmodo'); [['prompt', '✍️ Descrito en el prompt', 'Se nombra con su descripción. No gasta referencias.'], ['foto', '📷 Su foto como referencia', 'Se envía la imagen que elijas arriba a la izquierda (la foto o una ficha de producto). Gasta un hueco de referencias; si no caben, va descrito.']].forEach(([k, n, d]) => { const b = el('button', 'accm' + (c.modo === k ? ' on' : ''), `<b>${n}</b><small>${d}</small>`); b.onclick = () => { c.modo = k; paint(); }; md.appendChild(b); }); fld('Cómo se usa al generar', md);
+        fld('Palabras que lo activan', kw); };
+      const md = el('div', 'accmodo'); [['prompt', '✍️ Descrito', 'con su descripción'], ['foto', '📷 Con su foto', 'se envía la imagen marcada']].forEach(([k, n, d]) => { const b = el('button', 'accm' + (c.modo === k ? ' on' : ''), `<b>${n}</b><small>${d}</small>`); b.onclick = () => { c.modo = k; paint(); }; md.appendChild(b); }); fld('Cómo se usa al generar', md); kwBlock();
       // descripción: siempre se guarda (también con «su foto»: es la de reserva si no caben las referencias)
       const descNode = () => { const dw = el('div', 'stack'); const ds = el('textarea', 'pjin'); ds.value = c.desc; ds.rows = 4; ds.placeholder = E.desc ? 'Leyendo la foto…' : 'Ej.: thin round silver metal-frame glasses with clear lenses'; ds.oninput = () => { c.desc = ds.value; }; dw.appendChild(ds);
         const ag = el('button', 'btn accauto', E.desc ? '⏳ Leyendo la foto…' : '✨ Generar automáticamente'); ag.disabled = E.desc || !fs; ag.title = fs ? 'Lee la foto y escribe la descripción (céntimos)' : 'Sube primero una foto'; ag.onclick = describe; const r = el('div', 'accautorow'); r.appendChild(ag); dw.appendChild(r); return dw; };
-      if (c.modo !== 'foto') fld('Descripción para el prompt', descNode(), 'en inglés: forma, material, color y tamaño');
+      if (c.modo !== 'foto') fld('Descripción', descNode());
       else {
         // ficha de producto: varias vistas del objeto a partir de la foto; se guardan todas y eliges cuál se envía
         const pw = el('div', 'stack'); const m = prodModel(); const nF = E.fichas.length + E.nuevas.length;
         if (!E.job) { const fila = el('div', 'accmodel'); fila.appendChild(el('small', '', 'Generar con')); fila.appendChild(mkSel(MODELS.map(z => [z.key, z.name + ' · ' + fmtUsd(z.usd[state.quality])]), m.key, v => { state.accModel = v; persist('am_accmodel', v); paint(); })); if (window.modelInfoBtn) fila.appendChild(modelInfoBtn()); pw.appendChild(fila); }
-        pw.appendChild(el('small', 'pjnote', E.job ? 'Se está generando: la verás a la izquierda en cuanto termine.' : nF ? `Tienes ${nF === 1 ? 'una ficha' : nF + ' fichas'} en su colección. Arriba a la izquierda eliges la portada y la que se envía al generar. Las que no te gusten se quitan con su ×.` : 'Genera sus vistas (frente, espalda, lado y tres cuartos) a partir de la foto. Se enviará esa ficha en vez de la foto.'));
+        pw.appendChild(el('small', 'pjnote', E.job ? 'Se está generando: la verás a la izquierda en cuanto termine.' : nF ? '' : 'Sus vistas (frente, espalda, lado y tres cuartos), a partir de la foto.'));
         const gb = el('button', 'btn pr' + (nF ? '' : ' acc'), E.job ? `⏳ Generando la ficha… <i data-t0="${E.job.t0}">${Math.round((performance.now() - E.job.t0) / 1000)} s</i>` : `${nF ? '↻ Generar otra ficha' : '🧩 Generar la ficha del producto'}<i>${fmtUsd(m.usd[state.quality])}</i>`); gb.disabled = !!E.job || !fs; gb.onclick = genProd;
-        pw.appendChild(gb); fld('Ficha del producto', pw, 'vistas del objeto para que la IA no se invente los lados');
+        pw.appendChild(gb); fld('Ficha del producto', pw);
         const det = el('details', 'accdescdet'); det.open = !!E.descOpen; det.ontoggle = () => { E.descOpen = det.open; }; det.appendChild(el('summary', '', `<b>Descripción de reserva</b><small>${c.desc ? esc(c.desc) : 'sin escribir'}</small>`)); det.appendChild(el('p', 'pjnote', 'Se guarda también: si en una creación hay tantas referencias que su imagen no cabe, se nombra con esta descripción.')); det.appendChild(descNode()); side.appendChild(det);
       }
       box.appendChild(side); m0.appendChild(box); side.scrollTop = keepTop;
