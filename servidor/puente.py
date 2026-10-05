@@ -38,7 +38,7 @@ MAX_CUERPO = 40 * 1024 * 1024    # tope de una petición en modo servidor
 MAX_BIBLIO = 200 * 1024 * 1024   # tope de un fichero de la biblioteca común al copiarlo
 KINDS = ('vestidor', 'hair', 'expr')   # las bibliotecas a las que una cuenta puede añadir lo suyo
 _UUID = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
-VERSION = 231
+VERSION = 232
 _ctx = threading.local()   # la cuenta del hilo: la pone cada petición (y, a mano, cada hilo de fondo)
 def uid(): return getattr(_ctx, 'uid', None)   # en local siempre None
 DUENOS = tuple(e.strip().lower() for e in (os.environ.get('ARIA_DUENOS') or 'mix1994max@gmail.com').split(',') if e.strip())   # cuentas que pueden cambiar a Aria Cruz (en la web, la de Max)
@@ -1399,15 +1399,15 @@ def _carp_haz(b):   # crear · renombrar · borrar · meter · sacar → la list
             ya = con in (c.get('comp') or []); S = [x for x in c.get('comp') or [] if x != con] + ([con] if on else [])
             if S: c['comp'] = S[:50]
             else: c.pop('comp', None)
-            if on != ya: aviso = (yo, con, on, c['nombre'], len(c['items']))
+            if on != ya: aviso = (yo, con, on, c['nombre'], len(c['items']), c['id'])
         else: raise ValueError('acción desconocida')
         fp = _carp_fp(); tmp = f'{fp}.tmp{threading.get_ident()}'
         json.dump({'carpetas': L}, open(tmp, 'w', encoding='utf-8'), ensure_ascii=False, indent=1); os.replace(tmp, fp)
     if aviso:   # se lo cuenta en su conversación (fuera del cerrojo de las carpetas)
         try:
-            yo, con, on, nom, n = aviso
+            yo, con, on, nom, n, kid_ = aviso
             with _com_l:
-                d = _com_lee(); d['msgs'].setdefault(_com_par(yo, con), []).append({'de': yo, 'x': (f'📁 He compartido contigo la carpeta «{nom}» ({n} {"creación" if n == 1 else "creaciones"}). La tienes aquí arriba, en esta conversación.' if on else f'He dejado de compartir la carpeta «{nom}».'), 't': time.time(), 'auto': True}); _com_guarda(d)
+                d = _com_lee(); d['msgs'].setdefault(_com_par(yo, con), []).append({'de': yo, 'x': (f'📁 He compartido contigo la carpeta «{nom}» ({n} {"creación" if n == 1 else "creaciones"}).' if on else f'He dejado de compartir la carpeta «{nom}».'), 't': time.time(), 'auto': True, **({'carp': {'cid': yo, 'id': kid_, 'nombre': nom, 'n': n}} if on else {})}); _com_guarda(d)
         except Exception as e: plog('compartir: aviso ✕ ' + str(e))
     return L
 # ---- CARPETAS COMPARTIDAS (v220). La fuente de verdad es la lista `comp` de la carpeta en la casa de su dueña; además tiene que seguir habiendo colaboración.
