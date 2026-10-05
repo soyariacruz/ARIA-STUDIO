@@ -38,7 +38,7 @@ MAX_CUERPO = 40 * 1024 * 1024    # tope de una petición en modo servidor
 MAX_BIBLIO = 200 * 1024 * 1024   # tope de un fichero de la biblioteca común al copiarlo
 KINDS = ('vestidor', 'hair', 'expr')   # las bibliotecas a las que una cuenta puede añadir lo suyo
 _UUID = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
-VERSION = 236
+VERSION = 237
 _ctx = threading.local()   # la cuenta del hilo: la pone cada petición (y, a mano, cada hilo de fondo)
 def uid(): return getattr(_ctx, 'uid', None)   # en local siempre None
 DUENOS = tuple(e.strip().lower() for e in (os.environ.get('ARIA_DUENOS') or 'mix1994max@gmail.com').split(',') if e.strip())   # cuentas que pueden cambiar a Aria Cruz (en la web, la de Max)
@@ -103,6 +103,7 @@ def _dentro(base, full):   # full cae dentro de base (por carpetas, no por «emp
 def busca(rel, propio=False):   # ÚNICA puerta para las rutas que manda el navegador: primero la casa de la cuenta; si no, la biblioteca común (propio=True: solo la casa). Devuelve el fichero real o None
     rel = _rel_ok(rel)
     if not rel: return None
+    if rel.startswith('assets/publica/'): return None if propio else _publica(rel)   # v237: publicado en la comunidad
     if rel.startswith('assets/compartida/'): return None if propio else _compartida(rel)   # v220: una creación de otra cuenta, solo si está en una carpeta que me ha compartido
     if rel.startswith('assets/prestamo/'): return _prestado(rel) if getattr(_ctx, 'prestamo_ok', False) and not propio else None   # el personaje de otro creador: solo al generar, y solo con su permiso
     base = casa(); full = os.path.join(base, *rel.split('/'))
@@ -1357,13 +1358,17 @@ def _carp_fp(): return os.path.join(_dir(), 'carpetas.json')
 def _carp_lee():
     try: L = json.load(open(_carp_fp(), encoding='utf-8')).get('carpetas') or []
     except Exception: L = []
-    return [{'id': c['id'], 'nombre': str(c.get('nombre') or 'Carpeta')[:40], 't': c.get('t') or 0, 'items': [x for x in c.get('items') or [] if isinstance(x, str)], **({'colab': c['colab']} if isinstance(c.get('colab'), str) else {}), **({'padre': c['padre']} if isinstance(c.get('padre'), str) else {}), **({'comp': [x for x in c['comp'] if isinstance(x, str)]} if isinstance(c.get('comp'), list) and c['comp'] else {})} for c in L if isinstance(c, dict) and isinstance(c.get('id'), str)]
+    return [{'id': c['id'], 'nombre': str(c.get('nombre') or 'Carpeta')[:40], 't': c.get('t') or 0, 'items': [x for x in c.get('items') or [] if isinstance(x, str)], **({'colab': c['colab']} if isinstance(c.get('colab'), str) else {}), **({'padre': c['padre']} if isinstance(c.get('padre'), str) else {}), **({'pub': True} if c.get('pub') else {}), **({'pubauto': True} if c.get('pubauto') else {}), **({'comp': [x for x in c['comp'] if isinstance(x, str)]} if isinstance(c.get('comp'), list) and c['comp'] else {})} for c in L if isinstance(c, dict) and isinstance(c.get('id'), str)]
 def _carp_haz(b):   # crear · renombrar · borrar · meter · sacar → la lista entera, ya guardada
     ac = str(b.get('accion') or ''); nombre = ' '.join(str(b.get('nombre') or '').split())[:40]
     files = list(dict.fromkeys(x.split('?')[0] for x in (b.get('files') or []) if isinstance(x, str)))[:CARP_ITEMS]
     aviso = None
     with _cerrojo('carp'):
         L = _carp_lee(); c = next((x for x in L if x['id'] == b.get('id')), None)
+        if ac == 'publicar_una':   # v237: creaciones sueltas → carpeta automática «🌐 Publicadas» (se crea la primera vez)
+            c = next((x for x in L if x.get('pubauto')), None)
+            if not c: c = {'id': 'k' + hashlib.sha1(os.urandom(12)).hexdigest()[:12], 'nombre': '🌐 Publicadas', 't': int(time.time()), 'items': [], 'pub': True, 'pubauto': True}; L.append(c)
+            c['pub'] = True; ac = 'meter' if b.get('on', True) else 'sacar'
         if ac == 'crear':
             if not nombre: raise ValueError('Ponle un nombre a la carpeta.')
             if any(x['nombre'].lower() == nombre.lower() for x in L): raise ValueError('Ya tienes una carpeta con ese nombre.')
@@ -1378,6 +1383,10 @@ def _carp_haz(b):   # crear · renombrar · borrar · meter · sacar → la list
             L.remove(c)
             for x in L:
                 if x.get('padre') == c['id']: x.pop('padre', None)   # sus subcarpetas no se pierden: suben un nivel
+        elif ac == 'publicar':   # v237: la carpeta entera, a la Fototeca/Filmoteca de la comunidad (on: false = retirarla)
+            if c.get('colab'): raise ValueError('Lo creado con el personaje de otro creador no se puede publicar.')
+            if b.get('on', True): c['pub'] = True
+            else: c.pop('pub', None)
         elif ac == 'mover':   # v230: dentro de otra carpeta (un solo nivel) o fuera (padre vacío)
             pa = str(b.get('padre') or '')
             if not pa: c.pop('padre', None)
@@ -1403,6 +1412,7 @@ def _carp_haz(b):   # crear · renombrar · borrar · meter · sacar → la list
         else: raise ValueError('acción desconocida')
         fp = _carp_fp(); tmp = f'{fp}.tmp{threading.get_ident()}'
         json.dump({'carpetas': L}, open(tmp, 'w', encoding='utf-8'), ensure_ascii=False, indent=1); os.replace(tmp, fp)
+    _pub_reset()
     if aviso:   # se lo cuenta en su conversación (fuera del cerrojo de las carpetas)
         try:
             yo, con, on, nom, n, kid_ = aviso
@@ -1410,6 +1420,64 @@ def _carp_haz(b):   # crear · renombrar · borrar · meter · sacar → la list
                 d = _com_lee(); d['msgs'].setdefault(_com_par(yo, con), []).append({'de': yo, 'x': (f'📁 He compartido contigo la carpeta «{nom}» ({n} {"creación" if n == 1 else "creaciones"}).' if on else f'He dejado de compartir la carpeta «{nom}».'), 't': time.time(), 'auto': True, **({'carp': {'cid': yo, 'id': kid_, 'nombre': nom, 'n': n}} if on else {})}); _com_guarda(d)
         except Exception as e: plog('compartir: aviso ✕ ' + str(e))
     return L
+# ---- PUBLICADO EN LA COMUNIDAD (v237): lo que hay en carpetas con `pub`. Nunca lo oculto, lo NSFW ni lo creado con el personaje de otro. Lo denunciado desaparece.
+_PUB = {'t': 0, 'L': []}; _PUB_L = threading.Lock()
+def _pub_reset():
+    with _PUB_L: _PUB['t'] = 0
+def _pub_cuenta(u):   # {ruta: ficha} de lo que una cuenta tiene publicado
+    base = os.path.join(DATOS, 'usuarios', u); out = {}
+    try: L = json.load(open(os.path.join(base, 'carpetas.json'), encoding='utf-8')).get('carpetas') or []
+    except Exception: return out
+    for c in L:
+        if not (isinstance(c, dict) and c.get('pub')) or c.get('colab'): continue
+        for r in c.get('items') or []:
+            P = r.split('/') if isinstance(r, str) else []
+            if r in out or len(P) != 3 or P[0] != 'assets' or P[1] not in ('live', 'video') or P[2].startswith('.'): continue
+            full = os.path.join(base, *P)
+            if not (_dentro(base, full) and os.path.isfile(full)): continue
+            try: m = json.load(open(full + '.json'))
+            except Exception: m = {}
+            if m.get('hidden') or m.get('nsfw') or m.get('colab') or m.get('importada') or _es_nsfw(m.get('prompt')): continue
+            out[r] = m
+    return out
+def _pub_lista():   # todo lo publicado por todas las cuentas, lo más nuevo primero (caché de 20 s; se vacía con cada cambio)
+    if not SERVIDOR or not DATOS: return []
+    with _PUB_L:
+        if time.time() - _PUB['t'] < 20: return _PUB['L']
+    d = _com_lee(); den = d.get('den') if isinstance(d.get('den'), dict) else {}; out = []
+    for cid, u in _com_cuentas().items():
+        for r, m in _pub_cuenta(u).items():
+            P = r.split('/'); k = f'{cid}/{P[1]}/{P[2]}'
+            if k in den: continue
+            e = m.get('escena') if isinstance(m.get('escena'), dict) else {}
+            out.append({'f': 'assets/publica/' + k, 'kind': 'video' if P[1] == 'video' else 'image', 'cid': cid, 'alias': str(d['alias'].get(cid) or '')[:40], 'prompt': m['prompt'][:8000] if isinstance(m.get('prompt'), str) else '',
+                        'escena': {q: e[q][:4000] for q in ('d', 'r', 'f') if isinstance(e.get(q), str)}, 'modelo': str(m.get('model') or '')[:60], 'personaje': str(m.get('charName') or '')[:80], 't': m.get('t') or 0, 'ancho': m.get('width'), 'alto': m.get('height')})
+    out.sort(key=lambda x: -(x['t'] or 0))
+    with _PUB_L: _PUB['t'] = time.time(); _PUB['L'] = out
+    return out
+def _publica(rel):   # 'assets/publica/<cid>/<live|video>/<fichero>' → el fichero real, solo si está publicado ahora mismo
+    L = rel.split('/')
+    if not SERVIDOR or len(L) != 5 or L[3] not in ('live', 'video') or L[4].startswith('.') or not any(x['f'] == rel for x in _pub_lista()): return None
+    u = _com_cuentas().get(L[2])
+    if not u: return None
+    base = os.path.join(DATOS, 'usuarios', u); full = os.path.join(base, 'assets', L[3], L[4])
+    return full if _dentro(base, full) and os.path.isfile(full) else None
+def _pub_importa(b):   # traigo a MIS creaciones imágenes publicadas en la comunidad (copia, con su prompt) → cuántas
+    n = 0; ld = live_dir(); yo = _cid(); P = {x['f']: x for x in _pub_lista()}
+    for rel in [x.split('?')[0] for x in (b.get('files') or []) if isinstance(x, str)][:200]:
+        x = P.get(rel); src = _publica(rel) if x else None
+        if not src or x['kind'] != 'image' or x['cid'] == yo: continue
+        ext = os.path.splitext(src)[1].lower(); fn = 'importada_pub-' + hashlib.sha1(rel.encode()).hexdigest()[:8] + ext; dst = os.path.join(ld, fn)
+        if ext not in ('.png', '.jpg', '.jpeg', '.webp') or os.path.exists(dst): continue
+        _peso.pop(uid(), None)
+        if lleno(): raise ValueError(LLENO)
+        shutil.copyfile(src, dst)
+        meta = {'file': 'assets/live/' + fn, 'kind': 'image', 'item': 'importada', 'name': 'De ' + (x['alias'] or 'la comunidad'), 'usd': 0, 't': time.time(), 'importada': {'de': x['cid'], 'alias': x['alias'], 'comunidad': True}}
+        if x.get('prompt'): meta['prompt'] = x['prompt']
+        if x.get('escena'): meta['escena'] = x['escena']
+        if x.get('modelo'): meta['model'] = x['modelo']
+        json.dump(meta, open(dst + '.json', 'w'), ensure_ascii=False, indent=1); n += 1
+    _peso.pop(uid(), None); return n
 # ---- CARPETAS COMPARTIDAS (v220). La fuente de verdad es la lista `comp` de la carpeta en la casa de su dueña; además tiene que seguir habiendo colaboración.
 def _com_trato(d, a, b): return any(x.get('estado') == 'aceptada' and {x.get('de'), x.get('para')} == {a, b} for x in d['sol'])   # ¿colaboran (en cualquier sentido)?
 def _comp_carpetas(cid, d=None):   # las carpetas de la cuenta cid compartidas CONMIGO → (uid de su dueña, [carpetas]); nada si no colaboramos
@@ -1822,6 +1890,11 @@ class H(SimpleHTTPRequestHandler):
             self._cc = 'private, no-cache'; self._fijo = full; return super().do_HEAD() if cabeza else super().do_GET()
         fa = _aria_fich(rel) if not os.path.isfile(os.path.join(casa(), *rel.split('/'))) else None
         if fa: self._cc = 'private, no-cache'; self._fijo = fa; return super().do_HEAD() if cabeza else super().do_GET()
+        if rel.startswith('assets/publica/'):   # v237: una creación publicada en la Fototeca/Filmoteca de la comunidad
+            full = _publica(rel)
+            if not full: return self._corta(404)
+            self._cc = 'private, max-age=600'; self._fijo = full
+            return super().do_HEAD() if cabeza else super().do_GET()
         if rel.startswith('assets/compartida/'):   # v220: una creación de una carpeta que otro creador me ha compartido
             full = _compartida(rel)
             if not full: return self._corta(404)
@@ -2046,6 +2119,12 @@ class H(SimpleHTTPRequestHandler):
                 fp = fg
             b = open(fp, 'rb').read(); self.send_response(200); self.send_header('Content-Type', 'image/jpeg'); self.send_header('Content-Length', str(len(b))); self.send_header('Cache-Control', 'private, max-age=600'); self.end_headers(); self.wfile.write(b); return
         if u.path == '/api/carpetas': return self._json(200, {'carpetas': _carp_lee(), 'compartidas': _comp_lista(_com_lee(), _cid()) if SERVIDOR else []})   # las mías · y las que me comparten (para la Fototeca)
+        if u.path == '/api/publicas':   # v237: la Fototeca / Filmoteca de la comunidad (tipo=image|video · cid=un creador · sig=1 solo de quien sigo)
+            q = urllib.parse.parse_qs(u.query); tipo = (q.get('tipo') or [''])[0]; de = (q.get('cid') or [''])[0]; yo = _cid(); L = _pub_lista()
+            if tipo in ('image', 'video'): L = [x for x in L if x['kind'] == tipo]
+            if de: L = [x for x in L if x['cid'] == de]
+            if (q.get('sig') or [''])[0]: S = {str(k).split(':')[0] for k in _com_lee()['sig'].get(yo) or []}; L = [x for x in L if x['cid'] in S]
+            return self._json(200, {'ok': True, 'n': len(L), 'items': [dict(x, mia=x['cid'] == yo) for x in L[:600]]})
         if u.path == '/api/compartida':   # v220: lo que hay en una carpeta que me han compartido
             q = urllib.parse.parse_qs(u.query); cid = (q.get('cid') or [''])[0]; kid = (q.get('id') or [''])[0]
             uu, cs = _comp_carpetas(cid); c = next((x for x in cs if x['id'] == kid), None)
@@ -2135,6 +2214,7 @@ class H(SimpleHTTPRequestHandler):
             n = int(self.headers.get('Content-Length') or 0); body = json.loads(self.rfile.read(n) or b'{}')
             try:
                 if isinstance(body, dict) and body.get('accion') == 'importar': return self._json(200, {'ok': True, 'n': _comp_importa(body), 'carpetas': _carp_lee()})
+                if isinstance(body, dict) and body.get('accion') == 'importar_pub': return self._json(200, {'ok': True, 'n': _pub_importa(body), 'carpetas': _carp_lee()})
                 return self._json(200, {'ok': True, 'carpetas': _carp_haz(body if isinstance(body, dict) else {})})
             except ValueError as e: return self._json(400, {'error': str(e)})
         if self.path == '/api/borrar':   # mueve una creación (y su ficha/póster) a assets/papelera
@@ -2180,6 +2260,17 @@ class H(SimpleHTTPRequestHandler):
                         im.crop(((w - m) // 2, (h - m) // 2, (w - m) // 2 + m, (h - m) // 2 + m)).resize((320, 320), Image.LANCZOS).save(fp, 'JPEG', quality=88)
                     except Exception: return self._json(400, {'error': 'No se ha podido leer esa imagen.'})
                     d['foto'][yo] = int(time.time()); _com_guarda(d); return self._json(200, {'ok': True, 'foto': d['foto'][yo]})
+                if ac == 'denunciar':   # v237: una creación publicada deja de verse para todos al instante (queda apuntado quién y cuándo, para revisarlo)
+                    rel = str(body.get('f') or '').split('?')[0]
+                    if not rel.startswith('assets/publica/') or not any(x['f'] == rel for x in _pub_lista()): return self._json(404, {'error': 'Esa creación ya no está publicada.'})
+                    if not isinstance(d.get('den'), dict): d['den'] = {}
+                    d['den'][rel[len('assets/publica/'):]] = {'por': yo, 't': int(time.time())}; _com_guarda(d); _pub_reset(); plog('denuncia · ' + rel); return self._json(200, {'ok': True})
+                if ac == 'visto':   # v237: marcar una conversación como leída / no leída
+                    con = str(body.get('con') or ''); M = d['msgs'].get(_com_par(yo, con)) or []
+                    if not M: return self._json(404, {'error': 'conversación no encontrada'})
+                    if body.get('leido', True): d['visto'].setdefault(yo, {})[con] = time.time()
+                    else: ult = next((m.get('t', 0) for m in reversed(M) if m.get('de') != yo), M[-1].get('t', 0)); d['visto'].setdefault(yo, {})[con] = ult - 0.001
+                    _com_guarda(d); return self._json(200, {'ok': True})
                 if ac == 'seguir':   # v235: sigo (o dejo de seguir) a un influencer. No da ningún permiso: solo lo tengo a mano. Su dueña ve cuántos le siguen, no quiénes.
                     k = f"{str(body.get('cid') or '')[:40]}:{str(body.get('pid') or '')[:80]}"; L = [x for x in d['sig'].get(yo) or [] if isinstance(x, str) and x != k]
                     if body.get('on', True) and re.fullmatch(r'[a-z0-9-]+:[A-Za-z0-9_.-]+', k): L.append(k)
@@ -2994,7 +3085,7 @@ class H(SimpleHTTPRequestHandler):
             if os.path.exists(full + '.json'):
                 try: meta = json.load(open(full + '.json'))
                 except Exception: meta = {}
-            meta['hidden'] = bool(body.get('hidden')); meta.setdefault('file', rel)
+            meta['hidden'] = bool(body.get('hidden')); meta.setdefault('file', rel); _pub_reset()
             json.dump(meta, open(full + '.json', 'w'), ensure_ascii=False, indent=1); return self._json(200, {'ok': True, 'hidden': meta['hidden']})
         if self.path == '/api/cancelar':
             n = int(self.headers.get('Content-Length') or 0); body = json.loads(self.rfile.read(n) or b'{}'); rid = body.get('id', '')

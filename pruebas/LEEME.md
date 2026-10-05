@@ -13,6 +13,7 @@ Ninguna lanza una generación ni gasta saldo: las llamadas a `/api/generar` est�
 | `conjunta.py` | La imagen creada con un personaje prestado NO se copia: su dueña la ve en la carpeta «🤝» compartida, puede importarla (con su prompt) y deja de verla si la creadora la borra |
 | `compartir.py` | Compartir una carpeta: solo con quien colaboras; la otra cuenta ve SOLO los ficheros de esa carpeta; rutas raras y terceras cuentas → 404; dejar de compartir corta al instante |
 | `permisos.py` | Plazo del permiso (solo quien lo da), modo NSFW (apagado por defecto, solo con los dos, con su plazo) y «abierto a colaborar» (entra directo, en SFW) |
+| `publicas.py` | Fototeca de la comunidad: publicar creaciones, cualquier cuenta las ve con su prompt y las importa; lo oculto no se publica; rutas raras → 404; denunciar las quita para todos al momento |
 | `como_vera.py` | Actuar como la segunda cuenta de prueba: `ver`, `acepta`, `pide`, `mensaje`, `limpia` |
 
 Cuentas de prueba (solo existen en este ordenador): Luna `aaaaaaaa-…-0001` (con «Luna Demo» y «Nico Demo»), Vera `cccccccc-…-0001` (con «Vera Demo») y una cuenta sin nada `dddddddd-…-0199`.
