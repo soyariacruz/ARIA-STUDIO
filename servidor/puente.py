@@ -38,7 +38,7 @@ MAX_CUERPO = 40 * 1024 * 1024    # tope de una petición en modo servidor
 MAX_BIBLIO = 200 * 1024 * 1024   # tope de un fichero de la biblioteca común al copiarlo
 KINDS = ('vestidor', 'hair', 'expr')   # las bibliotecas a las que una cuenta puede añadir lo suyo
 _UUID = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
-VERSION = 238
+VERSION = 239
 _ctx = threading.local()   # la cuenta del hilo: la pone cada petición (y, a mano, cada hilo de fondo)
 def uid(): return getattr(_ctx, 'uid', None)   # en local siempre None
 DUENOS = tuple(e.strip().lower() for e in (os.environ.get('ARIA_DUENOS') or 'mix1994max@gmail.com').split(',') if e.strip())   # cuentas que pueden cambiar a Aria Cruz (en la web, la de Max)
@@ -1518,6 +1518,20 @@ def _comp_lista(d, yo):   # para la Comunidad: las carpetas que me comparten los
         u, cs = _comp_carpetas(cid, d)
         for c in cs: out.append({'cid': cid, 'id': c['id'], 'nombre': ('🤝 Creado con tus personajes' if c.get('colab') == yo else str(c.get('nombre') or 'Carpeta'))[:40], 'n': len(_comp_items(u, c)), 'alias': str(d['alias'].get(cid) or '')[:40], 'conjunta': c.get('colab') == yo})
     return out
+def _mini_de(full):   # la miniatura (560 px) de una imagen de assets/live de cualquier cuenta; se hace la primera vez. Si no se puede, la propia imagen
+    if os.sep + 'live' + os.sep not in full: return full
+    mini = os.path.join(os.path.dirname(full), '.mini', os.path.basename(full) + '.jpg')
+    if not os.path.isfile(mini):
+        try:
+            from PIL import Image
+            os.makedirs(os.path.dirname(mini), exist_ok=True); im = Image.open(full).convert('RGB'); im.thumbnail((560, 560)); im.save(mini + '.tmp', 'JPEG', quality=80); os.replace(mini + '.tmp', mini)
+        except Exception: return full
+    return mini
+def _favs_fp(): return os.path.join(_dir(), 'favs.json')
+def _favs_lee():   # v239: mis favoritos de la Fototeca y la Filmoteca → {'biblio': [ids], 'videoteca': [ids]}
+    try: d = json.load(open(_favs_fp(), encoding='utf-8'))
+    except Exception: d = {}
+    return {k: [x for x in (d.get(k) or []) if isinstance(x, str)][:5000] for k in ('biblio', 'videoteca')}
 def _carp_auto(u, base, otro, alias, rel, comp=None):   # mete «rel» en la carpeta automática «🤝 <otro creador>» de la cuenta u (se crea la primera vez). No depende de la cuenta en curso.
     with _cerrojos_l: lk = _cerrojos.setdefault((u, 'carp'), threading.Lock())
     with lk:
@@ -1910,6 +1924,7 @@ class H(SimpleHTTPRequestHandler):
         if rel.startswith('assets/compartida/'):   # v220: una creación de una carpeta que otro creador me ha compartido
             full = _compartida(rel)
             if not full: return self._corta(404)
+            if 'm=1' in (urllib.parse.urlparse(self.path).query or ''): full = _mini_de(full)   # v239: miniatura
             self._cc = 'private, no-cache'; self._fijo = full
             return super().do_HEAD() if cabeza else super().do_GET()
         if rel.startswith('assets/prestamo/'):   # del personaje de otro creador, al navegador solo se le sirve el avatar (su ficha y su cuerpo los lee el servidor al generar)
@@ -2130,7 +2145,7 @@ class H(SimpleHTTPRequestHandler):
                     except Exception: fg = fp
                 fp = fg
             b = open(fp, 'rb').read(); self.send_response(200); self.send_header('Content-Type', 'image/jpeg'); self.send_header('Content-Length', str(len(b))); self.send_header('Cache-Control', 'private, max-age=600'); self.end_headers(); self.wfile.write(b); return
-        if u.path == '/api/carpetas': return self._json(200, {'carpetas': _carp_lee(), 'compartidas': _comp_lista(_com_lee(), _cid()) if SERVIDOR else []})   # las mías · y las que me comparten (para la Fototeca)
+        if u.path == '/api/carpetas': return self._json(200, {'carpetas': _carp_lee(), 'compartidas': _comp_lista(_com_lee(), _cid()) if SERVIDOR else [], 'favs': _favs_lee()})   # las mías · y las que me comparten (para la Fototeca)
         if u.path == '/api/denuncias':   # v238: lo denunciado, para que el equipo lo revise (restaurar o dejarlo retirado)
             if aria_fija(): return self._json(403, {'error': 'solo el equipo'})
             d = _com_lee(); den = d.get('den') if isinstance(d.get('den'), dict) else {}; out = []
@@ -2233,6 +2248,13 @@ class H(SimpleHTTPRequestHandler):
             n = int(self.headers.get('Content-Length') or 0); body = json.loads(self.rfile.read(n) or b'{}')
             try:
                 if isinstance(body, dict) and body.get('accion') == 'importar': return self._json(200, {'ok': True, 'n': _comp_importa(body), 'carpetas': _carp_lee()})
+                if isinstance(body, dict) and body.get('accion') == 'favlib':   # v239: ♥ en una imagen de la Fototeca o un vídeo de la Filmoteca
+                    tab = body.get('tab'); iid = str(body.get('id') or '')[:300]
+                    if tab not in ('biblio', 'videoteca') or not iid: return self._json(400, {'error': 'no válido'})
+                    with _cerrojo('favs'):
+                        F = _favs_lee(); F[tab] = [x for x in F[tab] if x != iid] + ([iid] if body.get('on', True) else [])
+                        tmp = _favs_fp() + f'.tmp{threading.get_ident()}'; json.dump(F, open(tmp, 'w', encoding='utf-8'), ensure_ascii=False); os.replace(tmp, _favs_fp())
+                    return self._json(200, {'ok': True, 'favs': F, 'carpetas': _carp_lee()})
                 if isinstance(body, dict) and body.get('accion') == 'importar_pub': return self._json(200, {'ok': True, 'n': _pub_importa(body), 'carpetas': _carp_lee()})
                 return self._json(200, {'ok': True, 'carpetas': _carp_haz(body if isinstance(body, dict) else {})})
             except ValueError as e: return self._json(400, {'error': str(e)})
