@@ -38,7 +38,7 @@ MAX_CUERPO = 40 * 1024 * 1024    # tope de una petición en modo servidor
 MAX_BIBLIO = 200 * 1024 * 1024   # tope de un fichero de la biblioteca común al copiarlo
 KINDS = ('vestidor', 'hair', 'expr')   # las bibliotecas a las que una cuenta puede añadir lo suyo
 _UUID = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
-VERSION = 214
+VERSION = 215
 _ctx = threading.local()   # la cuenta del hilo: la pone cada petición (y, a mano, cada hilo de fondo)
 def uid(): return getattr(_ctx, 'uid', None)   # en local siempre None
 DUENOS = tuple(e.strip().lower() for e in (os.environ.get('ARIA_DUENOS') or 'mix1994max@gmail.com').split(',') if e.strip())   # cuentas que pueden cambiar a Aria Cruz (en la web, la de Max)
@@ -208,8 +208,9 @@ LIGA_ELEGIDOS = [   # los generadores que el equipo usa en los duelos (en este o
     ('black-forest-labs/flux-3/image-edit', 'FLUX 3', 'Black Forest Labs'), ('wavespeed-ai/flux-2-max/edit', 'FLUX 2 Max', 'Black Forest Labs'), ('wavespeed-ai/flux-2-pro/edit', 'FLUX 2 Pro', 'Black Forest Labs'), ('wavespeed-ai/flux-2-flex/edit', 'FLUX 2 Flex', 'Black Forest Labs'),
     ('alibaba/qwen-image-3.0-pro/edit', 'Qwen Image 3.0 Pro', 'Alibaba'), ('alibaba/qwen-image-3.0/edit', 'Qwen Image 3.0', 'Alibaba'), ('wavespeed-ai/qwen-image-max/edit', 'Qwen Image Max', 'Alibaba'),
     ('x-ai/grok-imagine-image-v2.0/edit', 'Grok Imagine 2.0', 'xAI'), ('x-ai/grok-imagine-image-quality/edit', 'Grok Imagine Quality', 'xAI'),
+    ('ideogram-ai/ideogram-character', 'Ideogram Character', 'Ideogram'),
     ('hf:mstudio', 'Marketing Studio', 'Higgsfield')]
-_LIGA_FUERA = re.compile(r'lora|sequential|layer|genfill|fill|inpaint|blend|background|try-on|product-holding|multiple-angles|material|ic-light|pulid|redux|ai-instagram|ai-travel|patina|chrono|instant-character|ideogram-character')
+_LIGA_FUERA = re.compile(r'lora|sequential|layer|genfill|fill|inpaint|blend|background|try-on|product-holding|multiple-angles|material|ic-light|pulid|redux|ai-instagram|ai-travel|patina|chrono|instant-character')
 _LIGA_SABE = {'prompt', 'images', 'image', 'aspect_ratio', 'size', 'resolution', 'quality', 'output_format', 'num_images', 'seed', 'enable_base64_output', 'enable_sync_mode', 'enable_safety_checker', 'negative_prompt', 'guidance_scale', 'num_inference_steps', 'strength', 'variant', 'prompt_optimization_mode'}
 def _liga_catalogo(forzar=False):   # los generadores de imagen con referencia que se pueden usar en un duelo: WaveSpeed (su catálogo, cada 6 h) + Higgsfield por API
     with _LIGA_CAT_L:
@@ -1492,6 +1493,16 @@ def _com_personajes(u, con_ocultos=False):   # los personajes de una cuenta tal 
                         'avatar': bool(p.get('avatar') or p.get('foto')), 'oculto': bool(p.get('privado')), 'orden': p.get('orden') if isinstance(p.get('orden'), int) else 999})
     except Exception as e: plog('comunidad: personajes ✕ ' + str(e))
     out.sort(key=lambda x: x['orden']); return out
+COM_DEMO_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'comunidad_demo')   # caras de los creadores de demo (recortes de rejillas ya generadas)
+COM_DEMO = [   # creadores de DEMO para ver cómo queda la Comunidad con gente: solo los ve el equipo (nunca los miembros)
+    {'cid': 'demo-nube', 'alias': 'Estudio Nube', 'demo': True, 'personajes': [
+        {'pid': 'lia-moreno', 'nombre': 'Lía Moreno', 'usuario': '@lia.moreno', 'edad': 23, 'bio': 'Moda sostenible y cafés con encanto en Madrid.', 'avatar': True},
+        {'pid': 'carla-vidal', 'nombre': 'Carla Vidal', 'usuario': '@carlavidal', 'edad': 24, 'bio': 'Viajes baratos y fotos de móvil sin filtro.', 'avatar': True}]},
+    {'cid': 'demo-nora', 'alias': 'Nora Creative', 'demo': True, 'personajes': [
+        {'pid': 'nora-blanc', 'nombre': 'Nora Blanc', 'usuario': '@nora.blanc', 'edad': 25, 'bio': 'Fitness, recetas rápidas y mucho humor.', 'avatar': True},
+        {'pid': 'ruby-sanz', 'nombre': 'Ruby Sanz', 'usuario': '@rubysanz', 'edad': 22, 'bio': 'Pelirroja, música indie y vintage.', 'avatar': True}]},
+    {'cid': 'demo-vera', 'alias': 'Vera Lys Studio', 'demo': True, 'personajes': [
+        {'pid': 'vera-lys', 'nombre': 'Vera Lys', 'usuario': '@veralys', 'edad': 26, 'bio': 'Belleza y skincare, rutinas reales.', 'avatar': True}]}]
 ARIA_CID = 'caria'   # Aria en la comunidad: no es una cuenta, es el personaje de muestra. Le manda a cada cuenta una solicitud de ejemplo y contesta con un mensaje fijo
 ARIA_HOLA = '¡Hola! Soy Aria 💕 Te mando esta solicitud para que veas cómo funcionan las colaboraciones: acéptala y podremos crear imágenes juntas.'
 ARIA_RESP = '¡Genial! Conmigo puedes crear cuando quieras: elígeme en Crear imagen junto a tu personaje. (Soy el personaje de muestra: este chat es un ejemplo de cómo hablarás con otros creadores.)'
@@ -1802,6 +1813,7 @@ class H(SimpleHTTPRequestHandler):
                 pjs = _com_personajes(uu, cid == yo)
                 if pjs or cid == yo: cuentas.append({'cid': cid, 'alias': str(d['alias'].get(cid) or '')[:40], 'yo': cid == yo, 'personajes': pjs})
             cuentas.sort(key=lambda c: (not c['yo'], (c['alias'] or 'zzz').lower()))
+            if not aria_fija(): cuentas += [dict(c, personajes=[dict(p) for p in c['personajes']]) for c in COM_DEMO]   # 👁 demo: solo el equipo
             chats = []
             for k, M in d['msgs'].items():
                 par = k.split('|')
@@ -1824,11 +1836,24 @@ class H(SimpleHTTPRequestHandler):
                 if M and (d['visto'].get(yo) or {}).get(con, 0) < M[-1].get('t', 0): d['visto'].setdefault(yo, {})[con] = time.time(); _com_guarda(d)
             return self._json(200, {'ok': True, 'mensajes': M[-300:]})
         if u.path == '/api/comunidad/avatar':   # el avatar de un personaje PÚBLICO de otra cuenta (lo único suyo que se sirve)
-            cid = (q.get('c') or [''])[0]; pid = (q.get('p') or [''])[0]; uu = _com_cuentas().get(cid, '__no__')
+            cid = (q.get('c') or [''])[0]; pid = (q.get('p') or [''])[0]; grande = (q.get('t') or [''])[0] == 'foto'
+            if cid.startswith('demo-'):   # las caras de la demo (solo el equipo)
+                fp = os.path.join(COM_DEMO_DIR, pid + '.jpg')
+                if aria_fija() or not re.fullmatch(r'[a-z0-9-]+', pid) or not os.path.isfile(fp): return self._corta(404)
+                b = open(fp, 'rb').read(); self.send_response(200); self.send_header('Content-Type', 'image/jpeg'); self.send_header('Content-Length', str(len(b))); self.send_header('Cache-Control', 'private, max-age=3600'); self.end_headers(); self.wfile.write(b); return
+            uu = _com_cuentas().get(cid, '__no__')
             if uu == '__no__' or not _pid_ok(pid) or not any(x['pid'] == pid for x in _com_personajes(uu, cid == _cid())): return self._corta(404)
             with como(uu): base = os.path.join(pers_dir(), pid)
-            fp = next((os.path.join(base, n) for n in ('avatar.jpg', 'foto.jpg') if os.path.isfile(os.path.join(base, n))), None)
+            fp = next((os.path.join(base, n) for n in (('foto.jpg', 'vista_frente.jpg', 'avatar.jpg') if grande else ('avatar.jpg', 'foto.jpg')) if os.path.isfile(os.path.join(base, n))), None)
             if not fp: return self._corta(404)
+            if grande:   # la foto de la ficha, en grande para la galería (copia de 640 px, hecha una vez)
+                fg = os.path.join(base, '.galeria_640.jpg')
+                if not os.path.isfile(fg) or os.path.getmtime(fg) < os.path.getmtime(fp):
+                    try:
+                        from PIL import Image
+                        im = Image.open(fp).convert('RGB'); im.thumbnail((640, 1000)); im.save(fg, quality=86)
+                    except Exception: fg = fp
+                fp = fg
             b = open(fp, 'rb').read(); self.send_response(200); self.send_header('Content-Type', 'image/jpeg'); self.send_header('Content-Length', str(len(b))); self.send_header('Cache-Control', 'private, max-age=600'); self.end_headers(); self.wfile.write(b); return
         if u.path == '/api/papelera':   # lo borrado de Mis creaciones que aún se puede recuperar (30 días), lo más reciente primero
             trash = papelera(); out = []; ahora = time.time()

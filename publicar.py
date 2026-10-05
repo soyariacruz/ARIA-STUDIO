@@ -57,6 +57,7 @@ SRV = os.path.join(os.path.dirname(OUT), 'servidor'); os.makedirs(SRV, exist_ok=
 shutil.copyfile(os.path.join(SRC, 'puente.py'), os.path.join(SRV, 'puente.py'))
 # 🥊 Workflows (v209): la página de Duelos va en la web y el servidor monta los carruseles con la misma plantilla y fuentes
 shutil.copyfile(os.path.join(SRC, 'liga.html'), os.path.join(OUT, 'liga.html'))
+shutil.copytree(os.path.join(SRC, 'comunidad_demo'), os.path.join(SRV, 'comunidad_demo'), dirs_exist_ok=True)   # caras de los creadores de demo de la Comunidad (solo las ve el equipo)
 LIGA = '/Users/maxromanenko/Desktop/XXX/.claude/scripts/ai_league'; LS = os.path.join(SRV, 'liga'); os.makedirs(os.path.join(LS, 'fuentes'), exist_ok=True)
 for fn in ('liga.py', 'montar.py'): shutil.copyfile(os.path.join(LIGA, fn), os.path.join(LS, fn))
 for fn in os.listdir(os.path.join(LIGA, 'fuentes')):
