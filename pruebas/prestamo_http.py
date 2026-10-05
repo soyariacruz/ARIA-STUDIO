@@ -27,7 +27,7 @@ cV = dV['yo']; cL = dL['yo']
 print('1) qué ve cada cuenta')
 pl = dL.get('prestados') or []
 ok('Luna puede crear con Vera Demo', any(p['cid'] == cV and p['pid'] == 'vera-demo' for p in pl), pl)
-ok('lo prestado trae nombre y creador, sin rutas', all(set(p) <= {'cid', 'pid', 'nombre', 'creador', 'cuerpo', 'peinado', 'genero', 'complexion', 'altura', 'pecho', 'cadera', 'ojos', 'ojosHex', 'peloNombre', 'peloHex', 'peloColor'} for p in pl), [sorted(p) for p in pl])
+ok('lo prestado trae nombre y creador, sin rutas', all(set(p) <= {'cid', 'pid', 'nombre', 'creador', 'cuerpo', 'peinado', 'nsfw', 'genero', 'complexion', 'altura', 'pecho', 'cadera', 'ojos', 'ojosHex', 'peloNombre', 'peloHex', 'peloColor'} for p in pl), [sorted(p) for p in pl])
 ok('Vera no tiene nada prestado (ella no ha pedido nada que le hayan aceptado)', not (dV.get('prestados') or []), dV.get('prestados'))
 ok('el tercero no tiene nada prestado', not (dT.get('prestados') or []), dT.get('prestados'))
 crudo = json.dumps([dL, dV, dT])

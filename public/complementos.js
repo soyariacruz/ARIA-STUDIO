@@ -61,7 +61,7 @@
         if (c.tipo === 'movil') out.push(`the phone she holds or uses must be EXACTLY the phone of ${ref || 'her own phone'} (${c.desc}): same color, same camera layout and finish; replace any other phone with it`);
         else out.push(`she has ${c.desc}${ref ? ' exactly as in ' + ref : ''}`);
       }
-      if (!on && (c.regla === 'nunca' || (c.regla === 'siempre' && t.ident)) && t.no) out.push(`in this image she has NO ${t.no}`);
+      if (!on && t.ident && (c.regla === 'nunca' || c.regla === 'siempre') && t.no) out.push(`in this image she has NO ${t.no}`);   // v223: solo se niega lo que su ficha puede enseñar (gafas, pendientes…). Un bolso o un móvil apagados no se nombran: si no están, no están
     });
     return [...new Set(out)]; // dos bolsos en «nunca» no repiten la misma frase
   };

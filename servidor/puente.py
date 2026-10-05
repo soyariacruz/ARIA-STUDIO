@@ -38,7 +38,7 @@ MAX_CUERPO = 40 * 1024 * 1024    # tope de una petición en modo servidor
 MAX_BIBLIO = 200 * 1024 * 1024   # tope de un fichero de la biblioteca común al copiarlo
 KINDS = ('vestidor', 'hair', 'expr')   # las bibliotecas a las que una cuenta puede añadir lo suyo
 _UUID = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
-VERSION = 222
+VERSION = 223
 _ctx = threading.local()   # la cuenta del hilo: la pone cada petición (y, a mano, cada hilo de fondo)
 def uid(): return getattr(_ctx, 'uid', None)   # en local siempre None
 DUENOS = tuple(e.strip().lower() for e in (os.environ.get('ARIA_DUENOS') or 'mix1994max@gmail.com').split(',') if e.strip())   # cuentas que pueden cambiar a Aria Cruz (en la web, la de Max)
@@ -1403,12 +1403,12 @@ def _com_trato(d, a, b): return any(x.get('estado') == 'aceptada' and {x.get('de
 def _comp_carpetas(cid, d=None):   # las carpetas de la cuenta cid compartidas CONMIGO → (uid de su dueña, [carpetas]); nada si no colaboramos
     if not SERVIDOR or not DATOS or not isinstance(cid, str) or not re.fullmatch(r'c[0-9a-f]{14}', cid): return None, []
     yo = _cid()
-    if cid == yo or not _com_trato(d if d is not None else _com_lee(), yo, cid): return None, []
-    u = _com_cuentas().get(cid)
+    if cid == yo: return None, []
+    tr = _com_trato(d if d is not None else _com_lee(), yo, cid); u = _com_cuentas().get(cid)
     if not u: return None, []
     try: L = json.load(open(os.path.join(DATOS, 'usuarios', u, 'carpetas.json'), encoding='utf-8')).get('carpetas') or []
     except Exception: return None, []
-    return u, [c for c in L if isinstance(c, dict) and isinstance(c.get('id'), str) and isinstance(c.get('comp'), list) and yo in c['comp']]
+    return u, [c for c in L if isinstance(c, dict) and isinstance(c.get('id'), str) and isinstance(c.get('comp'), list) and yo in c['comp'] and (tr or c.get('colab') == yo)]   # lo creado con MI personaje lo sigo viendo aunque ya no colaboremos
 def _comp_items(u, c):   # lo que hay de verdad en una carpeta compartida, como rutas 'assets/compartida/…' (lo que fue a la papelera no sale)
     base = os.path.join(DATOS, 'usuarios', u); out = []
     for r in c.get('items') or []:
@@ -1434,11 +1434,11 @@ def _compartida(rel):   # 'assets/compartida/<cid>/<carpeta>/<live|video>/<fiche
     return full if _dentro(base, full) and os.path.isfile(full) else None
 def _comp_lista(d, yo):   # para la Comunidad: las carpetas que me comparten los creadores con los que colaboro
     out = []
-    for cid in sorted({(x.get('de') if x.get('para') == yo else x.get('para')) for x in d['sol'] if x.get('estado') == 'aceptada' and yo in (x.get('de'), x.get('para'))} - {yo, None}):
+    for cid in sorted({(x.get('de') if x.get('para') == yo else x.get('para')) for x in d['sol'] if x.get('estado') in ('aceptada', 'terminada') and yo in (x.get('de'), x.get('para'))} - {yo, None}):
         u, cs = _comp_carpetas(cid, d)
-        for c in cs: out.append({'cid': cid, 'id': c['id'], 'nombre': str(c.get('nombre') or 'Carpeta')[:40], 'n': len(_comp_items(u, c)), 'alias': str(d['alias'].get(cid) or '')[:40]})
+        for c in cs: out.append({'cid': cid, 'id': c['id'], 'nombre': ('🤝 Creado con tus personajes' if c.get('colab') == yo else str(c.get('nombre') or 'Carpeta'))[:40], 'n': len(_comp_items(u, c)), 'alias': str(d['alias'].get(cid) or '')[:40], 'conjunta': c.get('colab') == yo})
     return out
-def _carp_auto(u, base, otro, alias, rel):   # mete «rel» en la carpeta automática «🤝 <otro creador>» de la cuenta u (se crea la primera vez). No depende de la cuenta en curso.
+def _carp_auto(u, base, otro, alias, rel, comp=None):   # mete «rel» en la carpeta automática «🤝 <otro creador>» de la cuenta u (se crea la primera vez). No depende de la cuenta en curso.
     with _cerrojos_l: lk = _cerrojos.setdefault((u, 'carp'), threading.Lock())
     with lk:
         fp = os.path.join(base, 'carpetas.json')
@@ -1447,38 +1447,48 @@ def _carp_auto(u, base, otro, alias, rel):   # mete «rel» en la carpeta autom�
         c = next((x for x in L if x.get('colab') == otro), None)
         if not c: c = {'id': 'k' + hashlib.sha1(os.urandom(12)).hexdigest()[:12], 'nombre': ('🤝 ' + (alias or 'Colaboración'))[:40], 't': int(time.time()), 'items': [], 'colab': otro}; L.append(c)
         if rel not in (c.get('items') or []): c['items'] = [rel] + [x for x in c.get('items') or [] if isinstance(x, str)][:CARP_ITEMS - 1]
+        if comp and comp not in (c.get('comp') or []): c['comp'] = [x for x in c.get('comp') or [] if isinstance(x, str)] + [comp]   # la dueña del personaje la ve
         tmp = f'{fp}.tmp{threading.get_ident()}'; json.dump({'carpetas': L}, open(tmp, 'w', encoding='utf-8'), ensure_ascii=False, indent=1); os.replace(tmp, fp)
-def _conjunta(j, rel, rid):   # v219: la imagen recién guardada (rel, en la casa de quien la ha creado) se copia a las creaciones de la dueña de cada personaje prestado
+def _conjunta(j, rel, rid):   # v223: la imagen creada con el personaje de otro creador se queda en la cuenta de quien la crea (su cuota) y entra en su carpeta «🤝 <dueña>», que la dueña del personaje VE (compartida con ella). Sin copias.
     pares = [p for p in (j.get('prest') or []) if isinstance(p, (list, tuple)) and len(p) == 2]
     if not SERVIDOR or not DATOS or not pares: return
     try:
-        yo_u = uid(); yo = _cid(); d = _com_lee(); CU = _com_cuentas(); src = os.path.join(casa(), rel); ext = os.path.splitext(rel)[1].lower()
-        if not os.path.isfile(src) or ext not in ('.png', '.jpg', '.jpeg', '.webp'): return
+        yo_u = uid(); d = _com_lee(); CU = _com_cuentas(); src = os.path.join(casa(), rel)
+        if not os.path.isfile(src): return
         try: mia = json.load(open(src + '.json'))
         except Exception: mia = {}
-        mi_alias = str(d['alias'].get(yo) or '')[:40]; con = []; hechas = set()
+        con = []; hechas = set()
         for cid, pid in pares:
             u = CU.get(cid)
             if not u or u == yo_u or not _pid_ok(pid): continue
-            base = os.path.join(DATOS, 'usuarios', u); nombre = pid
-            try: pj = json.load(open(os.path.join(base, 'assets', 'personajes', pid, 'personaje.json'), encoding='utf-8')); nombre = str(pj.get('nombre') or pj.get('name') or pid)[:60]
+            nombre = pid
+            try: pj = json.load(open(os.path.join(DATOS, 'usuarios', u, 'assets', 'personajes', pid, 'personaje.json'), encoding='utf-8')); nombre = str(pj.get('nombre') or pj.get('name') or pid)[:60]
             except Exception: pass
             su_alias = str(d['alias'].get(cid) or '')[:40]; con.append({'con': cid, 'alias': su_alias, 'pid': pid, 'personaje': nombre})
-            if cid in hechas: continue
-            hechas.add(cid)
-            ld = os.path.join(base, 'assets', 'live'); os.makedirs(ld, exist_ok=True); fn = f"colab_{re.sub(r'[^a-z0-9]', '', str(j.get('model') or 'qwen'))}-{rid[:8]}{ext}"; dst = os.path.join(ld, fn)
-            if not os.path.exists(dst):
-                shutil.copyfile(src, dst)
-                # su ficha lleva lo justo: el prompt sí (v222), pero ni las referencias ni la combinación de quien la creó (son de SU biblioteca)
-                meta = {'file': 'assets/live/' + fn, 'kind': 'image', 'item': 'colab', 'name': 'Con ' + (mi_alias or 'otro creador'), 'request_id': rid, 'usd': 0, 't': time.time(), 'model_key': j.get('model'), 'model': mia.get('model'), 'width': mia.get('width'), 'height': mia.get('height'), 'prompt': mia.get('prompt') if isinstance(mia.get('prompt'), str) else None,
-                        'colab': {'con': yo, 'alias': mi_alias, 'pid': pid, 'personaje': nombre, 'mia': False}}
-                json.dump({k: v for k, v in meta.items() if v is not None}, open(dst + '.json', 'w'), ensure_ascii=False, indent=1)
-            _carp_auto(u, base, yo, mi_alias, 'assets/live/' + fn); _peso.pop(u, None)
-            _carp_auto(yo_u, casa(), cid, su_alias, rel)
-        if con:   # y la mía queda marcada como conjunta
+            if cid not in hechas: hechas.add(cid); _carp_auto(yo_u, casa(), cid, su_alias, rel, comp=cid)
+        if con:
             mia['colab'] = dict(con[0], mia=True, todos=con); json.dump(mia, open(src + '.json', 'w'), ensure_ascii=False, indent=1)
-            plog(f'conjunta → {len(hechas)} cuenta(s) · {rel}')
+            plog(f'conjunta → carpeta compartida con {len(hechas)} cuenta(s) · {rel}')
     except Exception as e: plog('conjunta ✕ ' + str(e))
+def _comp_importa(b):   # v223: traigo a MIS creaciones (copia, cuenta en mi espacio) imágenes de una carpeta que me comparten → cuántas
+    cid, kid = str(b.get('cid') or ''), str(b.get('id') or ''); u, cs = _comp_carpetas(cid); c = next((x for x in cs if x['id'] == kid), None)
+    if not c: raise ValueError('Esa carpeta ya no está compartida contigo.')
+    quiero = {x.split('?')[0].split('/')[-1] for x in (b.get('files') or []) if isinstance(x, str)}; alias = str(_com_lee()['alias'].get(cid) or '')[:40]; n = 0; ld = live_dir()
+    for L in _comp_items(u, c):
+        if L[1] != 'live' or (quiero and L[2] not in quiero): continue
+        ext = os.path.splitext(L[2])[1].lower(); fn = 'importada_colab-' + hashlib.sha1(f'{cid}|{L[2]}'.encode()).hexdigest()[:8] + ext; dst = os.path.join(ld, fn)
+        if ext not in ('.png', '.jpg', '.jpeg', '.webp') or os.path.exists(dst): continue
+        if n % 10 == 0:
+            _peso.pop(uid(), None)
+            if lleno(): raise ValueError(LLENO)
+        src = os.path.join(DATOS, 'usuarios', u, *L); shutil.copyfile(src, dst)
+        try: m0 = json.load(open(src + '.json'))
+        except Exception: m0 = {}
+        meta = dict(_comp_ficha(u, L), file='assets/live/' + fn, kind='image', item='importada', name='De ' + (alias or 'otro creador'), usd=0, t=time.time(), importada={'de': cid, 'alias': alias})
+        for k in ('model', 'model_key', 'width', 'height'):
+            if m0.get(k) is not None: meta[k] = m0[k]
+        json.dump(meta, open(dst + '.json', 'w'), ensure_ascii=False, indent=1); n += 1
+    _peso.pop(uid(), None); return n
 def poster_for(path):   # fotograma del vídeo para la galería (ffmpeg si está)
     out = os.path.splitext(path)[0] + '.jpg'
     if os.path.exists(out): return out
@@ -1598,7 +1608,17 @@ def _com_lee():
     if not isinstance(d, dict): d = {}
     for k, v in (('sol', []), ('msgs', {}), ('alias', {}), ('visto', {})):
         if not isinstance(d.get(k), type(v)): d[k] = v
+    ahora = time.time()
+    for x in d['sol']:   # v223: un permiso con plazo se apaga solo al vencer (se ve terminado en cuanto se lee; se guarda con el siguiente cambio)
+        if isinstance(x, dict) and x.get('estado') == 'aceptada' and isinstance(x.get('hasta'), (int, float)) and x['hasta'] < ahora: x['estado'] = 'terminada'; x['caducada'] = True; x['t2'] = x['hasta']
     return d
+PLAZOS = {1: '24 horas', 7: '7 días', 30: '30 días'}
+def _plazo(v):
+    try: v = int(v)
+    except Exception: return None
+    return v if v in PLAZOS else None
+def _sol_nsfw(x):   # ¿modo NSFW encendido en esta colaboración? Solo si lo han activado LOS DOS y no ha vencido su plazo
+    return bool(x.get('estado') == 'aceptada' and x.get('nsfw_de') and x.get('nsfw_para') and not (isinstance(x.get('nsfw_hasta'), (int, float)) and x['nsfw_hasta'] < time.time()))
 def _com_guarda(d):
     with open(COM_F + '.tmp', 'w', encoding='utf-8') as fh: json.dump(d, fh, ensure_ascii=False)
     os.replace(COM_F + '.tmp', COM_F)
@@ -1620,7 +1640,7 @@ def _com_personajes(u, con_ocultos=False):   # los personajes de una cuenta tal 
             ig = p.get('ig') if isinstance(p.get('ig'), dict) else {}; url = str(ig.get('url') or '')
             out.append({'pid': d0, 'nombre': str(p.get('nombre') or d0)[:60], 'usuario': str(p.get('usuario') or '')[:60], 'edad': p.get('edad') if isinstance(p.get('edad'), (int, float)) else None,
                         'bio': str(p.get('bio') or '')[:600], 'ig': url[:200] if url.startswith('https://') else '', 'nicho': [str(x)[:30] for x in p.get('nicho')[:6]] if isinstance(p.get('nicho'), list) else [],
-                        'avatar': bool(p.get('avatar') or p.get('foto')), 'oculto': bool(p.get('privado')), 'orden': p.get('orden') if isinstance(p.get('orden'), int) else 999})
+                        'avatar': bool(p.get('avatar') or p.get('foto')), 'oculto': bool(p.get('privado')), 'abierto': bool(p.get('abierto')) and not p.get('privado'), 'orden': p.get('orden') if isinstance(p.get('orden'), int) else 999})
     except Exception as e: plog('comunidad: personajes ✕ ' + str(e))
     out.sort(key=lambda x: x['orden']); return out
 COM_DEMO_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'comunidad_demo')   # caras de los creadores de demo (recortes de rejillas ya generadas)
@@ -1686,7 +1706,7 @@ def _prest_lista(d, yo):   # los personajes de otros creadores con los que esta 
             u, p = _prestado_p(cid, q['pid'], d)
             if not p: continue
             pe = p.get('peinado') if isinstance(p.get('peinado'), dict) else {}
-            o = {'cid': cid, 'pid': q['pid'], 'nombre': q['nombre'], 'creador': str(d['alias'].get(cid) or '')[:40], 'cuerpo': bool(p.get('cuerpo')), 'peinado': {'desc': str(pe.get('desc') or '')[:300], 'name': str(pe.get('name') or '')[:80]}}
+            o = {'cid': cid, 'pid': q['pid'], 'nombre': q['nombre'], 'nsfw': any(_sol_nsfw(z) for z in d['sol'] if z.get('de') == yo and z.get('para') == cid and z.get('pid') in (None, q['pid'])), 'creador': str(d['alias'].get(cid) or '')[:40], 'cuerpo': bool(p.get('cuerpo')), 'peinado': {'desc': str(pe.get('desc') or '')[:300], 'name': str(pe.get('name') or '')[:80]}}
             for k in PREST_K:
                 v = p.get(k)
                 if isinstance(v, str): o[k] = v[:80]
@@ -2085,7 +2105,9 @@ class H(SimpleHTTPRequestHandler):
             _claves_set(envn, k); _claves_set(envn + '_OFF', ''); plog(f'clave de {nombre} guardada desde la pantalla'); return self._json(200, {'ok': True, 'apis': _apis_estado()})
         if self.path == '/api/carpetas':   # crear · renombrar · borrar una carpeta · meter / sacar creaciones
             n = int(self.headers.get('Content-Length') or 0); body = json.loads(self.rfile.read(n) or b'{}')
-            try: return self._json(200, {'ok': True, 'carpetas': _carp_haz(body if isinstance(body, dict) else {})})
+            try:
+                if isinstance(body, dict) and body.get('accion') == 'importar': return self._json(200, {'ok': True, 'n': _comp_importa(body), 'carpetas': _carp_lee()})
+                return self._json(200, {'ok': True, 'carpetas': _carp_haz(body if isinstance(body, dict) else {})})
             except ValueError as e: return self._json(400, {'error': str(e)})
         if self.path == '/api/borrar':   # mueve una creación (y su ficha/póster) a assets/papelera
             n = int(self.headers.get('Content-Length') or 0); body = json.loads(self.rfile.read(n) or b'{}'); rel = body.get('file', '')
@@ -2110,6 +2132,12 @@ class H(SimpleHTTPRequestHandler):
                 with _cerrojo('pj'):
                     p = json.load(open(fp, encoding='utf-8')); p['privado'] = not bool(body.get('publico')); json.dump(p, open(fp, 'w', encoding='utf-8'), ensure_ascii=False)
                 return self._json(200, {'ok': True, 'oculto': p['privado']})
+            if ac == 'abierto':   # v223: «abierto a colaborar» en un personaje mío: quien lo pida entra directo (solo SFW)
+                pid = body.get('pid', ''); fp = os.path.join(pers_dir(), pid, 'personaje.json') if _pid_ok(pid) else ''
+                if not fp or not os.path.isfile(fp): return self._json(404, {'error': 'personaje no encontrado'})
+                with _cerrojo('pj'):
+                    p = json.load(open(fp, encoding='utf-8')); p['abierto'] = bool(body.get('on')); json.dump(p, open(fp, 'w', encoding='utf-8'), ensure_ascii=False)
+                return self._json(200, {'ok': True, 'abierto': p['abierto']})
             with _com_l:
                 d = _com_lee()
                 if ac == 'alias':
@@ -2122,21 +2150,47 @@ class H(SimpleHTTPRequestHandler):
                     if not _com_tope('sol', 20): return self._json(429, {'error': 'demasiadas solicitudes seguidas: prueba dentro de un rato'})
                     x = {'id': 's' + hashlib.sha1(os.urandom(12)).hexdigest()[:12], 'de': yo, 'para': para, 'pid': pid, 'msg': msg, 'estado': 'pendiente', 't': time.time()}; d['sol'].append(x)
                     if msg: d['msgs'].setdefault(_com_par(yo, para), []).append({'de': yo, 'x': msg, 't': time.time(), 'sol': x['id']})
+                    PJ_ = _com_personajes(CU[para]); ab = {q['pid'] for q in PJ_ if q.get('abierto')}
+                    if (pid in ab) if pid else (bool(PJ_) and len(ab) == len(PJ_)):   # v223: personaje abierto a colaborar → entra directo, sin esperar (solo SFW: el NSFW siempre lo activan los dos a mano)
+                        x['estado'] = 'aceptada'; x['abierta'] = True; x['t2'] = time.time(); nom = next((q['nombre'] for q in PJ_ if q['pid'] == pid), None) if pid else None
+                        d['msgs'].setdefault(_com_par(yo, para), []).append({'de': yo, 'x': '🤝 He empezado a colaborar con ' + (nom or 'tus personajes') + ' (lo tienes abierto a colaborar). Puedes retirar el permiso cuando quieras, aquí arriba.', 't': time.time() + 0.01, 'auto': True})
                     _com_guarda(d); return self._json(200, {'ok': True, 'solicitud': x})
                 if ac in ('responder', 'terminar'):
                     x = next((x for x in d['sol'] if x.get('id') == body.get('id') and yo in (x.get('de'), x.get('para'))), None)
                     if not x: return self._json(404, {'error': 'solicitud no encontrada'})
                     if ac == 'responder':
                         if x.get('para') != yo or x.get('estado') != 'pendiente': return self._json(400, {'error': 'esa solicitud no está esperando tu respuesta'})
-                        x['estado'] = 'aceptada' if body.get('aceptar') else 'rechazada'
+                        x['estado'] = 'aceptada' if body.get('aceptar') else 'rechazada'; pz = _plazo(body.get('dias'))
+                        if x['estado'] == 'aceptada' and pz: x['hasta'] = time.time() + pz * 86400
                         if x['estado'] == 'aceptada' and x.get('de') in CU:
                             nom = next((q['nombre'] for q in _com_personajes(CU.get(yo), True) if q['pid'] == x.get('pid')), None) if x.get('pid') else None
-                            d['msgs'].setdefault(_com_par(yo, x['de']), []).append({'de': yo, 'x': '✅ Solicitud aceptada: ya puedes crear con ' + (nom or 'mis personajes') + '. Lo encontrarás en Crear imagen, al añadir una persona.', 't': time.time(), 'auto': True})
+                            d['msgs'].setdefault(_com_par(yo, x['de']), []).append({'de': yo, 'x': '✅ Solicitud aceptada: ya puedes crear con ' + (nom or 'mis personajes') + '. Lo encontrarás en Crear imagen, al añadir una persona.' + (f' El permiso dura {PLAZOS[pz]}.' if pz else ''), 't': time.time(), 'auto': True})
                     else:
                         era = x.get('estado'); x['estado'] = 'cancelada' if era == 'pendiente' and x.get('de') == yo else 'terminada'   # cualquiera de las dos partes puede retirar el permiso
                         otra = x.get('para') if x.get('de') == yo else x.get('de')
                         if era == 'aceptada' and otra in CU: d['msgs'].setdefault(_com_par(yo, otra), []).append({'de': yo, 'x': 'He retirado el permiso: esta colaboración ha terminado.' if x.get('para') == yo else 'He dejado esta colaboración.', 't': time.time(), 'auto': True})
                     x['t2'] = time.time(); _com_guarda(d); return self._json(200, {'ok': True, 'solicitud': x})
+                if ac in ('plazo', 'nsfw'):   # v223: cuánto dura el permiso (lo decide quien lo da) · el modo NSFW (lo tienen que activar los dos)
+                    x = next((x for x in d['sol'] if x.get('id') == body.get('id') and yo in (x.get('de'), x.get('para')) and x.get('estado') == 'aceptada'), None)
+                    if not x or ARIA_CID in (x.get('de'), x.get('para')): return self._json(404, {'error': 'colaboración no encontrada'})
+                    otra = x.get('para') if x.get('de') == yo else x.get('de'); pz = _plazo(body.get('dias')); M = d['msgs'].setdefault(_com_par(yo, otra), [])
+                    if ac == 'plazo':
+                        if x.get('para') != yo: return self._json(403, {'error': 'El plazo lo decide quien da el permiso.'})
+                        if pz: x['hasta'] = time.time() + pz * 86400
+                        else: x.pop('hasta', None)
+                        M.append({'de': yo, 'x': f'⏱ El permiso dura ahora {PLAZOS[pz]}.' if pz else '⏱ El permiso ya no tiene fecha de fin.', 't': time.time(), 'auto': True})
+                    else:
+                        antes = _sol_nsfw(x); on = bool(body.get('on')); x['nsfw_de' if x.get('de') == yo else 'nsfw_para'] = on
+                        if on and x.get('para') == yo:
+                            if pz: x['nsfw_hasta'] = time.time() + pz * 86400
+                            else: x.pop('nsfw_hasta', None)
+                        if not on and isinstance(x.get('nsfw_hasta'), (int, float)) and x['nsfw_hasta'] < time.time(): x.pop('nsfw_hasta', None)
+                        if on and isinstance(x.get('nsfw_hasta'), (int, float)) and x['nsfw_hasta'] < time.time(): x.pop('nsfw_hasta', None); x['nsfw_para'] = (x.get('para') == yo)   # vencido: quien da el permiso tiene que volver a activarlo
+                        ahora_ = _sol_nsfw(x)
+                        if ahora_ and not antes: M.append({'de': yo, 'x': '🔞 Modo NSFW activado en esta colaboración: lo habéis activado los dos.' + (f' Dura {PLAZOS[pz]}.' if pz and x.get('para') == yo else ''), 't': time.time(), 'auto': True})
+                        elif antes and not ahora_: M.append({'de': yo, 'x': 'He desactivado el modo NSFW de esta colaboración.', 't': time.time(), 'auto': True})
+                        elif on: M.append({'de': yo, 'x': '🔞 He activado el modo NSFW por mi parte. Se enciende cuando lo actives tú también, aquí arriba.', 't': time.time(), 'auto': True})
+                    _com_guarda(d); return self._json(200, {'ok': True, 'solicitud': x, 'nsfw': _sol_nsfw(x)})
                 if ac == 'mensaje':
                     con = body.get('con', ''); txt = str(body.get('texto') or '').strip()[:2000]
                     if (con not in CU and con != ARIA_CID) or con == yo or not txt: return self._json(400, {'error': 'mensaje no válido'})
@@ -2245,6 +2299,10 @@ class H(SimpleHTTPRequestHandler):
             for key, spec in (body.get('crops') or {}).items():   # un recorte de una imagen (la cara elegida de una rejilla 3×3)
                 if okk(key) and isinstance(spec, dict) and spec.get('path'): data, _ct = img_bytes({'path': spec['path'], 'crop': spec.get('crop')}); _save(key, data)
             if body.get('files') and any(_re.fullmatch(r'inspo_\d{1,2}', k) for k in body['files']): P['inspo'] = sorted([k for k in P if _re.fullmatch(r'inspo_\d{1,2}', k)], key=lambda k: int(k.split('_')[1]))
+            if 'abierto' not in P:   # «abierto a colaborar» también lo escribe /api/comunidad: se conserva
+                try:
+                    if json.load(open(os.path.join(d, 'personaje.json'), encoding='utf-8')).get('abierto'): P['abierto'] = True
+                except Exception: pass
             if 'privado' not in P:   # «oculto en la Comunidad» lo escribe otra petición (/api/comunidad): si la copia que llega no lo trae, se conserva
                 try:
                     if json.load(open(os.path.join(d, 'personaje.json'), encoding='utf-8')).get('privado'): P['privado'] = True
@@ -2902,7 +2960,9 @@ class H(SimpleHTTPRequestHandler):
         n = int(self.headers.get('Content-Length') or 0); body = json.loads(self.rfile.read(n) or b'{}')
         if not nsfw_ok() and _con_aria(body) and ((body.get('meta') or {}).get('nsfw') or body.get('nsfw') or _es_nsfw(body.get('prompt'))): return self._json(400, {'error': 'El contenido NSFW con Aria Cruz no está disponible en esta cuenta.'})
         prest = sorted({tuple(str(i.get('path')).split('?')[0].split('/')[2:4]) for i in (body.get('images') or []) if isinstance(i, dict) and str(i.get('path') or '').startswith('assets/prestamo/')})
-        if prest and ((body.get('meta') or {}).get('nsfw') or body.get('nsfw') or _es_nsfw(body.get('prompt'))): return self._json(400, {'error': 'Con el personaje de otro creador no se puede generar contenido NSFW.'})
+        if prest and ((body.get('meta') or {}).get('nsfw') or body.get('nsfw') or _es_nsfw(body.get('prompt'))):   # v223: solo si en ESA colaboración el modo NSFW lo han activado los dos (y no ha vencido)
+            d_ = _com_lee(); yo_ = _cid()
+            if not all(len(p) == 2 and any(x.get('de') == yo_ and x.get('para') == p[0] and x.get('pid') in (None, p[1]) and _sol_nsfw(x) for x in d_['sol']) for p in prest): return self._json(400, {'error': 'Con ese personaje el modo NSFW no está activado: tenéis que activarlo los dos en vuestra conversación de la Comunidad.'})
         _ctx.prestamo_ok = bool(prest); _ctx.prest = [p for p in prest if len(p) == 2]
         save_inputs(body)
         try:
