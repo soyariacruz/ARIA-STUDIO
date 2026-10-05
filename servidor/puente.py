@@ -38,7 +38,7 @@ MAX_CUERPO = 40 * 1024 * 1024    # tope de una petición en modo servidor
 MAX_BIBLIO = 200 * 1024 * 1024   # tope de un fichero de la biblioteca común al copiarlo
 KINDS = ('vestidor', 'hair', 'expr')   # las bibliotecas a las que una cuenta puede añadir lo suyo
 _UUID = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
-VERSION = 228
+VERSION = 229
 _ctx = threading.local()   # la cuenta del hilo: la pone cada petición (y, a mano, cada hilo de fondo)
 def uid(): return getattr(_ctx, 'uid', None)   # en local siempre None
 DUENOS = tuple(e.strip().lower() for e in (os.environ.get('ARIA_DUENOS') or 'mix1994max@gmail.com').split(',') if e.strip())   # cuentas que pueden cambiar a Aria Cruz (en la web, la de Max)
@@ -1606,7 +1606,7 @@ def _com_lee():
     try: d = json.load(open(COM_F, encoding='utf-8'))
     except Exception: d = {}
     if not isinstance(d, dict): d = {}
-    for k, v in (('sol', []), ('msgs', {}), ('alias', {}), ('visto', {})):
+    for k, v in (('sol', []), ('msgs', {}), ('alias', {}), ('visto', {}), ('foto', {})):
         if not isinstance(d.get(k), type(v)): d[k] = v
     ahora = time.time()
     for x in d['sol']:   # v223: un permiso con plazo se apaga solo al vencer (se ve terminado en cuanto se lee; se guarda con el siguiente cambio)
@@ -1978,7 +1978,7 @@ class H(SimpleHTTPRequestHandler):
             cuentas = []
             for cid, uu in _com_cuentas().items():
                 pjs = _com_personajes(uu, cid == yo)
-                if pjs or cid == yo: cuentas.append({'cid': cid, 'alias': str(d['alias'].get(cid) or '')[:40], 'yo': cid == yo, 'personajes': pjs})
+                if pjs or cid == yo: cuentas.append({'cid': cid, 'alias': str(d['alias'].get(cid) or '')[:40], 'yo': cid == yo, 'personajes': pjs, 'foto': int(d['foto'].get(cid) or 0)})
             cuentas.sort(key=lambda c: (not c['yo'], (c['alias'] or 'zzz').lower()))
             if not aria_fija(): cuentas += [dict(c, personajes=[dict(p) for p in c['personajes']]) for c in COM_DEMO]   # 👁 demo: solo el equipo
             chats = []
@@ -2004,6 +2004,12 @@ class H(SimpleHTTPRequestHandler):
             return self._json(200, {'ok': True, 'mensajes': M[-300:]})
         if u.path == '/api/comunidad/avatar':   # el avatar de un personaje PÚBLICO de otra cuenta (lo único suyo que se sirve)
             cid = (q.get('c') or [''])[0]; pid = (q.get('p') or [''])[0]; grande = (q.get('t') or [''])[0] == 'foto'
+            if (q.get('t') or [''])[0] == 'creador':   # v229: la foto de un creador (la sube él; es pública dentro de la Comunidad)
+                uu = _com_cuentas().get(cid, '__no__')
+                if uu == '__no__': return self._corta(404)
+                with como(uu): fp = os.path.join(casa(), 'assets', 'comunidad', 'creador.jpg')
+                if not os.path.isfile(fp): return self._corta(404)
+                b = open(fp, 'rb').read(); self.send_response(200); self.send_header('Content-Type', 'image/jpeg'); self.send_header('Content-Length', str(len(b))); self.send_header('Cache-Control', 'private, max-age=3600'); self.end_headers(); self.wfile.write(b); return
             if cid.startswith('demo-'):   # las caras de la demo (solo el equipo)
                 fp = os.path.join(COM_DEMO_DIR, pid + '.jpg')
                 if aria_fija() or not re.fullmatch(r'[a-z0-9-]+', pid) or not os.path.isfile(fp): return self._corta(404)
@@ -2145,6 +2151,18 @@ class H(SimpleHTTPRequestHandler):
                 return self._json(200, {'ok': True, 'abierto': p['abierto']})
             with _com_l:
                 d = _com_lee()
+                if ac == 'foto':   # v229: mi foto de creador (cuadrada, 320 px). Sin `data` se quita
+                    fp = os.path.join(_dir('assets', 'comunidad'), 'creador.jpg'); data = str(body.get('data') or '')
+                    if not data:
+                        if os.path.exists(fp): os.remove(fp)
+                        d['foto'].pop(yo, None); _com_guarda(d); return self._json(200, {'ok': True, 'foto': 0})
+                    if not data.startswith('data:image/') or len(data) > 12_000_000: return self._json(400, {'error': 'Esa imagen no vale: prueba con un JPG o PNG más pequeño.'})
+                    try:
+                        from PIL import Image; import io
+                        im = Image.open(io.BytesIO(base64.b64decode(data.split(',', 1)[1]))).convert('RGB'); w, h = im.size; m = min(w, h)
+                        im.crop(((w - m) // 2, (h - m) // 2, (w - m) // 2 + m, (h - m) // 2 + m)).resize((320, 320), Image.LANCZOS).save(fp, 'JPEG', quality=88)
+                    except Exception: return self._json(400, {'error': 'No se ha podido leer esa imagen.'})
+                    d['foto'][yo] = int(time.time()); _com_guarda(d); return self._json(200, {'ok': True, 'foto': d['foto'][yo]})
                 if ac == 'alias':
                     d['alias'][yo] = re.sub(r'\s+', ' ', str(body.get('nombre') or '')).strip()[:40]; _com_guarda(d); return self._json(200, {'ok': True, 'alias': d['alias'][yo]})
                 if ac == 'solicitar':
