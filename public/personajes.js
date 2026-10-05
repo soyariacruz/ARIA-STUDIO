@@ -848,7 +848,7 @@
       arr(p.fichas).forEach((f, k) => { const d = el('div', 'f3card wide', `<div class="f3img sm"><img src="${f.thumb || f.img}" alt=""></div><b>${esc(f.nombre)}</b><small>${infoDe(f)}</small>`); d.querySelector('.f3img').onclick = () => visorFichas(V, k);
         const a = el('div', 'f3acts'); V[k].acts.forEach(([t, fn, tip]) => { const bt = el('button', 'btn', t); bt.title = tip; bt.onclick = e => { e.stopPropagation(); fn(); }; a.appendChild(bt); }); d.appendChild(a); g.appendChild(d); });
       if (!g.children.length) g.appendChild(el('div', 'accempty', 'Todavía no has creado ninguna.')); sec2.appendChild(g); if (jobs.length) startTick(); }
-    if (pj.soloFichas) w.appendChild(sec2);
+    w.appendChild(sec2);   // v253: de vuelta en «Mi ficha 360» (sin la pestaña aparte)
     if (!p.celebrado) setTimeout(() => celebrar(p), 250);
     return w;
   }
@@ -902,9 +902,9 @@
   }
   function updSide() { if (state.tab === 'perfil' && pj.wiz) renderSide(); }
 
-  const TABS_ARIA = [['ficha', '🪪', 'Mi ficha 360'], ['fichas', '🧩', 'Creador de fichas'], ['complementos', '👓', 'Complementos'], ['lugares', '📍', 'Lugares', 0, 1], ['voz', '🎙', 'Voz', 1]];   // [id, icono, nombre, pronto (sin contenido), en desarrollo (se entra con aviso)] // Poses irá al menú de la izquierda
-  const TABS_PJ = TABS_ARIA; window.TABS_TIENE_FICHAS = true;   // v252: Aria también con «Creador de fichas»   // v248: las tres fichas principales, y aparte el creador de fichas // todos los personajes con la misma interfaz que Aria (el prompt base está en el panel de la izquierda)
-  const SOON = { voz: 'Su voz para los vídeos: la voz clonada, su cadencia y sus muletillas, con muestras para escuchar y elegir.', lugares: 'Sus sitios de siempre (su habitación, su cocina, su calle…) guardados como referencias, para que sus escenas sean coherentes.' };
+  const TABS_ARIA = [['ficha', '🪪', 'Mi ficha 360'], ['complementos', '👓', 'Complementos'], ['lugares', '📍', 'Lugares', 0, 1], ['voz', '🎙', 'Voz', 1], ['mascotas', '🐾', 'Mascotas', 1]];   // v253: el «Creador de fichas» sale de aquí (se decidirá dónde va)   // [id, icono, nombre, pronto (sin contenido), en desarrollo (se entra con aviso)] // Poses irá al menú de la izquierda
+  const TABS_PJ = TABS_ARIA; window.TABS_TIENE_FICHAS = false;   // v253: sin la pestaña, «Mi ficha 360» vuelve a enseñar también las fichas creadas   // v252: Aria también con «Creador de fichas»   // v248: las tres fichas principales, y aparte el creador de fichas // todos los personajes con la misma interfaz que Aria (el prompt base está en el panel de la izquierda)
+  const SOON = { mascotas: 'Sus mascotas fijas, con su ficha: salen como una referencia más cuando las añades a una imagen, igual que crear con otro influencer.', voz: 'Su voz para los vídeos: la voz clonada, su cadencia y sus muletillas, con muestras para escuchar y elegir.', lugares: 'Sus sitios de siempre (su habitación, su cocina, su calle…) guardados como referencias, para que sus escenas sean coherentes.' };
   pj.tabBy = pj.tabBy || {};
   // Aria de equipo (v205): en la web, quien puede editar a Aria ve si hay cambios sin publicar; Max los publica para todos
   const ARIAED = { d: null, t: 0, cargando: false };
