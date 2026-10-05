@@ -193,8 +193,9 @@
       if (nueva && confirm('Foto nueva: ¿quitar de la colección las fichas de producto de la foto anterior?')) { E.fichas = []; E.nuevas = []; E.ref = '__foto__'; }
       paint(); if (!(E.c.desc || '').trim() || !(E.c.nombre || '').trim()) describe();
     }
+    function prodModel() { if (state.accModel === undefined) { try { state.accModel = localStorage.getItem('am_accmodel') || ''; } catch (e) { state.accModel = ''; } } return MODELS.find(z => z.key === state.accModel) || MODELS.find(z => z.key === 'seedream') || curModel(); }   // con qué modelo se hace la ficha del producto (se recuerda; por defecto Seedream 5.0 Pro)
     async function genProd() {
-      const c = E.c; const src = fotoSrc(); if (!src || E.job) return; const m = MODELS.find(z => z.key === 'seedream') || curModel(); const usd = m.usd[state.quality];
+      const c = E.c; const src = fotoSrc(); if (!src || E.job) return; const m = prodModel(); const usd = m.usd[state.quality];
       if (!confirm(`¿Generar ${E.fichas.length + E.nuevas.length ? 'otra ficha' : 'la ficha'} de producto de «${c.nombre || 'este objeto'}» con ${m.name}? (${fmtUsd(usd)})`)) return;
       E.job = { sending: true, t0: performance.now(), m }; paint(); const pt = prodPrompt(c);
       let r; try { r = await fetch('/api/generar', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ item: 'ficha_producto_' + (c.id || 'nuevo'), prompt: pt, images: [E.foto ? { data: E.foto } : { path: src.split('?')[0] }], aspect: '1:1', quality: state.quality, model: m.key, meta: { name: 'Ficha de producto · ' + (c.nombre || 'complemento'), tab: 'perfil', personaje: '_complementos', hidden: true, model: m.name, ep: m.ep, prompt: pt } }) }).then(z => z.json()); } catch (e) { r = { error: String(e) }; }
@@ -293,7 +294,8 @@
       if (c.modo !== 'foto') fld('Descripción para el prompt', descNode(), 'en inglés: forma, material, color y tamaño');
       else {
         // ficha de producto: varias vistas del objeto a partir de la foto; se guardan todas y eliges cuál se envía
-        const pw = el('div', 'stack'); const m = MODELS.find(z => z.key === 'seedream') || curModel(); const nF = E.fichas.length + E.nuevas.length;
+        const pw = el('div', 'stack'); const m = prodModel(); const nF = E.fichas.length + E.nuevas.length;
+        if (!E.job) { const fila = el('div', 'accmodel'); fila.appendChild(el('small', '', 'Generar con')); fila.appendChild(mkSel(MODELS.map(z => [z.key, z.name + ' · ' + fmtUsd(z.usd[state.quality])]), m.key, v => { state.accModel = v; persist('am_accmodel', v); paint(); })); if (window.modelInfoBtn) fila.appendChild(modelInfoBtn()); pw.appendChild(fila); }
         pw.appendChild(el('small', 'pjnote', E.job ? 'Se está generando: la verás a la izquierda en cuanto termine.' : nF ? `Tienes ${nF === 1 ? 'una ficha' : nF + ' fichas'} en su colección. Arriba a la izquierda eliges la portada y la que se envía al generar. Las que no te gusten se quitan con su ×.` : 'Genera sus vistas (frente, espalda, lado y tres cuartos) a partir de la foto. Se enviará esa ficha en vez de la foto.'));
         const gb = el('button', 'btn pr' + (nF ? '' : ' acc'), E.job ? `⏳ Generando la ficha… <i data-t0="${E.job.t0}">${Math.round((performance.now() - E.job.t0) / 1000)} s</i>` : `${nF ? '↻ Generar otra ficha' : '🧩 Generar la ficha del producto'}<i>${fmtUsd(m.usd[state.quality])}</i>`); gb.disabled = !!E.job || !fs; gb.onclick = genProd;
         pw.appendChild(gb); fld('Ficha del producto', pw, 'vistas del objeto para que la IA no se invente los lados');
