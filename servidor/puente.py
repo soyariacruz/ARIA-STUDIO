@@ -43,7 +43,7 @@ MAX_CUERPO = 40 * 1024 * 1024    # tope de una petición en modo servidor
 MAX_BIBLIO = 200 * 1024 * 1024   # tope de un fichero de la biblioteca común al copiarlo
 KINDS = ('vestidor', 'hair', 'expr')   # las bibliotecas a las que una cuenta puede añadir lo suyo
 _UUID = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
-VERSION = 349
+VERSION = 350
 _ctx = threading.local()   # la cuenta del hilo: la pone cada petición (y, a mano, cada hilo de fondo)
 def uid(): return getattr(_ctx, 'uid', None)   # en local siempre None
 DUENOS = tuple(e.strip().lower() for e in (os.environ.get('ARIA_DUENOS') or 'mix1994max@gmail.com').split(',') if e.strip())   # cuentas que pueden cambiar a Aria Cruz (en la web, la de Max)
@@ -1480,6 +1480,34 @@ def _capa_save(C):   # modo servidor: el catálogo común NO se escribe nunca; s
     fp = os.path.join(_dir(), 'capa.json'); tmp = f'{fp}.tmp{threading.get_ident()}'
     with os.fdopen(os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600), 'w', encoding='utf-8') as f: json.dump(capa, f, ensure_ascii=False); f.flush(); os.fsync(f.fileno())
     os.replace(tmp, fp)
+ARIA_SYNC_H = 'c97f4d80beebfd9ec9c2ffbad806912d7fd961a815da3cf8d4b38c53375a81ec'   # v350: huella de la llave del local de Max (la llave NO está aquí)
+WEB_URL = os.environ.get('ARIA_WEB_URL') or 'https://aria-studio.onrender.com'
+_SYNC = {'t': 0, 'ok': None, 'error': '', 'n': 0}
+def _sync_web():   # v350 (solo en local): la Aria de la web → catalog.js del Mac (perfil, complementos, fichas) + los ficheros que nombre y falten
+    if SERVIDOR: return
+    try: tok = next((l.strip().split('=', 1)[1] for l in open(os.path.expanduser('~/.claude/aria-sync.env')) if l.startswith('ARIA_SYNC=')), '')
+    except Exception: tok = ''
+    if not tok: return
+    try:
+        rq = urllib.request.Request(WEB_URL + '/salud/aria-sync', headers={'X-Aria-Sync': tok, 'User-Agent': UA}); r = json.loads(urllib.request.urlopen(rq, timeout=60).read())
+        P = r.get('perfil')
+        if not isinstance(P, dict) or not P: raise RuntimeError('la web no devolvió a Aria')
+        n = 0
+        for rel in sorted(_aria_refs(P)):
+            rel = rel.split('?')[0]; dst = os.path.join(ROOT, *rel.split('/'))
+            if not _dentro(ROOT, dst) or os.path.isfile(dst): continue
+            try:
+                data = urllib.request.urlopen(urllib.request.Request(WEB_URL + '/salud/aria-sync/f?p=' + urllib.parse.quote(rel), headers={'X-Aria-Sync': tok, 'User-Agent': UA}), timeout=120).read()
+                os.makedirs(os.path.dirname(dst), exist_ok=True); open(dst, 'wb').write(data); n += 1
+            except Exception as e: plog(f'sincronizar · {rel} ✕ {str(e)[:80]}')
+        head, C = _cat_load()
+        if C.get('perfil') != P:
+            C['perfil'] = P; _cat_save(head, C); plog(f'sincronizar: Aria de la web → local ({n} ficheros nuevos)' + (' · con cambios sin publicar' if r.get('sin_publicar') else ''))
+        _SYNC.update(t=time.time(), ok=True, error='', n=n)
+    except Exception as e: _SYNC.update(t=time.time(), ok=False, error=str(e)[:200]); plog('sincronizar con la web ✕ ' + str(e)[:200])
+def _sync_bucle():
+    while True:
+        _sync_web(); time.sleep(600)
 def _cat_save(head, C):   # escritura atómica del catálogo (temporal + cambio de golpe) y una copia por día (se guardan 7)
     import shutil
     if SERVIDOR: return _capa_save(C)
@@ -2536,6 +2564,16 @@ class H(SimpleHTTPRequestHandler):
         if self.command == 'GET' and self.path.startswith('/api/admin/copia'): return self._copia()
         if self.command in ('GET', 'POST') and self.path.startswith('/api/admin/importar'): return self._importar()
         if self.command == 'POST' and self.path == '/api/admin/biblio': return self._subir_biblio()   # v290
+        if self.command == 'GET' and self.path.startswith('/salud/aria-sync') and SERVIDOR:   # v350: el local de Max se trae la Aria de la web (llave en ~/.claude/aria-sync.env del Mac; aquí solo su huella)
+            if hashlib.sha256((self.headers.get('X-Aria-Sync') or '').encode()).hexdigest() != ARIA_SYNC_H: return self._corta(403)
+            if self.path == '/salud/aria-sync':
+                P_ = _aria_perfil(); return self._json(200, {'ok': True, 'v': VERSION, 'perfil': P_ if P_ is not None else (_comun().get('perfil') or {}), 'sin_publicar': P_ is not None})
+            rel_ = _rel_ok(urllib.parse.unquote(self.path.split('?p=', 1)[1]) if '?p=' in self.path else '')
+            for b_ in ((os.path.join(DATOS, 'usuarios', ARIA_UID), os.path.join(DATOS, 'biblioteca')) if rel_ else ()):
+                f_ = os.path.join(b_, *rel_.split('/'))
+                if _dentro(b_, f_) and os.path.isfile(f_):
+                    b = open(f_, 'rb').read(); self.send_response(200); self.send_header('Content-Type', mimetypes.guess_type(f_)[0] or 'application/octet-stream'); self.send_header('Content-Length', str(len(b))); self.end_headers(); self.wfile.write(b); return
+            return self._corta(404)
         if self.command in ('GET', 'HEAD') and self.path == '/salud': return self._json(200, {'ok': True, 'v': VERSION}) if self.command == 'GET' else self._corta(200)   # el alojamiento pregunta aquí si el servidor está vivo (sin sesión, sin datos)
         if self.command == 'POST':
             try: n = int(self.headers.get('Content-Length') or 0)
@@ -4535,6 +4573,7 @@ if __name__ == '__main__':
         if not SECRETO: print('AVISO: falta ARIA_SECRETO (32+ caracteres): no se podrán guardar claves de API', flush=True)
         if os.environ.get('ARIA_DEV') == '1' and not DEV: print('ARIA_DEV se ignora: el servidor no escucha en 127.0.0.1', flush=True)
     _jobs_restore(); threading.Thread(target=_vigilante, daemon=True).start()
+    if not SERVIDOR: threading.Thread(target=_sync_bucle, daemon=True).start()   # v350: el local, al día con la Aria de la web
     if SERVIDOR and LIGA_WEB: os.makedirs(LIGA_WEB, exist_ok=True); threading.Thread(target=_liga_vigia, daemon=True).start()   # 🥊 Workflows en la web
     if SERVIDOR: print(f'ARIA STUDIO v{VERSION} · modo servidor en http://{HOST}:{PORT} · datos en {DATOS} · orígenes: {", ".join(ORIGENES)}' + (' · ATAJO DE PRUEBAS X-Dev-Uid ACTIVO' if DEV else '') + (f' · 🎁 saldo regalo ACTIVO (tope {CASA_TOPE:g} $/mes)' if CASA_KEY else ' · saldo regalo apagado (falta ARIA_CASA_WS)'), flush=True)
     else: print(f'ARIA MIRROR · puente en http://localhost:{PORT} · modelo {MODEL} · clave {"OK" if _hf_listo() else "FALTA (ID:SECRET)"}')
