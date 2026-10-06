@@ -43,7 +43,7 @@ MAX_CUERPO = 40 * 1024 * 1024    # tope de una petición en modo servidor
 MAX_BIBLIO = 200 * 1024 * 1024   # tope de un fichero de la biblioteca común al copiarlo
 KINDS = ('vestidor', 'hair', 'expr')   # las bibliotecas a las que una cuenta puede añadir lo suyo
 _UUID = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
-VERSION = 295
+VERSION = 296
 _ctx = threading.local()   # la cuenta del hilo: la pone cada petición (y, a mano, cada hilo de fondo)
 def uid(): return getattr(_ctx, 'uid', None)   # en local siempre None
 DUENOS = tuple(e.strip().lower() for e in (os.environ.get('ARIA_DUENOS') or 'mix1994max@gmail.com').split(',') if e.strip())   # cuentas que pueden cambiar a Aria Cruz (en la web, la de Max)
@@ -2130,7 +2130,8 @@ def _audio_usd(k, texto='', seg=0):   # v293: lo que cuesta de verdad (tarifas d
     if k == 'seedtts': return 0.03 * max(1, math.ceil(n / 1000))
     if k == 'vchange': return round(0.004 * min(300, max(1, math.ceil(seg or 1))), 4)
     return AUDIO_M.get(k, ('', '', 0.0, ''))[2]
-MUESTRA_TXT = 'Hola, así suena mi voz. ¿Te gusta cómo hablo? Si quieres, la usamos en tu próximo vídeo.'
+MUESTRA_TXT = ('Hola, ¿qué tal? Así suena mi voz. Te cuento un poco: me encanta grabar vídeos, probar cosas nuevas y contarte todo lo que descubro. '
+               'Puedo hablar tranquila, emocionarme cuando algo me flipa o bajar la voz para contarte un secreto. ¿Te gusta cómo sueno?')   # v296: más larga, para entender bien la voz
 _MU = {'en_marcha': False, 'hechas': 0, 'faltan': 0, 'error': ''}
 def _mu_dir(modelo): d = os.path.join(DATOS or ROOT, 'biblioteca', 'assets', 'muestras', modelo) if SERVIDOR else os.path.join(ROOT, 'assets', 'muestras', modelo); os.makedirs(d, exist_ok=True); return d
 def _muestras():   # {'el': {voz: ruta}, 'seed': {...}}
@@ -2218,7 +2219,7 @@ class H(SimpleHTTPRequestHandler):
         try: body = json.loads(self.rfile.read(n) or b'{}')
         except Exception: return self._json(400, {'error': 'no es JSON'})
         rel = str(body.get('rel') or '')
-        if not DATOS or not re.fullmatch(r'assets/videoteca/[A-Za-z0-9_.-]+', rel) or '..' in rel: return self._json(400, {'error': 'ruta no válida'})
+        if not DATOS or not (re.fullmatch(r'assets/videoteca/[A-Za-z0-9_.-]+', rel) or re.fullmatch(r'assets/muestras/(el|seed)/[A-Za-z0-9_.-]+\.mp3', rel)) or '..' in rel: return self._json(400, {'error': 'ruta no válida'})   # v296: también las muestras de voz
         base = os.path.join(DATOS, 'biblioteca'); full = os.path.join(base, *rel.split('/'))
         if not _dentro(base, full): return self._json(400, {'error': 'ruta no válida'})
         if body.get('ver'): return self._json(200, {'ok': True, 'tam': os.path.getsize(full) if os.path.isfile(full) else 0})
@@ -3238,7 +3239,7 @@ class H(SimpleHTTPRequestHandler):
             if SERVIDOR and aria_fija(): return self._json(403, {'error': 'solo el equipo'})
             if casa_on(): return self._json(400, {'error': 'Hace falta tu propia clave de WaveSpeed.'})
             if _MU['en_marcha']: return self._json(200, {'ok': True, 'mu': _MU})
-            modelo = 'seed' if body.get('modelo') == 'seed' else 'el'; I = _audio_info(); todas = I['voces_seed'] if modelo == 'seed' else I['voces_el'] + [ARIA_VOZ] + [x.get('eleven') for x in _voces().values() if isinstance(x, dict) and x.get('eleven')]; todas = list(dict.fromkeys(todas))   # + la de Aria y las de tus personajes
+            modelo = 'seed' if body.get('modelo') == 'seed' else 'el'; I = _audio_info(); todas = [v for v in I['voces_seed'] if '_es' in v or v.endswith('es')] if modelo == 'seed' else I['voces_el']   # v296: de Seed, solo las que hablan español + [ARIA_VOZ] + [x.get('eleven') for x in _voces().values() if isinstance(x, dict) and x.get('eleven')]; todas = list(dict.fromkeys(todas))   # + la de Aria y las de tus personajes
             ya = _muestras().get(modelo) or {}; faltan = [v for v in todas if re.sub(r'[^A-Za-z0-9_-]', '_', v) not in ya]
             if not faltan: return self._json(200, {'ok': True, 'mu': _MU, 'nada': True})
             _MU.update({'en_marcha': True, 'hechas': 0, 'faltan': len(faltan), 'error': ''})
