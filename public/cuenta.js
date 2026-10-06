@@ -68,7 +68,7 @@ html.sinapi #livedot,html.sinapi .meter{display:none!important}
 
   const gate = document.createElement('div');
   gate.id = 'gate';
-  gate.innerHTML = '<div class="gwrap"><div class="gfotos"><img src="/assets/biblio/p269-5.jpg" alt=""><img src="/assets/biblio/p269-6.jpg" alt=""><img src="/assets/biblio/p269-8.jpg" alt=""></div>' +
+  gate.innerHTML = '<div class="gwrap"><div class="gfotos"><img src="/portada/1.jpg?v=352" alt=""><img src="/portada/2.jpg?v=352" alt=""><img src="/portada/3.jpg?v=352" alt=""></div>' +
     '<div class="gcard"><h1>ARIA<i>STUDIO</i></h1>' +
     '<p id="gateMsg"></p>' +
     '<ul class="gpts"><li><b>Tu personaje, siempre el mismo</b>Crea su ficha una vez y sale igual en todas sus fotos.</li><li><b>Recrea cualquier foto con él</b>Elige una de la Fototeca o arrastra la tuya.</li><li><b>Empiezas con saldo regalo</b>Tus primeras imágenes van por nuestra cuenta. Después, desde 3 céntimos por imagen y sin suscripción.</li></ul>' +

@@ -60,6 +60,7 @@ _lg = open(os.path.join(SRC, 'legal.html'), encoding='utf-8').read() if os.path.
 if _lg and 'class="falta"' not in _lg: open(os.path.join(OUT, 'legal.html'), 'w', encoding='utf-8').write(_lg)
 elif os.path.isfile(os.path.join(OUT, 'legal.html')): os.remove(os.path.join(OUT, 'legal.html'))
 if _lg and 'class="falta"' in _lg: print('  · legal.html sin publicar: faltan los datos del titular')
+shutil.copytree(os.path.join(SRC, 'portada'), os.path.join(OUT, 'portada'), dirs_exist_ok=True)   # v352: las fotos de la página de entrada
 shutil.copytree(os.path.join(SRC, 'comunidad_demo'), os.path.join(SRV, 'comunidad_demo'), dirs_exist_ok=True)   # caras de los creadores de demo de la Comunidad (solo las ve el equipo)
 LIGA = '/Users/maxromanenko/Desktop/XXX/.claude/scripts/ai_league'; LS = os.path.join(SRV, 'liga'); os.makedirs(os.path.join(LS, 'fuentes'), exist_ok=True)
 for fn in ('liga.py', 'montar.py'): shutil.copyfile(os.path.join(LIGA, fn), os.path.join(LS, fn))
