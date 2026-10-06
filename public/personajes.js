@@ -403,7 +403,6 @@
     const g = el('div', 'pjcards h169 pjhairgrid scroll'); g.onscroll = () => { pj.hairScroll = g.scrollTop; }; setTimeout(() => { g.scrollTop = pj.hairScroll || 0; }, 0); L.forEach(it => { const on = d.peinado && d.peinado.id === it.id; const c = el('button', 'pjcard' + (on ? ' on' : ''), `<span class="pjvis"><img src="${it.files.main}" alt="" loading="lazy"></span><b>${esc(it.name)}</b>`); c.onclick = () => { d.peinado = on ? null : { id: it.id, name: it.name, desc: it.desc || '', img: it.files.main }; changed(d); paintWiz(); }; c.ondblclick = () => lightbox(it.files.main, it.name); g.appendChild(c); }); w.appendChild(g);
     const nav = el('div', 'pjhairnav'); nav.appendChild(el('small', '', `${L.length} peinados · desliza para verlos todos · doble clic para ver uno en grande`)); w.appendChild(nav); return w;
   }
-  function elegirPeinado(d) { pickFrom('hair', 'tu personaje nuevo', it => { d.peinado = { id: it.id, name: it.name, desc: it.desc || '', img: imgOf(it) }; toast(`Peinado «${it.name}» añadido`); }); }
   function elegirCartoon(d) { pickFrom('cartoon', 'el estilo de tu personaje', it => { d.estilo = 'cartoon'; d.cartoon = { id: it.id, name: it.name, desc: it.desc || '', img: (it.files && (it.files.thumb || it.files.main)) || imgOf(it) }; toast(`Estilo «${it.name}» elegido`); }); }
 
   // ---------------------------------------------------------------- guardar
@@ -764,9 +763,6 @@
     const ft = el('div', 'edft'); const dl = el('button', 'btn', '⬇ Descargar'); dl.disabled = !src; dl.onclick = () => { const a = document.createElement('a'); a.href = src; a.download = p.id + '_' + pz.k + '.jpg'; document.body.appendChild(a); a.click(); a.remove(); }; const x = el('button', 'btn', 'Cerrar'); x.onclick = edCierra; ft.appendChild(dl); ft.appendChild(x); sd.appendChild(ft); box.appendChild(sd); }
   async function montarCombo(p) { const r = await fetch('/api/personaje_combo', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: p.id }) }).then(x => x.json()).catch(e => ({ error: String(e) }));
     if (r.ok) { const i = pj.list.findIndex(x => x.id === p.id); pj.list[i] = r.p; syncChars(); toast(`Ficha principal de ${p.nombre} lista`); } else toast('No se pudo montar la ficha principal: ' + r.error); renderProfile(); renderSide(); }
-  async function empezarStd(p) { // de la ficha importada a la ficha «de la casa»: primero se guarda aparte la importada, luego sus 4 vistas (cara de cerca), después su cuerpo y, con las dos, la principal
-    if (!p.importada) { const r = await persist_(p, { copy: { importada: clean(p.ficha360) } }); if (!r || !r.ok) { toast('No se pudo guardar la ficha importada'); return; } p = pj.list.find(x => x.id === p.id) || p; }
-    pj.forceStage = Object.assign({}, pj.forceStage, { [p.id]: 'vistas' }); window.pjScrollTop = true; renderProfile(); renderSide(); }
   // ---- FICHA AUTOMÁTICA (v190): cara de cerca (4 vistas) → cuerpo completo → ficha principal, de un tirón. Una sola pregunta al empezar, con el coste total.
   //      El estado va en el propio personaje (`autoFicha`), así que sobrevive a cerrar la página; cada paso lo dispara el final del trabajo anterior (onJobDone).
   const autoCola = {}; const jobsDe = pid => Object.keys(pj.jobs).filter(k => k.startsWith(pid + ':'));

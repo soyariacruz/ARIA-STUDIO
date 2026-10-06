@@ -452,16 +452,6 @@ function planRefs(tab, it) { // todas las imágenes que se mandan, en orden, con
     names.push({ tag: '@Image' + (i + 1), r: { name, thumb, kind: 'image', src } }); });
   return names;
 }
-function liveControls(tab, it) { // Crear imagen: ajustes a la vista + un solo botón
-  const box = el('div', 'stack'); const m = curModel();
-  box.appendChild(genSettings(tab, it));
-  const ex = existingImage(tab, it); const revealed = (tab === 'crear' && it.custom) ? !!ex : state.done.has(it.id);
-  const jb = (tab === 'crear' && it.custom) ? null : jobFor(it); const nJobs = [...JOBS.values()].filter(j => !j.end && j.it === it).length; if (nJobs && tab === 'crear') box.appendChild(el('div', 'status', `⏳ <b>${nJobs}</b> generándose ahora mismo: aparecen abajo, en Mis creaciones, y puedes lanzar otra (por ejemplo con otro modelo).`));
-  if (jb) { const cb = el('button', 'btn w', `⏳ ${jb.status === 'queued' ? 'En cola' : 'Generándose'} · ${Math.round((performance.now() - jb.t0) / 1000)} s${puedeCancelar(jb) ? ' · cancelar' : ''}`); if (puedeCancelar(jb)) cb.onclick = () => cancelJob(jb, 'cancelada por ti'); else { cb.disabled = true; cb.title = 'Ya se está generando: no se puede cancelar'; } box.appendChild(cb); }
-  else { const b = el('button', 'btn w acc', `${ex && revealed ? 'Generar nueva' : 'Generar imagen'} · ${fmtUsd(m.usd[state.quality])}`); b.title = ex && !revealed ? 'Ya existe: se enseña al instante sin gastar' : 'Genera la imagen'; b.onclick = () => tryOn(false); box.appendChild(b); }
-  box.appendChild(el('div', 'status', ex && revealed ? `Esta es la imagen que ya existía${it.live ? ' (generada con la API)' : ''}. <b>Generar nueva</b> lanza una petición real.` : ex ? `Ya existe una imagen de esta combinación: al pulsar se enseña al instante y sin gastar.` : `Se genera de verdad con lo elegido arriba.`));
-  return sec('Generar con la API', box, m.ep);
-}
 function previewSection(tab, it) { // componentes: «Generar preview» + ajustes plegados
   const box = el('div', 'stack'); const m = curModel(); const ex = existingImage(tab, it); const revealed = state.done.has(it.id);
   const jb = jobFor(it); if (jb) { const cb = el('button', 'btn w', `⏳ ${jb.status === 'queued' ? 'En cola' : 'Generándose'} · ${Math.round((performance.now() - jb.t0) / 1000)} s${puedeCancelar(jb) ? ' · cancelar' : ''}`); if (puedeCancelar(jb)) cb.onclick = () => cancelJob(jb, 'cancelada por ti'); else { cb.disabled = true; cb.title = 'Ya se está generando: no se puede cancelar'; } box.appendChild(cb); }
@@ -490,8 +480,6 @@ function videoDims(res, aspect) { // Seedance fija el ÁREA del nivel (720p ≈ 
   const area = { '480p': 854 * 480, '720p': 1280 * 720, '1080p': 1920 * 1080, '4k': 3840 * 2160 }[res] || 1280 * 720; const [a, b] = aspect.split(':').map(Number); const r = a / b; const w = Math.round(Math.sqrt(area * r) / 2) * 2, h = Math.round(Math.sqrt(area / r) / 2) * 2; return [w, h]; }
 function videoUsd(sec, res, aspect) { const [w, h] = videoDims(res, aspect); if (vprov() === 'wsg') { const m = vcur(); const d0 = +m.durDef || (m.dur && +m.dur[0]) || 5; return { tokens: 0, usd: m.usd * sec / d0, w, h, rate: m.usd / d0, aprox: true }; } if (vprov() === 'ark') { const rate = (ARK_USD[state.vmodel] || ARK_USD['2.0'])[res] || 0.15; return { tokens: 0, usd: sec * rate, w, h, rate }; } if (vprov() === 'ws') { const rate = WS_USD[res] || 0.24; return { tokens: 0, usd: sec * rate, w, h, rate }; } const tokens = Math.ceil(sec * w * h * 24 / 1024); const rate = res === '4k' ? 0.008 : 0.014; return { tokens, usd: tokens / 1000 * rate, w, h }; }
 function nearestAspect(ar) { if (!ar) return '3:4'; let best = '3:4', bd = 1e9; V_ASPECTS.forEach(a => { const [x, y] = a.split(':').map(Number); const d = Math.abs(x / y - ar); if (d < bd) { bd = d; best = a; } }); return best; }
-function aspectFor(it) { return state.vmode === 'r2v' ? state.vaspect : nearestAspect(it._ar); }
-function defaultMotionPrompt(it) { return 'La misma mujer de la imagen, con sus gafas redondas y sus aros, mira a cámara, respira con naturalidad, parpadea y sonríe suavemente; ligerísimo movimiento de cámara en mano; misma luz y mismo fondo; sin texto ni logos.'; }
 function libItem(src, name, sub) { const clean = src.startsWith('data:') ? src : src.split('?')[0]; const id = clean.startsWith('data:') ? 'tu-foto' : clean.split('/').pop().replace(/\.[a-z0-9]+$/i, ''); return { id, name, sub: sub || '', thumb: clean, src: clean }; }
 function buildVideoLib(j) { // biblioteca de imágenes animables
   const items = []; const seen = new Set(); const add = it => { if (!seen.has(it.id)) { seen.add(it.id); items.push(it); } };
@@ -521,20 +509,6 @@ function recreateVideo(it) { // carga en el panel todo lo que llevó ese vídeo:
   if ((m.refs || []).some(r => /ficha360|Ficha 360/i.test(r))) poolAdd({ id: 'ficha360', kind: 'image', name: 'Ficha 360 de Aria', src: C.perfil.ficha, thumb: C.perfil.ficha }, true);
   state.vprompt = m.prompt || null; if (m.duration) { state.vdur = +m.duration; persist('am_vdur', state.vdur); } if (m.resolution) { state.vres = m.resolution; persist('am_vres', state.vres); } if (m.aspect) { state.vaspect = m.aspect; persist('am_vaspect', state.vaspect); } if (m.audio != null) { state.vaudio = !!m.audio; persist('am_vaudio', state.vaudio ? '1' : '0'); } if (m.provider) { state.vprov = m.provider; persist('am_vprov', m.provider); }
   vbadge(); const vi = TABS.video.items.find(x => x.kind === 'video' && x.src === (it.src || '').split('?')[0]) || (it.kind === 'video' && it.thumb ? it : null); if (vi) cineShow(vi); if (state.tab === 'video') renderSide(); toast('Vídeo cargado en el panel: referencias, prompt y ajustes');
-}
-function animateCurrent() { const src = (layers[front].getAttribute('src') || ''); if (!src) return; const clean = src.startsWith('data:') ? src : src.split('?')[0]; let it = TABS.video.items.find(i => i.src === clean); if (!it) { it = libItem(clean, cur().name, 'imagen actual'); it._ar = arOverride || null; TABS.video.items.unshift(it); } state.vpool = [poolFromItem(it)]; state.sel.video = it; setTab('video'); select(it, true, true); toast('Elige duración y resolución; el coste sale antes de generar'); }
-function paintVideo(it, fast) {
-  const vid = $('#vid');
-  if (it.video) {
-    mirror.classList.add('vidmode', 'cached'); mirror.querySelector('.tag').textContent = 'vídeo generado · Seedance 2.0';
-    if (vid.getAttribute('src') !== it.video) { vid.src = it.video; vid.load(); }
-    vid.onloadedmetadata = () => { if (cur() === it && vid.videoWidth) { arOverride = vid.videoWidth / vid.videoHeight; sizeMirror(); } };
-    if (vid.videoWidth) { arOverride = vid.videoWidth / vid.videoHeight; sizeMirror(); } vid.oncanplay = () => { if (cur() === it && mirror.classList.contains('vidmode')) vid.play().catch(() => {}); }; vid.play().catch(() => {});
-  } else {
-    mirror.classList.remove('vidmode', 'cached'); vid.pause();
-    if (it._ar) { if (arOverride !== it._ar) { arOverride = it._ar; sizeMirror(); } } else { const im = new Image(); im.onload = () => { it._ar = im.naturalWidth / im.naturalHeight; if (cur() === it) { arOverride = it._ar; sizeMirror(); renderSide(); } }; im.src = it.src; }
-    showImage(it.src, fast);
-  }
 }
 $('#dlBtn').onclick = e => { e.stopPropagation(); save(); };
 $('#rcBig').onclick = e => { e.stopPropagation(); const it = cur(); if (!it || state.tab !== 'biblio') return; state.comp.biblio = it; badge(); state.flash = 'biblio'; setTab('crear'); toast(`«${it.name}» como imagen a recrear`); };
@@ -791,12 +765,6 @@ async function openPeople(bib) {
   busy = 0; if (r && r.ok && r.people.length) { bib._ppl = r.people; pplCache(key, r.people); pon(r.people); cs = libre() || CH().id; } else err = r && r.ok ? 'No he encontrado personas en esta imagen: márcalas tú con «Otra persona».' : (/WaveSpeed no está conectado|WS_API_KEY/i.test(String(r && r.error)) ? 'Para detectar a las personas hace falta tu clave de WaveSpeed (conéctala en «Mis APIs», arriba). Mientras, puedes marcarlas tú con «Otra persona».' : 'No se ha podido leer la imagen: ' + (r ? r.error : 'sin respuesta'));
   if (m0.isConnected) draw();
 }
-function vTray() { // Crear vídeo: Prenda · Movie look · Cartoon → van al pool de referencias (id 'tab:id', como addToVideo)
-  const t = el('div', 'tray vtray'); ['vestidor', 'movie', 'cartoon'].forEach(k => { const r = state.vpool.find(x => String(x.id).startsWith(k + ':')); const src = r ? (TABS[k].items || []).find(i => k + ':' + i.id === r.id) : null; const sample = TABS[k] && TABS[k].items.find(x => !x.group && !x.custom);
-    const d = el('div', 'ing' + (k === 'vestidor' ? ' tall' : '') + (r ? ' on' : ' empty'), r ? `<span class="x" title="Quitar">×</span><img src="${r.thumb || (src && compThumb(k, src)) || ''}" alt=""><small>${COMP[k]}</small><b>${r.name}</b>` : `<img src="${sample ? compThumb(k, sample) : ''}" alt=""><small>${COMP[k]}</small><b>ninguno</b>`);
-    d.title = r ? 'Cambiar' : 'Elegir'; d.onclick = e => { if (e.target.classList.contains('x')) { const i = state.vpool.indexOf(r); if (i >= 0) state.vpool.splice(i, 1); vbadge(); renderSide(); return; } state.back = 'video'; setTab(k); if (src) { const v = view(); if (v.includes(src)) select(src, false, true); } }; t.appendChild(d); });
-  return t;
-}
 function vModelo() {   // v259: lista limpia: cada fila es un modelo que se puede pulsar; Seedance 2.0 lleva debajo quién lo ofrece y desde cuánto
   const P = [];
   const sd = [['hf', 'Higgsfield', 'desde ' + fmtUsd(Math.ceil(854 * 480 * 24 / 1024) / 1000 * 0.014) + '/s'], ['ws', 'WaveSpeed', 'desde ' + fmtUsd(WS_USD['480p']) + '/s', !WS], ['ark', 'BytePlus', 'desde ' + fmtUsd(ARK_USD['2.0']['480p']) + '/s', !ARK]];
@@ -971,14 +939,6 @@ function hairColorSection(it) { // color de pelo del peinado: slider → imagen 
     const upd = () => { state.hHue = +rng.value; dot.style.background = hslHex(state.hHue, 70, 45); }; rng.oninput = upd; rng.onchange = () => { state.hNatural = null; pick(HN(state.hHue), hslHex(state.hHue, 70, 45)); }; upd(); hr.appendChild(rng); hr.appendChild(dot); box.appendChild(hr); }
   const w = el('div'); w.style.padding = '0 18px 10px'; w.appendChild(box); return w;
 }
-async function hairRecolor(it, color, hex) {
-  if (!LIVE) { toast('Conecta primero tu API (arriba, «Conecta tu API»)'); return; } const m = curModel(); const prompt = `Change ONLY the hair color of the woman in @Image1 to ${color}${hex ? ' (' + hex + ')' : ''}, natural realistic hair coloring with depth and highlights. Keep EXACTLY the same hairstyle, cut, volume, parting and length, the same face, glasses, earrings, clothing, pose, framing, background and lighting. Photoreal, no text.`;
-  it._hvJob = (it._hvJob || 0) + 1; renderSide();
-  const body = { item: 'pelo_' + it.id, prompt, images: [{ path: it.files.main }], aspect: '16:9', quality: state.quality, model: m.key, meta: { name: `Pelo ${color} · ${it.name}`, tab: 'hair', hairVar: it.id, color, hidden: true, model: m.name, ep: m.ep, prompt, comp: { Peinado: it.name }, compIds: { hair: it.id } } };
-  let r; try { r = await fetch('/api/generar', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).then(x => x.json()); } catch (e) { r = { error: String(e) }; }
-  if (!r || r.error) { it._hvJob = Math.max(0, (it._hvJob || 1) - 1); renderSide(); toast('No se pudo generar: ' + (r ? r.error : 'sin respuesta')); return; }
-  const job = { rid: r.request_id, it, tab: 'hair', m, kind: 'image', hairvar: true, t0: performance.now(), status: 'queued', usd: r.usd != null ? Number(r.usd) : m.usd[state.quality] }; JOBS.set(job.rid, job); ensurePoller(); toast(`Generando el peinado en ${color}…`);
-}
 function colorSection(it) {
   const root = it.parent ? (TABS.vestidor.items.find(x => x.id === it.parent) || it) : it;
   const box = el('div', 'colsec');
@@ -996,14 +956,6 @@ function colorSection(it) {
   if (root._gridJob) { const ph = el('div', 'gridbox loading'); ph.innerHTML = `<div class="spin"></div><span class="gsec" id="gridSec">0 s</span>`; box.appendChild(ph); clearInterval(state._gridTimer); state._gridTimer = setInterval(() => { const e = $('#gridSec'); if (!e || !root._gridJob) { clearInterval(state._gridTimer); return; } e.textContent = Math.round((performance.now() - root._gridT0) / 1000) + ' s'; }, 1000); }
   else if (g) { const gx = el('div', 'gridbox'); gx.innerHTML = `<img src="${g}" alt="">`; gx.onclick = () => lightbox(g, root.name + ' · variaciones'); box.appendChild(gx); box.appendChild(el('div', 'lbl', 'Elige la que más te guste'));
     const nums = el('div', 'nums'); for (let k = 1; k <= 9; k++) { const b = el('button', 'num', String(k)); b.onclick = () => pickVariation(root, k, g); nums.appendChild(b); } box.appendChild(nums); }
-  const w = el('div'); w.style.padding = '0 18px 10px'; w.appendChild(box); return w;
-}
-function colorSectionOld(it) { // variaciones de color de una prenda: un color concreto → ficha nueva · «Dame 9 variaciones» → rejilla 3×3 numerada → elige 1-9 → ficha nueva
-  const box = el('div', 'colsec'); box.appendChild(el('div', 'lbl', 'Variaciones de color'));
-  const sw = el('div', 'swatches'); VCOLORS.forEach(([n, c]) => { const b = el('button', 'sw', ''); b.style.background = c; b.title = `Ficha nueva en ${n.toLowerCase()}`; b.onclick = async () => { if ((await pregunta(`¿Generar una ficha nueva de «${it.name}» en ${n.toLowerCase()}? (${fmtUsd(curModel().usd.high)})`))) recolorPrenda(it, n); }; sw.appendChild(b); }); box.appendChild(sw);
-  const gb = el('button', 'btn w', it._gridJob ? '⏳ Generando las 9 variaciones…' : '🎲 Dame 9 variaciones de color'); gb.disabled = !!it._gridJob; gb.onclick = () => gridVariations(it); box.appendChild(gb);
-  if (it._grid) { const g = el('div', 'gridbox'); g.innerHTML = `<img src="${it._grid}" alt="">`; g.onclick = () => lightbox(it._grid, it.name + ' · variaciones'); box.appendChild(g); box.appendChild(el('div', 'lbl', 'Elige la que más te guste'));
-    const nums = el('div', 'nums'); for (let k = 1; k <= 9; k++) { const b = el('button', 'num', String(k)); b.onclick = () => pickVariation(it, k); nums.appendChild(b); } box.appendChild(nums); }
   const w = el('div'); w.style.padding = '0 18px 10px'; w.appendChild(box); return w;
 }
 async function recolorPrenda(it, colorName) {
@@ -1178,7 +1130,6 @@ function creationMeta(it, host) { if (it.ajena) return ajenaMeta(it, host); // p
   { const fila = el('div', 'galacts'); fila.appendChild(del); fila.appendChild(hd); st.appendChild(fila); }
   host.appendChild(sec('Acciones', st));
 }
-function creationPanel(it) { creationMeta(it, side); }
 function libMeta(it, host) { // popup de Fototeca / Videoteca: nombre, etiquetas, IA, fecha, prompt, ajustes y Añadir
   host.innerHTML = ''; const vt = state.tab === 'videoteca';
   if (COMP[state.tab] && state.tab !== 'biblio') { const tab = state.tab; const head = el('div', 'sec'); head.appendChild(el('div', 'big', it.name)); head.appendChild(el('div', 'status', `${TABS[tab].base}${it.num ? ' · Nº ' + it.num : ''}${it.tipo ? ' · ' + it.tipo : ''}`)); host.appendChild(head);
@@ -1273,10 +1224,6 @@ function carpLado() { // v225: el menú de carpetas de Mis creaciones (a la izqu
   if (conj.length) { sd.appendChild(el('div', 'carplt', 'Colaboraciones')); conj.forEach(c => { fila('🤝', esc(c.nombre.replace(/^🤝\s*/, '')), carpN(c), state.carp === c.id, () => carpAbre(c.id)).title = 'Lo que has creado con sus personajes. Ella también lo ve.'; }); }
   carpPliegues(sd);
   if (CARP.S.length) { sd.appendChild(el('div', 'carplt', 'Compartidas contigo')); CARP.S.forEach(k => { fila(k.conjunta ? '🤝' : '📥', esc(k.conjunta ? (k.alias || 'Creador') : k.nombre), k.n, false, () => carpVer(k.cid, k.id)).title = k.conjunta ? `Lo que ${k.alias || 'otro creador'} ha creado con tus personajes` : `De ${k.alias || 'otro creador'}`; }); carpPliegues(sd); } }
-function carpChips(box) { // al final de los filtros de Mis creaciones: una pastilla por carpeta y «＋ Carpeta»
-  if (CARP.L.length) box.appendChild(el('span', 'carpsep'));
-  CARP.L.forEach(c => { const b = el('button', 'carpchip', `${c.colab ? '' : '📁 '}${esc(c.nombre)}${(c.comp || []).length ? ' ↗' : ''} <span style="opacity:.5">${carpN(c)}</span>`); b.title = 'Abrir la carpeta'; b.onclick = () => carpAbre(c.id); box.appendChild(b); });
-  const nb = el('button', 'carpchip nueva', '＋ Carpeta'); nb.title = 'Crea una carpeta para ordenar tus creaciones. Después marca (✓) las que quieras y pulsa «📁 Carpeta».'; nb.onclick = () => { const m = carpPop(nb, m => { m.appendChild(el('div', 'carptit', 'Nueva carpeta')); carpInput(m, 'Nombre (p. ej. Verano)', '', 'Crear', async v => { const r = await carpHaz({ accion: 'crear', nombre: v }); if (r) { carpPopX(); const c = CARP.L.find(x => x.nombre === v) || CARP.L[CARP.L.length - 1]; carpAbre(c.id); } }); m.appendChild(el('small', 'carpnota', 'Una carpeta no copia nada: la misma creación puede estar en varias.')); }); if (m) m.querySelector('input').focus(); }; box.appendChild(nb); }
 function carpRenombra(anchor, c) { const m = carpPop(anchor, m => { m.appendChild(el('div', 'carptit', 'Nombre de la carpeta')); carpInput(m, 'Nombre', c.nombre, 'Guardar', async v => { if (await carpHaz({ accion: 'renombrar', id: c.id, nombre: v })) { carpPopX(); renderChips(); } }); }); if (m) { const i = m.querySelector('input'); i.focus(); i.select(); } }
 function carpCabecera(box) { // dentro de una carpeta: su nombre (clic = renombrar) · compartir · borrar. Para volver, «Todas» en el menú de carpetas
   const c = carpDe(state.carp); box.classList.add('carphead'); const nm = el('button', 'carpnom', `${c.colab ? '' : '📁 '}${esc(c.nombre)} <span>· ${carpN(c)}</span><i>✎</i>`); nm.title = 'Clic para cambiar el nombre'; nm.onclick = () => carpRenombra(nm, c); box.appendChild(nm);
@@ -1540,23 +1487,6 @@ async function renderProfile() { // Perfil: sin calendario; de momento la ficha 
   host.querySelector('img').onclick = () => lightbox(P.ficha, 'Ficha 360 · ' + P.name);
 }
 
-function renderProfileOld() { // ficha tipo red social a la derecha del giro 360
-  const P = C.perfil, D = P.datos || {}, ig = P.ig || {}; const host = $('#profcard'); host.innerHTML = '';
-  const card = el('div', 'pc');
-  card.innerHTML = `<div class="pc-head"><img src="${P.avatar || C.base.thumb}" alt=""><div><h2>${P.name}</h2><div class="pc-h">${P.handle || ''}</div><div class="pc-t">${P.tagline || ''}</div></div></div>
-    <div class="pc-stats">${ig.posts != null ? `<div><b>${ig.posts}</b><small>posts</small></div>` : ''}${ig.followers ? `<div><b>${ig.followers}</b><small>seguidores</small></div>` : ''}<div><b>${state.totalN || 0}</b><small>generadas aquí</small></div></div>
-    <p class="pc-bio">${P.bio || ''}</p>
-    <dl class="pc-dl">
-      ${[['Edad', D.edad], ['Altura', D.altura], ['Origen', D.origen], ['Idiomas', D.idiomas], ['Nacida', D.nacida]].filter(x => x[1]).map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('')}
-    </dl>
-    ${D.rasgos ? `<div class="pc-sec"><h4>Rasgos fijos</h4><div class="pc-chips">${D.rasgos.map(r => `<span>${r}</span>`).join('')}</div></div>` : ''}
-    ${D.personalidad ? `<div class="pc-sec"><h4>Personalidad</h4><p>${D.personalidad}</p></div>` : ''}
-    ${D.voz ? `<div class="pc-sec"><h4>Voz y cadencia</h4><p>${D.voz}</p></div>` : ''}
-    ${D.mision ? `<div class="pc-sec"><h4>Historia</h4><p>${D.mision}</p></div>` : ''}
-    ${D.contenido ? `<div class="pc-sec"><h4>Contenido</h4><p>${D.contenido}</p></div>` : ''}
-    ${D.redes ? `<div class="pc-sec"><h4>Redes</h4><dl class="pc-dl">${D.redes.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('')}</dl></div>` : ''}`;
-  host.appendChild(card);
-}
 (function () { try { if (localStorage.getItem('am_theme') !== 'light') document.documentElement.classList.add('dark'); } catch (e) { document.documentElement.classList.add('dark'); } const b = document.getElementById('themeBtn'); const sync = () => { b.textContent = document.documentElement.classList.contains('dark') ? '☀' : '☾'; }; sync(); b.onclick = () => { const on = document.documentElement.classList.toggle('dark'); persist('am_theme', on ? 'dark' : 'light'); sync(); }; })();
 // perfil editable: clic en un dato → se edita ahí mismo; al salir se guarda. Prompt base ↔ datos se sincronizan solos (Gemini, céntimos)
 const COPY_SVG = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="12" height="12" rx="2.5"/><path d="M5 15H4.5A1.5 1.5 0 0 1 3 13.5v-9A1.5 1.5 0 0 1 4.5 3h9A1.5 1.5 0 0 1 15 4.5V5"/></svg>';
@@ -1837,16 +1767,6 @@ function lugBarra(owner, despues) { // debajo de «Añadir un lugar»: el mejor 
   const ir = async () => { const v = inp.value.trim(); if (!/^https?:\/\//i.test(v)) return pinterest(v); inp.disabled = true; toast('Trayendo la imagen de ese enlace…'); const data = await traeImagen(v); inp.disabled = false; if (!data) { toast('En ese enlace no he encontrado ninguna imagen'); return; } inp.value = ''; const it = await lugarNuevo(data, owner); if (despues) despues(it); };
   inp.onkeydown = e => { if (e.key === 'Enter') ir(); }; const b1 = el('button', 'btn', 'Buscar en Pinterest ↗'); b1.title = 'Abre Pinterest con lo que hayas escrito; si has pegado un enlace, lo trae'; b1.onclick = ir; const b2 = el('button', 'btn pinkline', '✨ Crear con IA'); b2.title = 'Describe el sitio y se genera vacío, sin nadie'; b2.onclick = () => lugIA(owner, despues);
   const r = el('div', 'lugbr'); r.appendChild(inp); w.appendChild(r); const bb = el('div', 'lugbb'); bb.appendChild(b1); bb.appendChild(b2); w.appendChild(bb); return w; }
-function lugBusca(q0, owner, despues) { // buscador de fotos de sitios (Pexels o Pixabay, el que tenga clave el servidor): clic en una foto = se añade a tus lugares
-  let m0 = $('#lugbm'); if (m0) m0.remove(); m0 = el('div', 'fxm'); m0.id = 'lugbm'; document.body.appendChild(m0); m0.onclick = e => { if (e.target === m0) m0.remove(); };
-  const box = el('div', 'lugbbox'); m0.appendChild(box); const hd = el('div', 'lugbhd'); const inp = el('input', 'pjin'); inp.value = q0; inp.placeholder = 'cocina rústica, despacho moderno, playa al atardecer…'; const bt = el('button', 'btn acc', 'Buscar'); const x = el('button', 'btn', 'Cerrar'); x.onclick = () => m0.remove(); hd.appendChild(inp); hd.appendChild(bt); hd.appendChild(x); box.appendChild(hd);
-  const g = el('div', 'lugbgrid'); box.appendChild(g); const pie = el('div', 'status lugbpie', 'Fotos de uso libre. Pulsa una para añadirla a tus lugares; puedes añadir varias.'); box.appendChild(pie); const BANCO = { pexels: ['Pexels', 'https://www.pexels.com'], pixabay: ['Pixabay', 'https://pixabay.com'] };
-  const busca = async () => { const q = inp.value.trim(); if (q.length < 2) return; g.innerHTML = '<div class="status" style="grid-column:1/-1;padding:30px;text-align:center">Buscando…</div>'; let r; try { r = await fetch('/api/lugares_buscar?q=' + encodeURIComponent(q)).then(z => z.json()); } catch (e) { r = { error: 'sin respuesta' }; }
-    if (!m0.isConnected) return; g.innerHTML = ''; if (!r || !r.ok) { g.appendChild(el('div', 'status', r && r.falta ? 'El buscador de fotos se está activando. Mientras tanto, arrastra una imagen o pega su enlace.' : 'No se ha podido buscar: ' + esc((r && r.error) || 'sin respuesta'))).style.cssText = 'grid-column:1/-1;padding:30px;text-align:center'; return; }
-    const banco = BANCO[r.prov] || BANCO.pexels; pie.innerHTML = `Fotos de <a href="${banco[1]}" target="_blank" rel="noopener">${banco[0]}</a>, de uso libre. Pulsa una para añadirla a tus lugares; puedes añadir varias.`;
-    if (!r.fotos.length) { g.appendChild(el('div', 'status', 'No he encontrado fotos para eso. Prueba con otras palabras.')).style.cssText = 'grid-column:1/-1;padding:30px;text-align:center'; return; }
-    r.fotos.forEach(p => { const d = el('div', 'lugbf', `<img loading="lazy" src="${p.thumb}" alt=""><small>${esc(p.autor)}</small>`); d.title = (p.alt ? p.alt + ' · ' : '') + 'Foto de ' + p.autor + ' en ' + banco[0]; d.onclick = async () => { if (d.classList.contains('ok') || d.classList.contains('va')) return; d.classList.add('va'); const data = await traeImagen(p.img); const it = data && await lugarNuevo(data, owner); d.classList.remove('va'); if (it) { d.classList.add('ok'); if (despues) despues(it); } else toast('No se ha podido añadir esa foto'); }; g.appendChild(d); }); };
-  bt.onclick = busca; inp.onkeydown = e => { if (e.key === 'Enter') busca(); }; busca(); }
 function lugIA(owner, despues) { // crear el sitio con IA desde una frase: sale vacío, sin nadie, listo como referencia
   owner = owner || CH().id; if (!LIVE) { toast('Conecta primero tu API'); return; }
   let m0 = $('#lugia'); if (m0) m0.remove(); m0 = el('div', 'fxm'); m0.id = 'lugia'; document.body.appendChild(m0); m0.onclick = e => { if (e.target === m0) m0.remove(); };
@@ -1894,16 +1814,6 @@ function lugarTxt(I, plural, conFoto) { // la frase del lugar para el prompt (I 
   const L = state.comp.lugar; if (!L) return ''; const d = (L.desc || '').replace(/[.\s]+$/, '');
   return `the place is exactly the location shown in ${I} (location reference${d ? ': ' + d : ''}): the same setting, architecture, furniture, colours and light; ${plural ? 'everyone is' : 'she is'} naturally inside it, at a believable scale and lit by its light${conFoto ? '; the pose and the action come from the scene, but the background and the surroundings are those of ' + I : ''}. If any person appears in ${I}, ignore them: it is only a location reference`; }
 function tray() { const w = el('div', 'stack'); if (!state.sinPj) w.appendChild(trayGroup(['vestidor', 'hair', 'expr']));   /* v231 · sin personaje: ni prenda, ni peinado, ni expresión */ w.appendChild(trayGroup(['photo', 'movie', 'cartoon'])); return w; }
-function dropRecrear() { // arrastra cualquier imagen del escritorio: se usa como lienzo a recrear (sin prompt de la Fototeca)
-  const d = el('div', 'dz', `<img src="" alt="" style="width:54px;height:54px;border-radius:10px;background:#f3efe8"><div class="t"><b>O arrastra aquí una foto tuya</b>Se usa como imagen a recrear en vez de una de la Fototeca (sin su prompt). También vale hacer clic.</div>`);
-  d.querySelector('img').style.opacity = '.4';
-  const use = f => { if (!f || !f.type.startsWith('image/')) return; const r = new FileReader(); r.onload = () => { state.comp.biblio = { id: 'drop-' + Date.now(), name: f.name.replace(/\.[a-z0-9]+$/i, ''), image: r.result, thumb: r.result, prompt: '', drop: true, tags: 'Tu foto' }; modeloPorModo(state.comp.biblio); badge(); state.flash = 'biblio'; renderSide(); paint(cur(), true); toast('Tu foto es ahora la imagen a recrear'); }; r.readAsDataURL(f); };
-  ['dragenter', 'dragover'].forEach(ev => d.addEventListener(ev, e => { e.preventDefault(); d.classList.add('over'); }));
-  ['dragleave', 'drop'].forEach(ev => d.addEventListener(ev, e => { e.preventDefault(); d.classList.remove('over'); }));
-  d.addEventListener('drop', e => use(e.dataTransfer.files && e.dataTransfer.files[0]));
-  d.onclick = () => { const inp = $('#file'); inp.onchange = e => { use(e.target.files[0]); inp.value = ''; }; inp.click(); };
-  return d;
-}
 function trayBib() { const t = trayGroup(['biblio']); t.classList.add('one'); const d = t.firstChild; const it = state.comp.biblio; if (it) { d.innerHTML = `<span class="x" title="Quitar">×</span><img src="${compThumb('biblio', it)}" alt=""><div><small>${it.drop ? 'Tu foto' : 'Fototeca'}</small><b>${it.name}</b><div class="status">${it.drop ? 'Imagen arrastrada: se recrea la escena tal cual, sin prompt.' : (it.prompt || '').slice(0, 90) + '…'}</div></div>`; } else d.innerHTML = `<img src="${((C.biblio || [])[0] || {}).thumb || ''}" alt=""><div><small>Fototeca</small><b>ninguna</b><div class="status">Elige una imagen de la Fototeca para recrearla con Aria y lo que hayas añadido arriba.</div></div>`; return t; }
 function urlsGrandes(url) { // Pinterest sirve cada imagen en varios tamaños con la misma ruta: del más grande al que venía
   const m = String(url).match(/^(https?:\/\/i\.pinimg\.com\/)(\d+x\d*(?:_RS)?|originals)(\/.+)$/i); if (!m) return [url]; return [...new Set([m[1] + 'originals' + m[3], m[1] + '736x' + m[3], url])]; }
@@ -1998,11 +1908,6 @@ function buildCreations(j) {
   TABS.creaciones.items = pend.concat(TABS.creaciones.items);
   if (!state.sel.creaciones || !TABS.creaciones.items.includes(state.sel.creaciones)) state.sel.creaciones = TABS.creaciones.items.find(i => !i.pending) || TABS.creaciones.items[0];
   if (state.ready && (state.tab === 'creaciones' || state.tab === 'perfil' || state.tab === 'crear')) { renderRail(); if (state.tab === 'creaciones') renderSide(); $('#pickTitle').textContent = `Mis creaciones · ${TABS.creaciones.items.filter(i => !i.pending).length}`; }
-}
-function paintCreation(it, fast) {
-  const vid = $('#vid');
-  if (it.kind === 'video') { mirror.classList.add('vidmode', 'cached'); mirror.querySelector('.tag').textContent = 'vídeo · ' + ((it.meta || {}).model || 'Seedance 2.0'); if (vid.getAttribute('src') !== it.src) { vid.src = it.src; vid.load(); } vid.onloadedmetadata = () => { if (cur() === it && vid.videoWidth) { arOverride = vid.videoWidth / vid.videoHeight; sizeMirror(); } }; if (vid.videoWidth) { arOverride = vid.videoWidth / vid.videoHeight; sizeMirror(); } vid.oncanplay = () => { if (cur() === it && mirror.classList.contains('vidmode')) vid.play().catch(() => {}); }; vid.play().catch(() => {}); }
-  else { mirror.classList.remove('vidmode'); vid.pause(); mirror.classList.add('cached'); mirror.querySelector('.tag').textContent = 'creación · ' + ((it.meta || {}).model || 'API'); fitAr(it, it.src); showImage(it.src, fast); }
 }
 function refreshLive() { if (CARP.ok) carpCarga(); fetch('/api/live').then(r => r.json()).then(j => { if (!j) return; buildVideoLib(j); buildCreations(j); if (state.ready) renderSide(); }).catch(() => {}); }
 function hydrateLive() { // lo ya generado se recupera (it.live) pero NO se revela hasta pulsar Generar (paripé) — regla de Max
@@ -2385,7 +2290,6 @@ function comPinta() { setTimeout(comMovil, 0); const pg = $('#compage'); if (!pg
         else { // v253: una línea por influencer: cara · «Puedes crear con X» · [Colaboráis ⏻ ⌄duración] · [NSFW ⏻ ⌄] · ✨
           const du = comCta(sDueno(x)); const pjs = (du.personajes || []).filter(z => !x.pid || z.pid === x.pid).slice(0, 3); const doy = x.para === D0.yo;
           txt = `<button class="cpquien" type="button"><span class="cpcaras">${pjs.map(z => comAv(du, z, 'sm')).join('')}</span><span>${usa ? 'Puedes crear con' : 'Puede crear con'} <b>${esc(q.txt)}</b></span></button>`;
-          const diasDe = h => { if (!h) return 0; const l = (h - Date.now() / 1000) / 86400; return l <= 1.05 ? 1 : l <= 7.05 ? 7 : 30; };
           const tog = (t, on, fn, tit) => { const b0 = el('button', 'cptog' + (on ? ' on' : ''), `<b>${t}</b><span class="cpswt"><i></i></span>`); b0.type = 'button'; b0.title = tit || ''; b0.onclick = fn; return b0; };
           const durDd = (h, fn, tit) => { const b0 = el('button', 'cpdd', `<span>${h ? plazoTxt(h) : '∞'}</span>⌄`); b0.type = 'button'; b0.title = tit; b0.onclick = () => plazoPop(b0, tit, 'Al vencer se apaga solo.', fn); return b0; };
           const lin = el('div', 'cpline1');
@@ -2804,7 +2708,6 @@ async function tryOn(force) {
   bar.style.width = '100%'; it._ms = r.ms; state.done.add(it.id);
   setTimeout(() => { mirror.classList.remove('busy'); bar.style.transition = 'none'; bar.style.width = '0'; state.busy = false; if (state.tab === tab) { if (cur() !== it) state.sel[tab] = it; paint(it, false); renderRail(); renderSide(); centerOn(it, true); } toast(`Listo en ${(r.ms / 1000).toFixed(1)} s · $${PRICE.toFixed(4)}`); }, 120);
 }
-$('#batchClose').onclick = () => $('#batch').classList.remove('on');
 
 // ----------------------------------------------------------------- antes / después
 let cmp = false;
@@ -2853,24 +2756,6 @@ function start(src, name) {
   setTimeout(() => { $('#hook').classList.add('off'); state.ready = true; setTab('perfil'); }, 350 + steps.length * 620 + 300);
 }
 
-// ----------------------------------------------------------------- tour automático (demo guiada: cursor + rótulos, para grabar la pantalla)
-const TOUR_SPEED = 1;                                   // 1 = normal · 1.4 = más lento · 0.7 = más rápido
-let touring = false;
-const sleep = ms => new Promise(r => setTimeout(r, ms * TOUR_SPEED));
-const curs = $('#curs');
-function findIt(tab, re) { return TABS[tab].items.find(i => re.test(i.name)) || TABS[tab].items[0]; }
-function say(txt, ms) { const c = $('#cap'); if (!txt) { c.classList.remove('on'); return sleep(ms || 0); } c.innerHTML = txt; c.classList.add('on'); return sleep(ms || 2500); }
-async function curTo(elm, dx = 0, dy = 0) { if (!elm) return; const r = elm.getBoundingClientRect(); curs.style.left = (r.left + r.width / 2 + dx) + 'px'; curs.style.top = (r.top + r.height / 2 + dy) + 'px'; await sleep(650); }
-async function curClick(elm, fn) { if (!elm) return; await curTo(elm); curs.classList.remove('click'); void curs.offsetWidth; curs.classList.add('click'); await sleep(260); if (fn) fn(); else elm.click(); await sleep(500); }
-const navBtn = k => document.querySelector(`#nav button[data-tab="${k}"]`);
-const sideBtn = re => [...document.querySelectorAll('#side .btn')].find(b => re.test(b.textContent));
-async function curThumb(it, andSelect = true) { centerOn(it, true); await sleep(600); const d = [...rail.children].find(x => x._it === it); await curClick(d, () => { if (andSelect) select(it, false, true); }); }
-function cellOf(it) { return [...rail.children].find(x => x._it === it); }
-async function flipRail(n, ms) { for (let k = 0; k < n && touring; k++) { step(1); const d = cellOf(cur()); if (d) { const r = d.getBoundingClientRect(); curs.style.left = (r.left + r.width / 2) + 'px'; curs.style.top = (r.top + r.height / 2) + 'px'; } await sleep(ms); } }
-async function waitIdle(max = 150000) { const t0 = Date.now(); while (state.busy && touring && Date.now() - t0 < max) await sleep(300); }
-const genBtn = () => sideBtn(LIVE ? /Generar/ : /Probar con la API|Convertir con la API|Generar creación/i);
-async function curGen(G) { await curClick(genBtn()); if (LIVE) await waitIdle(); else await sleep(G); }
-const priceTxt = () => LIVE ? fmtUsd(curModel().usd[state.quality]) : '$0.003';
 function freeTry() { // Enter y doble clic: con la API en vivo solo enseñan lo que ya existe (0 $); para generar está el botón, que dice el precio
   if (!LIVE) return state.tab === 'crear' ? submitGen() : tryOn(false);
   const it = cur(), tab = state.tab; if (!it || tab === 'crear') { if (tab === 'crear') toast('Para generar, pulsa el botón «Generar imagen»: ahí ves el precio'); return; }
@@ -2894,7 +2779,7 @@ document.addEventListener('keydown', e => {
   else if (e.key.toLowerCase() === 'c') openConsole(!$('#console').classList.contains('open'));
   else if (e.key.toLowerCase() === 's') save();
   else if (e.key.toLowerCase() === 'x') toggleCmp();
-  else if (e.key === 'Escape') { $('#batch').classList.remove('on'); $('#lb').classList.remove('on'); touring = false; }
+  else if (e.key === 'Escape') { $('#lb').classList.remove('on'); }
   else if (/^[1-9]$/.test(e.key) && TABKEYS[+e.key - 1]) setTab(TABKEYS[+e.key - 1]);
 });
 $('#btnConsole').onclick = () => openConsole(!$('#console').classList.contains('open'));
