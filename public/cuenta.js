@@ -71,7 +71,7 @@ html.sinapi #livedot,html.sinapi .meter{display:none!important}
   gate.innerHTML = '<div class="gwrap"><div class="gfotos"><img src="/portada/1.jpg?v=353" alt=""><img src="/portada/2.jpg?v=353" alt=""><img src="/portada/3.jpg?v=353" alt=""></div>' +
     '<div class="gcard"><h1>ARIA<i>STUDIO</i></h1>' +
     '<p id="gateMsg"></p>' +
-    '<ul class="gpts"><li><b>Tu personaje, siempre el mismo</b>Crea su ficha una vez y sale igual en todas sus fotos.</li><li><b>Recrea cualquier foto con él</b>Elige una de la Fototeca o arrastra la tuya.</li><li><b>Empiezas con saldo regalo</b>Tus primeras imágenes van por nuestra cuenta. Después, desde 3 céntimos por imagen y sin suscripción.</li></ul>' +
+    '<ul class="gpts"><li><b>Tu personaje, siempre el mismo</b>Crea su ficha una vez y sale igual en todas sus fotos.</li><li><b>Recrea cualquier foto</b>Elige una de la Fototeca o arrastra la tuya.</li><li><b>Empiezas con saldo regalo</b>Tus primeras imágenes van por nuestra cuenta. Después, desde 3 céntimos por imagen y sin suscripción.</li></ul>' +
     '<button class="gin" id="gateIn" hidden>Entrar con Google</button>' +
     '<button id="gateOut" hidden>Cerrar sesión</button>' +
     '<p class="gerr" id="gateErr" hidden></p><p class="gnota" id="gateNota" hidden>Acceso por invitación · <a href="https://www.skool.com/influencer-ai/about" target="_blank" rel="noopener">comunidad de Aria Cruz</a></p><p class="gnota glegal" hidden>Al entrar aceptas las <a href="/legal.html#condiciones" target="_blank">Condiciones de uso</a> y la <a href="/legal.html#privacidad" target="_blank">Privacidad</a> · solo mayores de 18 años</p></div></div>';
