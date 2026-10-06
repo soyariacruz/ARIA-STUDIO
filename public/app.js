@@ -856,6 +856,62 @@ const VCAMS = [   // v283: [id, grupo, emoji, nombre, lo que se escribe en el pr
   ['maqueta', 'Especiales', '🏘️', 'Efecto maqueta', 'efecto tilt-shift: solo una franja estrecha enfocada y lo de arriba y abajo desenfocado, como una maqueta en miniatura.']];
 const camOk = () => !(window.CUENTA && CUENTA.web) || (state.interno && !CUENTA.verMiembro);   // v285: en pruebas, solo el equipo (los demás ven «Próximamente»)
 const vcam = () => camOk() ? (VCAMS.find(c => c[0] === state.vcam) || null) : null;
+function camSvg(id) { // v287: el movimiento dibujado y animado en bucle (vista desde arriba, de lado o «lo que se ve»)
+  const A = 'var(--acc)';
+  const at = (type, values, dur = 3.5, kt) => `<animateTransform attributeName="transform" type="${type}" values="${values}" dur="${dur}s"${kt ? ` keyTimes="${kt}"` : ''} repeatCount="indefinite"/>`;
+  const fin = (type, v0, v1, dur = 3.5) => at(type, `${v0};${v1};${v1}`, dur, '0;.78;1');   // va de v0 a v1, se queda un momento y vuelve a empezar
+  const CAM = (cono = '', len = 36) => `<g><g>${cono}<path d="M0,-7L-14,-${len}L14,-${len}Z" fill="${A}" opacity=".28"/></g><rect x="-6" y="-4" width="12" height="9" rx="2" fill="currentColor"/><rect x="-3" y="-7.5" width="6" height="3.5" rx="1" fill="currentColor"/></g>`;
+  const pos = (x, y, rot, inner, move = '', spin = '') => `<g>${move}<g transform="translate(${x},${y}) rotate(${rot})"><g>${spin}${inner}</g></g></g>`;
+  const P = (x, y) => `<circle cx="${x}" cy="${y}" r="7.5" fill="${A}"/><circle cx="${x}" cy="${y - 4}" r="2" fill="var(--bg)" opacity=".7"/>`;   // persona vista desde arriba
+  const PS = (x, y) => `<g transform="translate(${x},${y})" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" fill="none"><circle cy="-37" r="5.5" fill="${A}" stroke="none"/><path d="M0,-31V-13M0,-13L-5,0M0,-13L5,0M-7,-25H7"/></g>`;   // persona de lado
+  const G = '<line x1="4" y1="88" x2="156" y2="88" stroke="currentColor" opacity=".25"/>';
+  const ARB = (x, y) => `<circle cx="${x}" cy="${y}" r="5" fill="currentColor" opacity=".18"/>`;
+  const RAS = '<g stroke="currentColor" opacity=".18" stroke-dasharray="2 6"><line x1="40" y1="0" x2="40" y2="100"/><line x1="120" y1="0" x2="120" y2="100"/></g>';
+  const JIT = at('translate', '0 0;1.6 -1;-1.2 1.3;1.3 .8;-1.5 -.6;0 0', 1.3), JR = at('rotate', '0;2.5;-2;1.5;0', 1.6);
+  const FR = (inner, rot = 0) => `<g transform="translate(80,46) rotate(${rot})"><rect x="-46" y="-32" width="92" height="64" rx="5" fill="none" stroke="currentColor" opacity=".55" stroke-width="1.5"/>${inner}</g>`;
+  const top = 'vista desde arriba', side = 'vista de lado', vis = 'lo que se ve';
+  const S = {
+    fija: [top, P(80, 40) + pos(80, 84, 0, CAM('', 40))],
+    holandes: [vis, FR(`<line x1="-46" y1="14" x2="46" y2="14" stroke="currentColor" opacity=".3"/>${PS(0, 26).replace('translate(0,26)', 'translate(0,26) scale(.85)')}`, -14)],
+    cenital: [side, G + PS(80, 88) + pos(80, 12, 180, CAM('', 30))],
+    pan_d: [top, ARB(30, 36) + ARB(130, 36) + P(80, 34) + pos(80, 86, 0, CAM('', 48), '', fin('rotate', -38, 38, 4))],
+    pan_i: [top, ARB(30, 36) + ARB(130, 36) + P(80, 34) + pos(80, 86, 0, CAM('', 48), '', fin('rotate', 38, -38, 4))],
+    latigo: [top, ARB(30, 36) + ARB(130, 36) + P(80, 34) + pos(80, 86, 0, CAM('', 48), '', at('rotate', '-42;-42;42;42', 2.6, '0;.45;.55;1'))],
+    tilt_up: [side, G + PS(118, 88) + pos(36, 64, 90, CAM('', 52), '', fin('rotate', 28, -30, 4))],
+    tilt_down: [side, G + PS(118, 88) + pos(36, 64, 90, CAM('', 52), '', fin('rotate', -30, 28, 4))],
+    zoom_in: [top, P(80, 36) + pos(80, 86, 0, CAM(fin('scale', '1 1', '.28 1'), 48))],
+    zoom_out: [top, P(80, 36) + pos(80, 86, 0, CAM(fin('scale', '.28 1', '1 1'), 48))],
+    crash: [top, P(80, 36) + pos(80, 86, 0, CAM(at('scale', '1 1;.22 1;.22 1', 2.6, '0;.12;1'), 48))],
+    vertigo: [top, P(80, 34) + pos(80, 70, 0, CAM(fin('scale', '1 1', '.4 1'), 34), fin('translate', '0 0', '0 18'))],
+    dolly_in: [top, P(80, 34) + pos(80, 90, 0, CAM('', 42), fin('translate', '0 0', '0 -28'))],
+    dolly_out: [top, P(80, 34) + pos(80, 62, 0, CAM('', 24), fin('translate', '0 0', '0 28'))],
+    lat_d: [top, ARB(60, 22) + ARB(100, 22) + P(80, 34) + pos(38, 84, 0, CAM('', 40), fin('translate', '0 0', '84 0', 4))],
+    lat_i: [top, ARB(60, 22) + ARB(100, 22) + P(80, 34) + pos(122, 84, 0, CAM('', 40), fin('translate', '0 0', '-84 0', 4))],
+    sigue: [top, RAS + `<g>${fin('translate', '0 22', '0 -18', 4)}${P(80, 40)}${pos(80, 74, 0, CAM('', 26))}</g>`],
+    detras: [top, RAS + `<g>${fin('translate', '0 22', '0 -18', 4)}${P(80, 40)}${pos(80, 58, 0, CAM('', 12))}</g>`],
+    delante: [top, RAS + `<g>${fin('translate', '0 22', '0 -18', 4)}${P(80, 58)}${pos(80, 24, 180, CAM('', 26))}</g>`],
+    paralelo: [top, RAS + `<g>${fin('translate', '0 26', '0 -22', 4)}${P(100, 50)}${pos(52, 50, 90, CAM('', 38))}</g>`],
+    suelo: [side, G + `<g>${fin('translate', '-40 0', '40 0', 4)}${PS(86, 88)}${pos(56, 83, 90, CAM('', 26))}</g>`],
+    arco_d: [top, P(80, 44) + `<g>${fin('rotate', '8 80 44', '-62 80 44')}${pos(80, 84, 0, CAM('', 32))}</g>`],
+    arco_i: [top, P(80, 44) + `<g>${fin('rotate', '-8 80 44', '62 80 44')}${pos(80, 84, 0, CAM('', 32))}</g>`],
+    orbita: [top, ARB(20, 20) + ARB(140, 80) + P(80, 48) + `<g>${at('rotate', '0 80 48;360 80 48', 5)}${pos(80, 88, 0, CAM('', 32))}</g>`],
+    sube: [side, G + PS(118, 88) + pos(36, 76, 90, CAM('', 52), fin('translate', '0 0', '0 -40'))],
+    baja: [side, G + PS(118, 88) + pos(36, 36, 90, CAM('', 52), fin('translate', '0 0', '0 40'))],
+    grua_up: [side, G + PS(110, 88) + pos(60, 66, 90, CAM('', 46), fin('translate', '0 0', '-28 -50'), fin('rotate', 0, 38))],
+    grua_down: [side, G + PS(110, 88) + pos(60, 66, 90, CAM('', 46), fin('translate', '-28 -50', '0 0'), fin('rotate', 38, 0))],
+    dron_in: [side, G + PS(120, 88) + pos(24, 16, 128, CAM('', 44), fin('translate', '0 0', '52 30'))],
+    dron_out: [side, G + PS(120, 88) + pos(76, 46, 128, CAM('', 44), fin('translate', '0 0', '-52 -30'))],
+    mano: [top, P(80, 38) + pos(80, 82, 0, CAM('', 40), JIT, JR)],
+    selfie: [top, P(80, 62) + pos(80, 30, 180, CAM('', 24), JIT, JR)],
+    pegada: [top, ARB(24, 20) + ARB(136, 24) + ARB(30, 84) + ARB(132, 82) + `<g>${at('rotate', '-28 80 54;28 80 54;-28 80 54', 4)}${P(80, 54)}${pos(80, 28, 180, CAM('', 20))}</g>`],
+    pov: [top, ARB(40, 22) + ARB(120, 22) + P(80, 66) + pos(80, 62, 0, '<path d="M0,-4L-17,-42L17,-42Z" fill="var(--acc)" opacity=".28"/>', '', at('rotate', '-28;28;-28', 4))],
+    fpv: [top, '<path d="M6,92C40,30 64,96 96,56S136,14 132,30" fill="none" stroke="currentColor" stroke-dasharray="3 4" opacity=".3"/>' + P(132, 30) + `<g><animateMotion dur="3s" repeatCount="indefinite" rotate="auto" path="M6,92C40,30 64,96 96,56S136,14 132,30"/><g transform="rotate(90)">${CAM('', 18)}</g></g>`],
+    atraviesa: [top, '<path d="M8,60H70M90,60H152" stroke="currentColor" stroke-width="4" opacity=".45"/>' + P(80, 24) + pos(80, 94, 0, CAM('', 24), fin('translate', '0 0', '0 -42'))],
+    timelapse: [side, G + PS(80, 88) + `<g>${at('rotate', '-75 80 96;75 80 96', 2.5)}<circle cx="80" cy="18" r="7" fill="#f5b041"/></g>`],
+    maqueta: [vis, FR(`<g>${fin('translate', '-8 0', '8 0', 5)}<g fill="currentColor" opacity=".55"><rect x="-30" y="-6" width="12" height="12"/><rect x="-12" y="-2" width="10" height="8"/><rect x="6" y="-8" width="14" height="14"/><rect x="24" y="-3" width="9" height="9"/></g></g><rect x="-46" y="-32" width="92" height="20" fill="var(--panel)" opacity=".8"/><rect x="-46" y="12" width="92" height="20" fill="var(--panel)" opacity=".8"/>`)],
+    libre: [vis, FR('<text x="0" y="5" text-anchor="middle" font-size="16" fill="currentColor" opacity=".6">✨</text>')]
+  };
+  const x = S[id] || S.libre; return `<svg viewBox="0 0 160 100" class="camsvg" aria-hidden="true">${x[1]}<text x="5" y="97" font-size="7" fill="currentColor" opacity=".45">${x[0]}</text></svg>`; }
 function vCamSel() { // v283: 🎥 movimiento de cámara (Crear vídeo) — mismo desplegable que Complementos
   if (!camOk()) { const w = el('div', 'accsel lugarsel camsel off', '<small>Cámara</small><span class="cnt">Próximamente</span><i class="pronto">pronto</i>'); w.title = 'Movimientos de cámara: próximamente'; return w; }
   const C = vcam(); const w = el('div', 'accsel camsel' + (state.camOpen ? ' open' : '') + (C ? ' on' : ''));
@@ -863,10 +919,11 @@ function vCamSel() { // v283: 🎥 movimiento de cámara (Crear vídeo) — mism
   const dd = el('div', 'accdd camdd'); const G = ['Todos'].concat([...new Set(VCAMS.map(c => c[1]))]); const fil = state.camG || 'Todos';
   const ch = el('div', 'camgr'); G.forEach(g => { const b = el('button', g === fil ? 'on' : '', g); b.type = 'button'; b.onclick = e => { e.stopPropagation(); state.camG = g; state.camOpen = true; renderSide(); }; ch.appendChild(b); }); dd.appendChild(ch);
   const pon = id => { state.vcam = id; persist('am_vcam', id || ''); state.camOpen = false; renderSide(); if (id) toast('🎥 ' + vcam()[3] + ' · añadido al prompt'); };
-  { const r = el('div', 'it' + (!C ? ' on' : ''), '<span class="emo">✨</span><b>Libre</b><em>la decide el modelo</em><span class="ck">✓</span>'); r.onclick = e => { e.stopPropagation(); pon(null); }; dd.appendChild(r); }
-  VCAMS.filter(c => fil === 'Todos' || c[1] === fil).forEach(c => { const r = el('div', 'it' + (C && C[0] === c[0] ? ' on' : ''), `<span class="emo">${c[2]}</span><div class="camtx"><b>${c[3]}</b><small>${c[4]}</small></div><span class="ck">✓</span>`); r.onclick = e => { e.stopPropagation(); pon(c[0]); }; dd.appendChild(r); });
+  const cards = el('div', 'camcards'); dd.appendChild(cards);   // v287: tarjetas con el movimiento dibujado y animado
+  { const r = el('div', 'camc' + (!C ? ' on' : ''), `${camSvg('libre')}<b>Libre</b><small>La cámara la decide el modelo.</small>`); r.onclick = e => { e.stopPropagation(); pon(null); }; cards.appendChild(r); }
+  VCAMS.filter(c => fil === 'Todos' || c[1] === fil).forEach(c => { const r = el('div', 'camc' + (C && C[0] === c[0] ? ' on' : ''), `${camSvg(c[0])}<b>${c[3]}</b><small>${c[4].charAt(0).toUpperCase() + c[4].slice(1)}</small>`); r.title = c[3]; r.onclick = e => { e.stopPropagation(); pon(c[0]); }; cards.appendChild(r); });
   w.appendChild(dd);
-  const place = () => { if (!w.isConnected || innerWidth < 768) return; const r = w.getBoundingClientRect(); const h = Math.min(520, innerHeight - 24); Object.assign(dd.style, { position: 'fixed', width: '380px', left: Math.round(r.right + 12) + 'px', top: Math.round(Math.max(12, Math.min(r.top - 8, innerHeight - h - 12))) + 'px', maxHeight: h + 'px' }); };
+  const place = () => { if (!w.isConnected || innerWidth < 768) return; const r = w.getBoundingClientRect(); const h = Math.min(680, innerHeight - 24), W = Math.min(820, innerWidth - 24); Object.assign(dd.style, { position: 'fixed', width: W + 'px', left: Math.round(Math.max(12, Math.min(r.right + 12, innerWidth - W - 12))) + 'px', top: Math.round(Math.max(12, Math.min(r.top - 8, innerHeight - h - 12))) + 'px', maxHeight: h + 'px' }); };
   w.onclick = e => { if (e.target.closest('.accdd')) return; state.camOpen = !state.camOpen; w.classList.toggle('open', state.camOpen); if (state.camOpen) place(); };
   if (state.camOpen) setTimeout(place, 0);
   setTimeout(() => { const close = e => { if (!w.isConnected) { document.removeEventListener('click', close, true); return; } if (!w.contains(e.target)) { state.camOpen = false; w.classList.remove('open'); } }; document.addEventListener('click', close, true); }, 0);

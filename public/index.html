@@ -54,6 +54,7 @@ nav{border-right:1px solid var(--line);display:flex;flex-direction:column;align-
 nav::-webkit-scrollbar{display:none}
 nav button{width:74px;min-height:46px;flex:0 0 auto;border:0;background:none;border-radius:12px;cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;color:var(--mut);font-size:8.5px;letter-spacing:.08em;text-transform:uppercase;font-weight:700;transition:background .15s,color .15s;padding:5px 3px;white-space:normal;line-height:1.1;text-align:center}
 nav button span{font-size:18px;line-height:1}
+nav button{letter-spacing:.02em!important;padding-left:2px;padding-right:2px;box-sizing:border-box}   /* v287: «Creaciones» se salía de su botón */
 nav button:hover{background:rgba(255,255,255,.7)}
 nav button.on{background:#fff;color:var(--ink);box-shadow:0 2px 12px rgba(0,0,0,.07)}
 nav .sp{flex:1}
@@ -798,6 +799,10 @@ html.dark .profile .head img{border-color:var(--bg)}
 .accdd .it.on .ck{background:var(--acc);border-color:var(--acc);color:#fff}
 .camsel{margin-top:10px}.camsel.on{border-color:var(--acc)}.camsel .cnt{color:var(--ink)}
 .camdd .camgr{display:flex;flex-wrap:wrap;gap:4px;padding:4px 4px 8px;border-bottom:1px solid var(--line);margin-bottom:4px}.camdd .camgr button{border:1px solid var(--line);background:none;color:var(--mut);font:inherit;font-size:11px;font-weight:700;padding:4px 9px;border-radius:999px;cursor:pointer}.camdd .camgr button.on{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.camcards{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;padding:4px}
+.camc{border:1px solid var(--line);border-radius:12px;padding:7px;cursor:pointer;background:var(--bg);min-width:0;transition:border-color .12s}.camc:hover{border-color:var(--mut)}.camc.on{border-color:var(--acc);box-shadow:0 0 0 1px var(--acc)}
+.camc .camsvg{width:100%;height:auto;display:block;color:var(--ink);background:rgba(127,127,127,.09);border-radius:8px}
+.accsel .camc b{display:block;font-size:12.5px;margin-top:6px;text-transform:none;letter-spacing:0}.accsel .camc small{display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;font-size:11px;line-height:1.35;color:var(--mut);margin-top:2px;text-transform:none;letter-spacing:0;font-weight:400}
 .camdd .it{align-items:flex-start}.camdd .camtx{flex:1;min-width:0}.camdd .camtx b{display:block;white-space:normal}.accsel .camdd .camtx small{display:block;font-size:11.5px;color:var(--mut);line-height:1.35;margin-top:2px;text-transform:none;letter-spacing:0;font-weight:400}.accsel .camdd .camtx b{font-size:12.5px}
 .accdd .foot{display:flex;justify-content:flex-end;padding:6px 8px 4px;border-top:1px solid var(--line);margin-top:4px}
 /* v98 · complementos */
@@ -1707,6 +1712,7 @@ nav .navlib button.more span{font-size:9px}
   .mlb{z-index:140!important;align-items:flex-end!important}
   .mlbbox{grid-template-columns:minmax(0,1fr)!important;grid-template-rows:52vh auto!important;width:100vw!important;height:auto!important;max-height:88vh!important;border-radius:18px 18px 0 0!important;overflow-y:auto!important}
   .mlbbox>*{min-width:0}
+  .camcards{grid-template-columns:1fr 1fr!important}
   /* v280: el menú de abajo, como una app — 5 botones grandes (Perfil, Imagen, Vídeo, Creaciones, Más); lo demás vive en «Más» */
   nav{justify-content:space-around!important;overflow:hidden!important;padding:4px 2px env(safe-area-inset-bottom)!important;gap:0!important}
   nav .navmain{display:contents!important}
