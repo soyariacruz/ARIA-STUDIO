@@ -3074,7 +3074,13 @@ function comPinta() { setTimeout(comMovil, 0); const pg = $('#compage'); if (!pg
   bd.scrollTop = sc; comAvPon(pg); }
 document.addEventListener('keydown', e => { if (e.key !== 'Escape') return;   // v336: Esc cierra CUALQUIER ventana (la de arriba)
   const L = [...document.querySelectorAll('.fxm, #fpop, #pjmod')].filter(x => x.isConnected && getComputedStyle(x).display !== 'none'); const top = L[L.length - 1]; if (!top) return;
-  setTimeout(() => { if (!top.isConnected) return; const x = top.querySelector('.carpverx, .galx, .cpx, .fichx') || [...top.querySelectorAll('button')].find(b => /^(✕|×|cancelar|cerrar|ahora no|más tarde|seguir más tarde)/i.test((b.textContent || '').trim())); if (x) x.click(); else if (top._cierra) top._cierra(); }, 0); });
+  setTimeout(() => modalCierra(top), 0); });
+function modalCierra(top) { // v337: cerrar una ventana como lo haría su dueña: su ✕, su «Cancelar»… y si no tiene, se quita
+  if (!top || !top.isConnected) return; const x = top.querySelector('.carpverx:not(.mx0), .galx, .cpx, .fichx') || [...top.querySelectorAll('button')].find(b => /^(✕|×|cancelar|cerrar|ahora no|más tarde|seguir más tarde)/i.test((b.textContent || '').trim()));
+  if (x) x.click(); else if (top._cierra) top._cierra(); else top.remove(); }
+new MutationObserver(M => { M.forEach(m => m.addedNodes.forEach(n => { if (!(n.nodeType === 1 && n.classList && n.classList.contains('fxm'))) return;   // v337: toda ventana nueva lleva la ✕ común (también las que se creen más adelante)
+  setTimeout(() => { if (!n.isConnected || n.querySelector('.carpverx, .galx, .cpx, .fichx')) return; const box = n.firstElementChild; if (!box) return; if (getComputedStyle(box).position === 'static') box.style.position = 'relative';
+    const x = el('button', 'btn carpverx mx0', '✕'); x.type = 'button'; x.title = 'Cerrar (Esc)'; x.onclick = e => { e.stopPropagation(); x.remove(); modalCierra(n); }; box.appendChild(x); }, 0); })); }).observe(document.body, { childList: true });
 window.addEventListener('popstate', () => { const h = (location.hash || '').slice(1); state._pop = true;   // v317: Atrás / Adelante del navegador
   try { if (h === 'comunidad') { if (!COM.on) comAbre('dir'); } else { if (COM && COM.on) comCierra(true); if (h && TABS[h] && h !== state.tab) setTab(h); } } catch (e) {} finally { state._pop = false; } });
 if (location.hash === '#comunidad') { const esperaCom = setInterval(() => { if (state.ready && document.querySelector('#nav .combtn')) { clearInterval(esperaCom); COM.visto = true; comAbre(); } }, 600); }
