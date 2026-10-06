@@ -1502,7 +1502,11 @@ let galTimer = 0;
 function galPlay(on) { if (on === undefined) on = !galTimer; clearInterval(galTimer); galTimer = 0; if (on) galTimer = setInterval(() => galStep(1), 4000); $('#galPlay').textContent = galTimer ? '❚❚' : '▶'; $('#galPlay').classList.toggle('on', !!galTimer); }
 $('#galPlay').onclick = e => { e.stopPropagation(); galPlay(); };
 const GZ = { s: 1, x: 0, y: 0 };
-function galZoomApply() { [$('#galImg'), $('#galVid')].forEach(e => { e.style.transform = GZ.s > 1 ? `translate(${GZ.x}px,${GZ.y}px) scale(${GZ.s})` : ''; }); $('#gzRange').value = GZ.s; $('.galmedia').classList.toggle('zoomed', GZ.s > 1); }
+function galZoomApply() { const im = $('#galImg'), vd = $('#galVid');   /* v273: la imagen crece de verdad (nítida, con el detalle del original); el vídeo sigue con scale */
+  const P = (k, v) => v === '' ? im.style.removeProperty(k) : im.style.setProperty(k, v, 'important');
+  if (GZ.s > 1 && im.style.display !== 'none') { const bx = im.parentElement.getBoundingClientRect(); const W = bx.width * GZ.s, H = bx.height * GZ.s; P('width', W + 'px'); P('height', H + 'px'); P('left', ((bx.width - W) / 2 + GZ.x) + 'px'); P('top', ((bx.height - H) / 2 + GZ.y) + 'px'); P('right', 'auto'); P('bottom', 'auto'); P('transform', 'none'); P('max-width', 'none'); P('max-height', 'none'); }
+  else ['width', 'height', 'left', 'top', 'right', 'bottom', 'transform', 'max-width', 'max-height', 'flex-shrink'].forEach(k => im.style.removeProperty(k));
+  vd.style.transform = GZ.s > 1 ? `translate(${GZ.x}px,${GZ.y}px) scale(${GZ.s})` : ''; $('#gzRange').value = GZ.s; $('.galmedia').classList.toggle('zoomed', GZ.s > 1); }
 function galZoomReset() { GZ.s = 1; GZ.x = 0; GZ.y = 0; galZoomApply(); }
 function galZoomTo(s, cx, cy) { const box = $('.galmedia').getBoundingClientRect(); const ns = Math.max(1, Math.min(6, s)); if (cx != null) { const px = cx - box.left - box.width / 2, py = cy - box.top - box.height / 2; GZ.x = px - (px - GZ.x) * (ns / GZ.s); GZ.y = py - (py - GZ.y) * (ns / GZ.s); } GZ.s = ns; if (GZ.s === 1) { GZ.x = 0; GZ.y = 0; } galZoomApply(); }
 $('.galmedia').addEventListener('wheel', e => { if (e.target.closest('.galzoom')) return; e.preventDefault(); galZoomTo(GZ.s * (e.deltaY < 0 ? 1.05 : 1 / 1.05), e.clientX, e.clientY); }, { passive: false });

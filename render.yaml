@@ -34,7 +34,7 @@ services:
       - key: ARIA_DATOS
         value: /datos
       - key: ARIA_ORIGENES
-        value: https://aria-studio-eta.vercel.app
+        value: https://aria-studio-eta.vercel.app,https://studio.ariacruz.com,https://ariacruz.com
       - key: ARIA_FETCH_HOSTS
         value: "*"
       - key: ARIA_CUOTA_GB
