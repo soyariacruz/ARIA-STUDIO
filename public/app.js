@@ -126,7 +126,7 @@ function buildNav() {
       cb.onclick = () => { if (COM.on) { comIr('dir').then(comPonAvisos); return; } COM.visto = true; comAbre('dir'); }; nav.appendChild(cb);
       const mb = el('button', 'more msgbtn', '<span>💬</span>Mensajes'); mb.title = 'Tus conversaciones con otros creadores: solicitudes, colaboraciones y carpetas compartidas'; mb.onclick = () => { if (COM.on) { comIr('msg').then(comPonAvisos); return; } COM.visto = true; comAbre('msg'); }; nav.appendChild(mb); }
   if (state.interno) {   /* v280: el botón del equipo es ⚙️ Admin: abre su página (miembros, quién está conectado, saldo regalo, denuncias, duelos…) */
-    nav.appendChild(el('div', 'nav-sep')); const wb = el('button', 'more admbtn' + ($('#admpage') ? ' on' : ''), '<span>⚙️</span>Admin' + (window.ADM && ADM.av ? `<u class="admdotn">${ADM.av}</u>` : '')); wb.title = 'Panel de administración (solo el equipo)'; wb.onclick = () => adminAbre(); nav.appendChild(wb); }
+    nav.appendChild(el('div', 'nav-sep')); const wb = el('button', 'more admbtn' + ($('#admpage') ? ' on' : ''), '<span>⚙️</span>Admin' + (window.ADM && ADM.av ? `<u class="admdotn">${ADM.av}</u>` : '')); wb.title = 'Panel de administración (solo el equipo)'; wb.onclick = () => adminAbre(); nav.appendChild(wb); const fb_ = el('button', 'more fichbtn' + ($('#fichpage') ? ' on' : ''), '<span>🧍</span>Fichas'); fb_.title = 'Creador de fichas 360 (solo el equipo)'; fb_.onclick = () => fichAbre(); nav.appendChild(fb_); }   /* v302 */
   { const vb = nav.querySelector('button[data-tab=videoteca]'); if (vb) { const eq = state.interno; const ef = el('button', (eq ? '' : 'pronto ') + 'efbtn', '<span>✨</span>Efectos' + (eq ? '' : '<i class="nvpronto">pronto</i>')); ef.title = 'Efectos virales: recrea cualquier vídeo de moda con tu personaje' + (eq ? ' · de momento solo lo ve el equipo' : ' · próximamente'); ef.onclick = () => eq ? efectosAbre() : toast('✨ Efectos: próximamente'); vb.after(ef); } }   // v290
   { const mm = el('button', 'more mvmore', '<span>☰</span>Más'); mm.title = 'Más secciones'; mm.onclick = () => { navMore(mm, movilMas()); const m = $('#navmore'); if (m) m.classList.add('mvsheet'); }; nav.appendChild(mm); }   // v280: solo en el móvil
   if (innerWidth < 768) { const cb = nav.querySelector('button[data-tab=crear]'), vb = nav.querySelector('button[data-tab=video]'); [[cb, 'Imagen'], [vb, 'Vídeo']].forEach(([b, t]) => { const n = b && [...b.childNodes].find(x => x.nodeType === 3 && x.textContent.trim()); if (n) n.textContent = t; }); }
@@ -137,6 +137,7 @@ function setTab(k) {
   if ($('#ligapage')) ligaCierra();   // cualquier sección del menú cierra los Workflows
   if ($('#admpage')) admCierra();   // y el panel ⚙️ Admin
   if ($('#audpage')) audCierra();   // y 🎙️ Crear audio
+  if ($('#fichpage')) fichCierra();   // v302: y el 🧍 Creador de fichas
   if (innerWidth < 768) { mvCierra(false); try { if ($('#gal').classList.contains('on')) closeGal(); } catch (e) {} requestAnimationFrame(() => scrollTo(0, 0)); }   // v281: en el móvil, cada sección empieza arriba
   if (k === 'lugar' && !LUGARES_ON) k = 'vestidor';   // Lugares, pronto
   if (COM && COM.on) comCierra();   // cualquier sección del menú cierra la página de la Comunidad
@@ -2610,7 +2611,7 @@ const admTam = x => !x ? '0 MB' : x < 1024 ** 3 ? Math.max(1, Math.round(x / 102
 async function admCarga(fresco) { let r; try { r = await fetch('/api/admin/panel' + (fresco ? '?fresco=1' : '')).then(x => x.json()); } catch (e) { r = null; } ADM.r = r; if ($('#admpage')) admPinta(); }
 async function admManda(url, body) { const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).then(y => y.json()).catch(() => null); if (!r || !r.ok) { toast((r && r.error) || 'No se ha podido hacer'); return null; } return r; }
 function adminAbre(sec) { // v280: ⚙️ Admin — una página (como Duelos) con el resumen, los miembros y las herramientas del equipo
-  if (!state.interno) return; if (COM && COM.on) comCierra(); if ($('#ligapage')) ligaCierra(); if ($('#audpage')) audCierra();
+  if (!state.interno) return; if (COM && COM.on) comCierra(); if ($('#ligapage')) ligaCierra(); if ($('#audpage')) audCierra(); if ($('#fichpage')) fichCierra();
   if (sec) ADM.sec = sec; else if (ADM.av && !$('#admpage')) { ADM.sec = 'miembros'; ADM.filtro = 'sin'; }   // v292: con algo pendiente, directo a ello
   let pg = $('#admpage');
   if (!pg) { pg = el('div', ''); pg.id = 'admpage'; document.body.appendChild(pg);
@@ -2675,12 +2676,22 @@ function admFila(z, r, acciones) {
   if (r.yo_dueno && !z.dueno) btn(z.interno ? 'Quitar del equipo' : 'Hacer del equipo', z.interno ? 'Deja de ver lo del equipo (Admin, Aria editable, NSFW…)' : 'Verá lo del equipo: Admin, Aria editable, Duelos…', async () => { if (!(await pregunta(z.interno ? `¿Quitar a ${z.email} del equipo?` : `¿Hacer a ${z.email} del equipo?\n\nVerá el panel Admin, podrá editar a Aria y regalar saldo.`))) return; const k = await admManda('/api/admin/acciones', { accion: 'equipo', email: z.email, on: !z.interno }); if (k) { ADM.r = k; admPinta(); toast('Hecho'); } });
   if (!z.interno) btn('Quitar acceso', 'Deja de poder entrar (su cuenta y sus creaciones no se borran)', async () => { if (!(await pregunta(`¿Quitar el acceso a ${z.email}?\n\nDeja de poder entrar al momento. Su cuenta y sus creaciones no se borran: si vuelve a tener acceso, lo recupera todo.`))) return; if (await admManda('/api/miembros', { accion: 'baja', email: z.email })) { toast('Acceso quitado'); admCarga(true); } }, 'rojo');
   return row; }
+function fichAbre() { // v302: 🧍 Creador de fichas — página propia del equipo (como Crear audio)
+  if (!state.interno) return; if (!window.fichPinta) { toast('El creador de fichas todavía se está cargando: prueba en un momento'); return; }
+  if (COM && COM.on) comCierra(); if ($('#ligapage')) ligaCierra(); if ($('#audpage')) audCierra(); if ($('#admpage')) admCierra();
+  let pg = $('#fichpage'); if (!pg) { pg = el('div', ''); pg.id = 'fichpage'; document.body.appendChild(pg);
+    const coloca = () => { if (innerWidth < 768) { ['top', 'bottom', 'left'].forEach(k => pg.style.removeProperty(k)); return; } const m = document.querySelector('main'), n = $('#nav'); const r = m ? m.getBoundingClientRect() : { top: 0, bottom: innerHeight }; pg.style.top = Math.round(r.top) + 'px'; pg.style.bottom = Math.max(0, Math.round(innerHeight - r.bottom)) + 'px'; pg.style.left = Math.round(n ? n.getBoundingClientRect().right : 0) + 'px'; };
+    coloca(); window.addEventListener('resize', coloca); pg._coloca = coloca; }
+  if (window.F3 && F3.owner) Object.assign(F3, { prendas: [], acc: [], extras: [], pick: null });
+  document.querySelectorAll('#nav button').forEach(b => b.classList.toggle('on', b.classList.contains('fichbtn'))); fichPinta(); }
+function fichCierra() { const pg = $('#fichpage'); if (!pg) return; window.removeEventListener('resize', pg._coloca); pg.remove(); const b = document.querySelector('#nav .fichbtn'); if (b) b.classList.remove('on'); }
+window.fichCierra = fichCierra;
 function f3Aria() { // v301: el creador de fichas de Aria (paso a paso: personaje → ropa del Vestidor → objetos → generar), en Perfil › Aria
   if (!window.nfOpen || !window.PJ) { toast('El creador de fichas todavía se está cargando: prueba en un momento'); return; }
   PJ.sel = 'aria'; PJ.tabBy = Object.assign(PJ.tabBy || {}, { aria: 'fichas' }); setTab('perfil'); nfOpen('aria'); }
 function admHerr(w) {
   const g = el('div', 'admstats'); const it = (ic, t, sub, fn) => { const c = el('button', 'admstat', `<span>${ic}</span><b>${t}</b><i>${sub}</i>`); c.onclick = fn; g.appendChild(c); };
-  it('🧍', 'Fichas 360 con ropa', 'una ficha nueva de Aria con prendas del Vestidor, a partir de su ficha principal', () => { admCierra(); f3Aria(); });   // v301
+  it('🧍', 'Creador de fichas', 'fichas 360 de Aria con otra ropa: constructor a la izquierda, galería a la derecha', () => fichAbre());   // v301 · v302
   it('🎁', 'Bolsa del saldo regalo', 'cuánto queda, quién gasta más, regalar a todos', () => openBolsa());
   it('🚩', 'Denuncias', 'lo que ha denunciado la comunidad: restaurar o dejarlo retirado', () => denAbre());
   it('🥊', 'Duelos', 'la AI League: preparar y publicar duelos', () => { admCierra(); ligaAbre(); });

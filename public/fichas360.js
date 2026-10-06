@@ -109,7 +109,7 @@
     if (FX.kind === job.fxKind && (!FX.sel || FX.sel === job.fx)) { FX.sel = job.fx; FX.pick = st.file; }
     toast(`Versión nueva lista: la ves en su sitio de la ficha y en su historial · ${fmtUsd(usd)}`); if (FX.kind) paintFX(); else if (state.tab === 'perfil') renderProfile(); };
   window.failJob = function (job, msg) {
-    if (job.nf) { job.end = true; F3.jobs = F3.jobs.filter(j => j !== job); toast('No se pudo generar la ficha: ' + msg); if (state.tab === 'perfil') renderProfile(); return; }
+    if (job.nf) { job.end = true; F3.jobs = F3.jobs.filter(j => j !== job); F3.fallos = [{ t: Date.now(), msg: String(msg || 'sin motivo'), nombre: (job.it && job.it.name) || 'Ficha nueva' }].concat(F3.fallos || []).slice(0, 12); toast('No se pudo generar la ficha: ' + msg); rpinta(); return; }   // v302: el fallo se queda a la vista en la galería
     if (!job.fx) return _fail2(job, msg); job.end = true; FX.jobs = FX.jobs.filter(j => j !== job); toast('No se pudo generar: ' + msg); if (FX.kind) paintFX(); else if (state.tab === 'perfil') renderProfile(); };
   async function ponerEnFicha() {
     const k = FX.sel, f = FX.pick; if (!k || !f) return; let r;
@@ -202,71 +202,71 @@
     const R = nfRefs(); const images = R.map(r => r.data ? { data: r.data } : { path: r.path.split('?')[0] });
     const m = nfModelFor(images.length);
     const usd = m.usd[NFQ]; if (!(await pregunta(`¿Generar la ficha nueva con ${m.name} a 2K? (${fmtUsd(usd)})`))) return;
-    const prompt = nfPrompt(); F3.sending = true; renderProfile();
+    const prompt = nfPrompt(); F3.sending = true; rpinta();
     const pj0 = pjOf(); const body = { item: 'ficha_nueva', prompt, images, aspect: pj0 && !pj0.combo ? '2:3' : '16:9', quality: NFQ, model: m.key, meta: { name: 'Ficha nueva · ' + (R.filter(r => r.p).map(r => r.p.name).join(' + ') || 'objetos'), tab: 'perfil', personaje: '_fichas', hidden: true, model: m.name, ep: m.ep, prompt, nf: { owner: F3.owner || undefined, nombre: nfNombre(), prendas: F3.prendas.slice(), acc: F3.acc.slice(), extras: F3.extras.map(x => x.label || 'objeto') } } };
     let r; try { r = await fetch('/api/generar', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).then(x => x.json()); } catch (e) { r = { error: String(e) }; }
-    F3.sending = false; if (!r || r.error) { toast('No se pudo generar: ' + (r ? r.error : 'sin respuesta')); renderProfile(); return; }
+    F3.sending = false; if (!r || r.error) { toast('No se pudo generar: ' + (r ? r.error : 'sin respuesta')); rpinta(); return; }
     const job = { rid: r.request_id, it: { id: 'nf', name: body.meta.name }, tab: 'perfil', m, kind: 'image', nf: true, owner: F3.owner || null, t0: performance.now(), status: 'queued', usd: r.usd != null ? Number(r.usd) : usd, prendas: F3.prendas.slice(), acc: F3.acc.slice(), extras: F3.extras.map(x => x.label || 'objeto') };
-    JOBS.set(job.rid, job); F3.jobs.push(job); ensurePoller(); renderProfile();
+    JOBS.set(job.rid, job); F3.jobs.push(job); ensurePoller(); rpinta();
   }
   async function nfFinish(job, st) {
     job.end = true; F3.jobs = F3.jobs.filter(j => j !== job); const usd = st.usd != null ? Number(st.usd) : (job.usd || 0); state.nGen++; state.spent += usd; meter();
     if (job.owner) { if (window.pjReload) await pjReload(); } else await comboApi({ action: 'ensure' }); F3.pick = st.file; F3.meta = F3.meta || {}; F3.meta[st.file] = { prendas: job.prendas, acc: job.acc, extras: job.extras }; // el puente ya la ha guardado en Fichas creadas: aquí solo se refresca
-    toast('Ficha nueva lista y guardada en «Fichas creadas» · ' + fmtUsd(usd)); if (state.tab === 'perfil') renderProfile();
+    toast('Ficha nueva lista y guardada en «Fichas creadas» · ' + fmtUsd(usd)); rpinta();
   }
   async function nfGuardar() {
     const f = F3.pick; if (!f) return; const mt = (F3.meta || {})[f] || { prendas: F3.prendas, acc: F3.acc, extras: F3.extras.map(x => x.label || 'objeto') };
     const nm = (($('#nfName') || {}).value || '').trim() || 'Aria · ' + (mt.prendas.map(prenda).filter(Boolean).map(p => p.name).join(' + ') || 'ficha nueva');
     const r = await comboApi({ action: 'save', file: f, nombre: nm, prendas: mt.prendas, acc: mt.acc, extras: mt.extras }); if (!r) return;
-    Object.assign(F3, { open: false, pick: null }); toast(`«${nm}» guardada en Fichas creadas`); window.pjScrollTop = true; renderProfile();
+    Object.assign(F3, { open: false, pick: null }); toast(`«${nm}» guardada en Fichas creadas`); window.pjScrollTop = true; rpinta();
   }
-  function elegirPrenda() {
+  function elegirPrenda() { if (enPagina()) return pickPrenda();   // v302: en el Creador de fichas, sin salir de la página
     if (!window.startPick) { toast('Actualiza la página'); return; }
     startPick('vestidor', { label: 'tu ficha nueva', done: it => { F3.prendas = [it.id]; F3.open = true; if (window.PJ) { PJ.sel = OW(); PJ.tabBy = Object.assign(PJ.tabBy || {}, { [OW()]: 'ficha' }); } setTab('perfil'); toast(`«${it.name}» añadida a la ficha nueva`); setTimeout(() => { const s = document.querySelector('.nfstep.s3'); if (s) s.scrollIntoView({ block: 'start', behavior: 'smooth' }); }, 120); }, cancel: () => { F3.open = true; if (window.PJ) { PJ.sel = OW(); PJ.tabBy = Object.assign(PJ.tabBy || {}, { [OW()]: 'ficha' }); } setTab('perfil'); } });
   }
-  function elegirComplementos() {
-    const back = () => { F3.open = true; if (window.PJ) { PJ.sel = OW(); PJ.tabBy = Object.assign(PJ.tabBy || {}, { [OW()]: 'ficha' }); } renderProfile(); setTimeout(() => { const s = document.querySelector('.nfstep.s3'); if (s) s.scrollIntoView({ block: 'start', behavior: 'smooth' }); }, 120); };
+  function elegirComplementos() { if (enPagina()) return pickAcc();
+    const back = () => { F3.open = true; if (window.PJ) { PJ.sel = OW(); PJ.tabBy = Object.assign(PJ.tabBy || {}, { [OW()]: 'ficha' }); } rpinta(); setTimeout(() => { const s = document.querySelector('.nfstep.s3'); if (s) s.scrollIntoView({ block: 'start', behavior: 'smooth' }); }, 120); };
     window.accPick = { label: 'tu ficha nueva', sel: F3.acc.slice(), done: ids => { F3.acc = ids; back(); toast(ids.length === 1 ? 'Complemento añadido a la ficha nueva' : `${ids.length} complementos añadidos a la ficha nueva`); }, cancel: back };
-    if (window.PJ) { PJ.sel = OW(); PJ.tabBy = Object.assign(PJ.tabBy || {}, { [OW()]: 'complementos' }); } window.pjScrollTop = true; renderProfile();
+    if (window.PJ) { PJ.sel = OW(); PJ.tabBy = Object.assign(PJ.tabBy || {}, { [OW()]: 'complementos' }); } window.pjScrollTop = true; rpinta();
   }
   const step = (n, t, sub, cls) => { const g = el('div', 'pjgrp nfstep ' + (cls || '')); g.appendChild(el('h4', '', `<i class="nfn">${n}</i>${t}${sub ? `<small>${sub}</small>` : ''}`)); return g; };
   window.f3Render = function (host) {
     if (!F3.open) return false; host.innerHTML = ''; const w = el('div', 'nfwrap');
-    const bk0 = el('button', 'btn fxback', F3.owner ? '← Volver al creador de fichas' : '← Volver a Fichas 360'); bk0.onclick = () => { F3.open = false; if (window.PJ) PJ.sel = OW(); window.pjScrollTop = true; renderProfile(); }; w.appendChild(bk0);
+    const bk0 = el('button', 'btn fxback', F3.owner ? '← Volver al creador de fichas' : '← Volver a Fichas 360'); bk0.onclick = () => { F3.open = false; if (window.PJ) PJ.sel = OW(); window.pjScrollTop = true; rpinta(); }; if (!enPagina()) w.appendChild(bk0);
     w.appendChild(el('div', 'pjwhd', `<div><h3>Nueva ficha</h3><p>Su ficha principal con otra ropa y otros objetos: las cuatro vistas y el cuerpo entero salen en una sola imagen, de una vez.</p></div>`));
     // 1 · personaje
     const s1 = step(1, 'Personaje', 'la ficha se hace con ella'); const pc = el('div', 'nfchar', `<img class="av" src="${P().avatar || C.base.thumb}" alt=""><div><b>${P().name}</b><small>Se parte de su ficha principal</small></div><img class="base" src="${P().comboThumb || principal()}" alt="">`); pc.querySelector('.base').onclick = () => lightbox(principal(), 'Ficha principal'); s1.appendChild(pc); w.appendChild(s1);
     // 2 · ropa (del Vestidor)
     const s2 = step(2, 'Ropa', 'del Vestidor', 's2'); const ch = el('div', 'nfchips'); const pr = F3.prendas.map(prenda).filter(Boolean)[0];
-    if (pr) { const c = el('div', 'nfchip', `<img src="${pr.card}" alt=""><b>${pr.name}</b>`); const x = el('button', 'pjx', '×'); x.title = 'Quitar'; x.onclick = () => { F3.prendas = []; renderProfile(); }; c.appendChild(x); c.querySelector('img').onclick = () => lightbox(pr.ficha, pr.name); const cb = el('button', 'lnk nfchg', 'Cambiar'); cb.onclick = elegirPrenda; c.appendChild(cb); ch.appendChild(c); }
+    if (pr) { const c = el('div', 'nfchip', `<img src="${pr.card}" alt=""><b>${pr.name}</b>`); const x = el('button', 'pjx', '×'); x.title = 'Quitar'; x.onclick = () => { F3.prendas = []; rpinta(); }; c.appendChild(x); c.querySelector('img').onclick = () => lightbox(pr.ficha, pr.name); const cb = el('button', 'lnk nfchg', 'Cambiar'); cb.onclick = elegirPrenda; c.appendChild(cb); ch.appendChild(c); }
     else { const pb = el('button', 'nfpick', `<span>👗</span><b>Elegir en el Vestidor</b><small>vas al Vestidor, eliges y vuelves aquí</small>`); pb.onclick = elegirPrenda; ch.appendChild(pb); }
     s2.appendChild(ch); w.appendChild(s2);
     // 3 · complementos: se eligen en su pestaña (como la ropa) o se suelta la foto de un objeto
     const s3 = step(3, 'Complementos', 'opcional · de su pestaña de complementos o la foto de un objeto', 's3');
     const fijos = accAll().filter(c => c.regla === 'siempre'); if (fijos.length) s3.appendChild(el('small', 'pjnote', `Ya lleva siempre: ${fijos.map(c => c.nombre).join(', ')}.`));
-    const ac = el('div', 'nfaccs'); accSel().forEach(c => { const d = el('div', 'nfacc on', `${(c.thumb || c.img) ? `<img src="${c.thumb || c.img}" alt="">` : '<span>✨</span>'}<b>${c.nombre}</b>`); const x = el('button', 'pjx', '×'); x.title = 'Quitar'; x.onclick = () => { F3.acc = F3.acc.filter(z => z !== c.id); renderProfile(); }; d.appendChild(x); ac.appendChild(d); });
-    F3.extras.forEach((x, i) => { const d = el('div', 'nfacc on extra', `<img src="${x.data}" alt="">`); const li = el('input', 'pjin'); li.placeholder = 'Qué es · ej.: black bucket hat'; li.value = x.label || ''; li.oninput = () => { x.label = li.value; }; d.appendChild(li); const q = el('button', 'pjx', '×'); q.onclick = () => { F3.extras.splice(i, 1); renderProfile(); }; d.appendChild(q); ac.appendChild(d); });
+    const ac = el('div', 'nfaccs'); accSel().forEach(c => { const d = el('div', 'nfacc on', `${(c.thumb || c.img) ? `<img src="${c.thumb || c.img}" alt="">` : '<span>✨</span>'}<b>${c.nombre}</b>`); const x = el('button', 'pjx', '×'); x.title = 'Quitar'; x.onclick = () => { F3.acc = F3.acc.filter(z => z !== c.id); rpinta(); }; d.appendChild(x); ac.appendChild(d); });
+    F3.extras.forEach((x, i) => { const d = el('div', 'nfacc on extra', `<img src="${x.data}" alt="">`); const li = el('input', 'pjin'); li.placeholder = 'Qué es · ej.: black bucket hat'; li.value = x.label || ''; li.oninput = () => { x.label = li.value; }; d.appendChild(li); const q = el('button', 'pjx', '×'); q.onclick = () => { F3.extras.splice(i, 1); rpinta(); }; d.appendChild(q); ac.appendChild(d); });
     { const pb = el('button', 'nfpick', `<span>🧩</span><b>${accSel().length ? 'Elegir más' : 'Elegir en Complementos'}</b><small>vas a sus complementos, marcas y vuelves aquí</small>`); pb.onclick = elegirComplementos; ac.appendChild(pb); }
     { const z = el('label', 'nfdrop', '<span>＋</span><b>Suelta aquí un objeto</b><small>o haz clic para subir su foto</small>'); const f = document.createElement('input'); f.type = 'file'; f.accept = 'image/*'; f.hidden = true; z.appendChild(f);
-      const rd = file => { if (!file || !/^image\//.test(file.type)) return; const r = new FileReader(); r.onload = () => { F3.extras.push({ data: r.result, label: '' }); renderProfile(); }; r.readAsDataURL(file); };
+      const rd = file => { if (!file || !/^image\//.test(file.type)) return; const r = new FileReader(); r.onload = () => { F3.extras.push({ data: r.result, label: '' }); rpinta(); }; r.readAsDataURL(file); };
       f.onchange = () => rd(f.files[0]); z.ondragover = e => { e.preventDefault(); z.classList.add('over'); }; z.ondragleave = () => z.classList.remove('over'); z.ondrop = e => { e.preventDefault(); z.classList.remove('over'); rd(e.dataTransfer.files[0]); }; ac.appendChild(z); }
     s3.appendChild(ac); w.appendChild(s3);
     // 4 · generar (una sola imagen) y elegir la mejor versión
     const nR = nfRefs().length; const m = nfModelFor(nR); const cost = fmtUsd(m.usd[NFQ]);
     const s4 = step(4, 'Generar la ficha', 'una sola imagen: 4 vistas + cuerpo de frente y de perfil', 's4');
     { const row = el('div', 'nfmodel'); row.appendChild(el('small', 'pjk', 'Modelo')); const ms = el('select', 'sel'); MODELS.forEach(x => { const o = document.createElement('option'); o.value = x.key; o.textContent = `${x.name} · ${fmtUsd(x.usd[NFQ])}${x.refs < nR ? ` · solo ${x.refs} referencias` : ''}`; ms.appendChild(o); }); ms.value = nfModel().key;
-      ms.onchange = () => { F3.model = ms.value; try { localStorage.setItem(MKEY, ms.value); } catch (e) {} renderProfile(); }; row.appendChild(ms); if (m.key !== nfModel().key) row.appendChild(el('small', 'pjnote', `Van ${nR} referencias: esta ficha irá con ${m.name}`)); s4.appendChild(row); }
+      ms.onchange = () => { F3.model = ms.value; try { localStorage.setItem(MKEY, ms.value); } catch (e) {} rpinta(); }; row.appendChild(ms); if (m.key !== nfModel().key) row.appendChild(el('small', 'pjnote', `Van ${nR} referencias: esta ficha irá con ${m.name}`)); s4.appendChild(row); }
     const rr = el('div', 'fxrefs'); nfRefs().forEach(r => rr.appendChild(el('span', 'fxref', `<i style="background-image:url('${r.thumb || r.path}')"></i><b>${r.tag} · ${esc(r.name)}</b>`))); s4.appendChild(el('small', 'pjk', 'Se basa en')); s4.appendChild(rr);
     const det = el('details', 'fxprompt nfprompt'); det.appendChild(el('summary', '', 'Ver el prompt que se enviará')); det.appendChild(el('div', 'promptbox', esc(nfPrompt()))); s4.appendChild(det);
-    const ok = F3.prendas.length || F3.acc.length || F3.extras.length; const gb = el('button', 'btn acc pr nfgen', F3.sending ? '⏳ Enviando…' : `${nfHist().length || F3.jobs.length ? 'Generar otra versión' : 'Generar la ficha'}<i>${cost}</i>`); gb.disabled = !!F3.sending || !ok; if (!ok) gb.title = 'Elige primero la ropa o algún objeto'; gb.onclick = nfGenerate; s4.appendChild(gb);
-    const H = nfHist(); if (H.length || F3.jobs.length) {
+    const ok = F3.prendas.length || F3.acc.length || F3.extras.length; const gb = el('button', 'btn acc pr nfgen', F3.sending ? '⏳ Enviando…' : `${nfHist().length || F3.jobs.length ? 'Generar otra versión' : 'Generar la ficha'}<i>${cost}</i>`); gb.disabled = !!F3.sending || !ok; if (!ok) gb.title = 'Elige primero la ropa o algún objeto'; gb.onclick = nfGenerate; s4.appendChild(gb); if (enPagina()) s4.appendChild(el('small', 'pjnote', 'Cada versión aparece en la galería de la derecha: mientras se genera, cuando está lista y también si falla.'));
+    const H = nfHist(); if (!enPagina() && (H.length || F3.jobs.length)) {
       const vg = el('div', 'nfvers'); F3.jobs.slice().reverse().forEach(j => vg.appendChild(el('div', 'nfv gen', `<i class="spin"></i><b>Generando</b><small data-t0="${j.t0}">${Math.round((performance.now() - j.t0) / 1000)} s</small>`)));
-      H.forEach(f => { const t = el('button', 'nfv' + (F3.pick === f ? ' on' : ''), `<img src="${f}" alt="">`); t.onclick = () => { F3.pick = F3.pick === f ? null : f; renderProfile(); }; t.ondblclick = () => lightbox(f, 'Ficha nueva'); vg.appendChild(t); });
+      H.forEach(f => { const t = el('button', 'nfv' + (F3.pick === f ? ' on' : ''), `<img src="${f}" alt="">`); t.onclick = () => { F3.pick = F3.pick === f ? null : f; rpinta(); }; t.ondblclick = () => lightbox(f, 'Ficha nueva'); vg.appendChild(t); });
       s4.appendChild(el('small', 'pjk', 'Versiones · elige la mejor')); s4.appendChild(vg);
     }
-    if (F3.pick) { const big = el('div', 'nfbig', `<img src="${F3.pick}" alt="">`); big.onclick = () => lightbox(F3.pick, 'Ficha nueva'); s4.appendChild(big);
+    if (F3.pick && !enPagina()) { const big = el('div', 'nfbig', `<img src="${F3.pick}" alt="">`); big.onclick = () => lightbox(F3.pick, 'Ficha nueva'); s4.appendChild(big);
       const sv0 = nfSaved(F3.pick); const r5 = el('div', 'pjacts');
-      if (sv0) { r5.appendChild(el('span', 'nfok', `✓ Guardada en «Fichas creadas» como <b>${esc(sv0.nombre)}</b>`)); const bk = el('button', 'btn acc', 'Ver en Fichas creadas'); bk.onclick = () => { F3.open = false; window.pjScrollTop = true; renderProfile(); }; r5.appendChild(bk); }
+      if (sv0) { r5.appendChild(el('span', 'nfok', `✓ Guardada en «Fichas creadas» como <b>${esc(sv0.nombre)}</b>`)); const bk = el('button', 'btn acc', 'Ver en Fichas creadas'); bk.onclick = () => { F3.open = false; window.pjScrollTop = true; rpinta(); }; r5.appendChild(bk); }
       else if (pjOf()) r5.appendChild(el('span', 'nfok', 'Esta versión se guarda sola al terminar.'));
       else { const nm = el('input', 'pjin'); nm.id = 'nfName'; nm.style.maxWidth = '360px'; nm.value = nfNombre(); r5.appendChild(nm); const sv = el('button', 'btn acc', '✓ Guardar en Fichas creadas'); sv.onclick = nfGuardar; r5.appendChild(sv); }
       s4.appendChild(r5);
@@ -275,5 +275,41 @@
     host.appendChild(w);
     clearInterval(F3.tick); if (F3.jobs.length) F3.tick = setInterval(() => { if (!document.querySelector('.nfwrap')) { clearInterval(F3.tick); return; } document.querySelectorAll('.nfwrap [data-t0]').forEach(n => { n.textContent = Math.round((performance.now() - +n.dataset.t0) / 1000) + ' s'; }); }, 1000);
     return true;
+  };
+
+  // ------------------------------------------------ v302: el Creador de fichas como página propia (⚙️ Admin): constructor a la izquierda, galería a la derecha
+  function enPagina() { return !!document.querySelector('#fichpage'); }
+  function rpinta() { if (enPagina()) window.fichPinta(); else if (state.tab === 'perfil') renderProfile(); }
+  function pickModal(id, titulo) { let m0 = document.querySelector('#' + id); if (m0) m0.remove(); m0 = el('div', 'fxm'); m0.id = id; document.body.appendChild(m0); const cierra = () => m0.remove(); m0.onclick = e => { if (e.target === m0) cierra(); };
+    const b = el('div', 'devbox f3pickbox'); m0.appendChild(b); const x = el('button', 'btn carpverx', '✕'); x.onclick = cierra; b.appendChild(x); b.appendChild(el('h3', '', titulo)); return [b, cierra]; }
+  function pickPrenda() { const L = (TABS.vestidor.items || []).filter(v => !v.pending && v.ficha && v.card); const [b, cierra] = pickModal('f3pick', '👗 Elige la ropa');
+    const q = el('input', 'f3pickq'); q.placeholder = `Buscar entre ${L.length} prendas…`; b.appendChild(q); const g = el('div', 'f3pickg'); b.appendChild(g);
+    const pinta = () => { g.innerHTML = ''; const t = q.value.trim().toLowerCase(); const M = L.filter(v => !t || (String(v.name || '') + ' ' + [].concat(v.tags || []).join(' ')).toLowerCase().includes(t));
+      M.forEach(v => { const c = el('button', 'f3pickc' + (F3.prendas.includes(v.id) ? ' on' : ''), `<img src="${v.card}" alt="" loading="lazy"><b>${esc(v.name || 'Prenda')}</b>`); c.type = 'button'; c.onclick = () => { F3.prendas = [v.id]; cierra(); rpinta(); toast(`«${v.name}» en la ficha nueva`); }; g.appendChild(c); });
+      if (!M.length) g.appendChild(el('p', 'vozvacio', 'Ninguna prenda con ese nombre.')); };
+    q.oninput = pinta; pinta(); setTimeout(() => q.focus(), 50); }
+  function pickAcc() { const L = accAll(); if (!L.length) { toast('Todavía no tiene complementos'); return; } const sel = new Set(F3.acc); const [b, cierra] = pickModal('f3pick', '🧩 Elige complementos');
+    const g = el('div', 'f3pickg'); b.appendChild(g); L.forEach(c => { const t = el('button', 'f3pickc' + (sel.has(c.id) ? ' on' : ''), `${(c.thumb || c.img) ? `<img src="${c.thumb || c.img}" alt="" loading="lazy">` : '<span class="f3pickno">✨</span>'}<b>${esc(c.nombre || 'Complemento')}</b>`); t.type = 'button'; t.onclick = () => { if (sel.has(c.id)) sel.delete(c.id); else sel.add(c.id); t.classList.toggle('on', sel.has(c.id)); }; g.appendChild(t); });
+    const pie = el('div', 'vozpie'); pie.appendChild(el('span', '', 'Toca para marcar o desmarcar')); const ok = el('button', 'btn acc', 'Listo'); ok.onclick = () => { F3.acc = [...sel]; cierra(); rpinta(); }; pie.appendChild(ok); b.appendChild(pie); }
+  window.fichPinta = function () {
+    const pg = document.querySelector('#fichpage'); if (!pg) return; F3.owner = null; F3.open = true;
+    const y1 = (pg.querySelector('.fichizq') || {}).scrollTop || 0, y2 = (pg.querySelector('.fichder') || {}).scrollTop || 0;
+    pg.innerHTML = ''; const w = el('div', 'fich'); pg.appendChild(w); const izq = el('div', 'fichizq'), der = el('div', 'fichder'); w.appendChild(izq); w.appendChild(der);
+    const hd = el('div', 'fichhd', '<h2>🧍 Creador de fichas</h2><small>solo el equipo</small>'); const x = el('button', 'btn fichx', '✕'); x.title = 'Cerrar'; x.onclick = () => window.fichCierra && fichCierra(); hd.appendChild(x); izq.appendChild(hd);
+    const host = el('div', ''); izq.appendChild(host); window.f3Render(host);
+    ensureCombo(); const same = (a, b) => (a || '').split('?')[0] === (b || '').split('?')[0];
+    const V = []; const g = el('div', 'fichgrid');
+    const tarjeta = (src, nombre, sub, acts, cls) => { const k = V.length; V.push({ src: String(src).replace('_t.jpg', '.jpg'), nombre, info: sub, acts }); const d = el('button', 'fichc ' + (cls || ''), `<img class="fichim" src="${src}" alt="" loading="lazy"><span class="fichtx"><b>${esc(nombre)}</b><small>${esc(sub || '')}</small></span>`); d.type = 'button'; d.onclick = () => visorFichas(V, k); g.appendChild(d); };
+    F3.jobs.slice().reverse().forEach(j => g.appendChild(el('div', 'fichc gen', `<span class="fichim fichspin"><i class="spin"></i><b data-t0="${j.t0}">${Math.round((performance.now() - j.t0) / 1000)} s</b></span><span class="fichtx"><b>${esc(j.it.name)}</b><small>Generando…</small></span>`)));
+    (F3.fallos || []).forEach((f, i) => { const d = el('div', 'fichc mal', `<span class="fichim fichmal">⚠️<small>${esc(f.msg)}</small></span><span class="fichtx"><b>${esc(f.nombre)}</b><small>No se ha generado · ${new Date(f.t).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}</small></span>`); const q = el('button', 'fichq', '✕'); q.title = 'Quitar este aviso'; q.onclick = () => { F3.fallos.splice(i, 1); rpinta(); }; d.appendChild(q); g.appendChild(d); });
+    const info = f => [f.t, f.modelo, f.size ? (f.size[0] >= 2400 ? '2K' : f.size[0] < 1500 ? '1K · baja resolución' : '') : ''].filter(Boolean).join(' · ');
+    const fuera = fn => async () => { if (window.fichCierra) fichCierra(); await fn(); };
+    const out = (P().fichas || []).filter(f => !same(f.img, P().combo)).slice().reverse();
+    nfHist().filter(f => !nfSaved(f) && !out.some(o => same(o.img, f))).slice().reverse().forEach(f => tarjeta(f, 'Versión sin guardar', 'recién generada', [['✓ Guardar en Fichas creadas', async () => { const mt = (F3.meta || {})[f] || { prendas: F3.prendas, acc: F3.acc, extras: F3.extras.map(x => x.label || 'objeto') }; const nm = nfNombre(); if (await comboApi({ action: 'save', file: f, nombre: nm, prendas: mt.prendas, acc: mt.acc, extras: mt.extras })) { toast(`«${nm}» guardada`); rpinta(); } }], ['⬇', () => dl(f), 'Descargar']], 'suelta'));
+    out.forEach(f => tarjeta(f.thumb || f.img, f.nombre, info(f), [['⬇', () => dl(f.img), 'Descargar'], ['✨', fuera(() => fichaAImagen(f.img, f.nombre)), 'Usar en Crear imagen'], ['🎬', fuera(() => window.FBapi && FBapi.usarEnVideo(f)), 'Usar en Crear vídeo'], ['🗑', async () => { await (window.FBapi && FBapi.borrar(f)); rpinta(); }, 'Borrar']]));
+    tarjeta(P().comboThumb || principal(), 'Ficha principal', 'de la que parten todas', [['⬇', () => dl(principal()), 'Descargar']], 'prin');
+    der.appendChild(el('div', 'fichhd2', `<h3>Fichas</h3><small>${out.length} creada${out.length === 1 ? '' : 's'}${F3.jobs.length ? ` · ${F3.jobs.length} generando` : ''} · toca una para verla en grande</small>`)); der.appendChild(g);
+    izq.scrollTop = y1; der.scrollTop = y2;
+    clearInterval(F3.ptick); if (F3.jobs.length) F3.ptick = setInterval(() => { if (!enPagina()) { clearInterval(F3.ptick); return; } document.querySelectorAll('#fichpage .fichspin [data-t0]').forEach(n => { n.textContent = Math.round((performance.now() - +n.dataset.t0) / 1000) + ' s'; }); }, 1000);
   };
 })();
