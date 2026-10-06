@@ -43,7 +43,7 @@ MAX_CUERPO = 40 * 1024 * 1024    # tope de una petición en modo servidor
 MAX_BIBLIO = 200 * 1024 * 1024   # tope de un fichero de la biblioteca común al copiarlo
 KINDS = ('vestidor', 'hair', 'expr')   # las bibliotecas a las que una cuenta puede añadir lo suyo
 _UUID = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
-VERSION = 344
+VERSION = 345
 _ctx = threading.local()   # la cuenta del hilo: la pone cada petición (y, a mano, cada hilo de fondo)
 def uid(): return getattr(_ctx, 'uid', None)   # en local siempre None
 DUENOS = tuple(e.strip().lower() for e in (os.environ.get('ARIA_DUENOS') or 'mix1994max@gmail.com').split(',') if e.strip())   # cuentas que pueden cambiar a Aria Cruz (en la web, la de Max)
@@ -1759,52 +1759,52 @@ def _encuadre_ia(src):   # v320 → (panel, cara) en fracciones (x0, y0, x1, y1)
         ok = lambda B: len(B) == 4 and 0 <= B[0] < B[2] <= 1.001 and 0 <= B[1] < B[3] <= 1.001
         return (P, C_) if ok(P) and ok(C_) else None
     except Exception as e: plog(f'encuadre IA ✕ {type(e).__name__}: {str(e)[:120]}'); return None
-def _avatar_centrado(base, fp, grande=False):   # v312: la foto del influencer en la Comunidad, con la cara centrada. Se hace UNA vez; si su dueña cambia la foto después, se queda la suya
+_CARA_FUENTES = ('avatarSrc.jpg', 'vista_frente.jpg', 'retrato.jpg', 'foto.jpg', 'ficha360.jpg', 'ficha.jpg', 'importada.jpg', 'avatar.jpg')   # de mejor a peor
+_CARA_FICHAS = ('ficha360.jpg', 'ficha.jpg', 'importada.jpg')
+def _avatar_centrado(base, fp, grande=False):   # v345: la portada del influencer = UNA cara, centrada y de cerca, de la mejor foto que tenga (su original elegida, su vista de frente, su foto, su ficha…). Se rehace sola si cambia cualquiera de esas fotos
     if not SERVIDOR: return None
-    mk = os.path.join(base, '.foto_ia3.json' if grande else '.avatar_ia3.json'); out = os.path.join(base, '.foto_ia3.jpg' if grande else '.avatar_ia3.jpg')   # v343: rehechas (nunca la espalda; la foto elegida por su dueño, primero)   # v313: también la grande (3:4) · v320: encuadradas con IA (ficheros nuevos: se rehacen todas)
-    try: mt = os.path.getmtime(fp)
-    except OSError: return None
-    try: j = json.load(open(mk, encoding='utf-8'))
-    except Exception: j = None
-    if isinstance(j, dict):
-        if abs(float(j.get('mt') or 0) - mt) > 1: return None   # la ha cambiado después: la suya
-        return out if j.get('ok') and os.path.isfile(out) else None
+    out = os.path.join(base, '.foto_cara.jpg' if grande else '.avatar_cara.jpg'); mk = out[:-4] + '.json'
+    try:
+        from PIL import Image
+        elegida = os.path.isfile(os.path.join(base, 'avatar.jpg')) and min(Image.open(os.path.join(base, 'avatar.jpg')).size) >= 400   # la eligió su dueño (la automática es de 256 px)
+    except Exception: elegida = False
+    if elegida and not grande and not os.path.isfile(os.path.join(base, 'avatarSrc.jpg')): return None   # en pequeño, su foto elegida tal cual (ya la encuadró él)
+    orden = (('avatarSrc.jpg', 'avatar.jpg') if elegida else ()) + _CARA_FUENTES
+    hay = [n for n in dict.fromkeys(orden) if os.path.isfile(os.path.join(base, n))]
+    firma = [[n, int(os.path.getmtime(os.path.join(base, n)))] for n in hay]
+    try:
+        j = json.load(open(mk, encoding='utf-8'))
+        if j.get('firma') == firma: return out if j.get('ok') and os.path.isfile(out) else None
+    except Exception: pass
     ok = False
     try:
         import cv2
-        from PIL import Image
-        cc = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
-        for n in ((os.path.basename(fp),) if os.path.basename(fp) in ('avatar.jpg', 'avatarSrc.jpg') else ('ficha360.jpg', 'ficha.jpg', 'importada.jpg') if grande else ('vista_frente.jpg', 'ficha360.jpg', 'ficha.jpg', os.path.basename(fp))):   # v343 · v344: la que eligió su dueño manda   # primero su vista de frente; si no, la ficha; si no, la propia foto (la grande, siempre de la ficha entera)
-            src = os.path.join(base, n)
-            if not os.path.isfile(src): continue
-            img = cv2.imread(src)
+        cc = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml'); ec = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_eye.xml')
+        def caras(g, W):   # las caras de frente: con dos ojos; si ninguna los tiene, ninguna
+            fs = cc.detectMultiScale(g, scaleFactor=1.1, minNeighbors=5, minSize=(max(28, W // 18), max(28, W // 18)))
+            return [f for f in fs if len(ec.detectMultiScale(g[int(f[1]):int(f[1] + f[3] * 0.6), int(f[0]):int(f[0] + f[2])], scaleFactor=1.1, minNeighbors=4)) >= 2]
+        for n in hay:
+            src = os.path.join(base, n); img = cv2.imread(src)
             if img is None: continue
-            g = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY); H0, W0 = g.shape; px0, py0 = 0, 0
-            ia = _encuadre_ia(src) if n not in ('vista_frente.jpg', 'avatar.jpg', 'avatarSrc.jpg') else None   # v320: la IA dice cuál es el panel de frente; todo se recorta DENTRO de ese panel
-            if ia:
-                (a0, b0, a1, b1), (c0, d0, c1, d1) = ia; px0, py0 = int(a0 * W0), int(b0 * H0); g = g[py0:int(b1 * H0), px0:int(a1 * W0)]; img = img[py0:int(b1 * H0), px0:int(a1 * W0)]
-            H, W = g.shape
-            fs = cc.detectMultiScale(g, scaleFactor=1.1, minNeighbors=5, minSize=(max(30, W // 12), max(30, W // 12)))
-            if not len(fs) and ia:   # v343: en el panel que dijo la IA no hay cara (p. ej. la espalda) → se busca la cara de frente en TODA la ficha
-                g0 = cv2.cvtColor(cv2.imread(src), cv2.COLOR_BGR2GRAY); fs0 = cc.detectMultiScale(g0, scaleFactor=1.1, minNeighbors=5, minSize=(max(30, W0 // 16), max(30, W0 // 16)))
-                if len(fs0): g = g0; img = cv2.imread(src); px0, py0 = 0, 0; H, W = g.shape; fs = fs0
-            if len(fs):   # v344: solo caras con ojos (una de frente); si ninguna los tiene, las que haya
-                ec = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_eye.xml'); con_ojos = [f_ for f_ in fs if len(ec.detectMultiScale(g[int(f_[1]):int(f_[1] + f_[3] * 0.6), int(f_[0]):int(f_[0] + f_[2])], scaleFactor=1.1, minNeighbors=4)) >= 2]
-                if con_ojos: fs = con_ojos
-            if len(fs): x, y, w, h = max(fs, key=lambda f_: int(f_[2]) * int(f_[3]) * 1000 - (int(f_[0]) + int(f_[1])))   # la cara más grande (a igualdad, la de arriba a la izquierda: la de frente)
-            elif n in ('avatar.jpg', 'avatarSrc.jpg'): continue   # su foto sin cara detectable: se enseña tal cual
-            elif ia: x, y, w, h = int(c0 * W0) - px0, int(d0 * H0) - py0, int((c1 - c0) * W0), int((d1 - d0) * H0)   # sin cara detectada: la que dice la IA
-            else: continue
-            if grande:   # de la cabeza a los hombros, en vertical 3:4, con la cara en el tercio de arriba
-                y0 = int(max(0, y - h * 0.45)); al = int(min(max(w, h) * 2.6 * 4 / 3, H - y0)); an = int(min(al * 3 / 4, W)); al = int(an * 4 / 3); cx = x + w / 2   # si no cabe por abajo, se encoge (no sube: no coge el panel de arriba)
-                x0 = int(min(max(0, cx - an / 2), W - an))
-                im = Image.open(src).convert('RGB').crop((px0 + x0, py0 + y0, px0 + x0 + an, py0 + y0 + al)); im.thumbnail((640, 860)); im.save(out, quality=88); ok = True; break
-            lado = int(min(max(w, h) * 1.7, W, H)); cx = x + w / 2; cy = y + h * 0.55
-            x0 = int(min(max(0, cx - lado / 2), W - lado)); y0 = int(min(max(0, cy - lado / 2), H - lado))
-            im = Image.open(src).convert('RGB').crop((px0 + x0, py0 + y0, px0 + x0 + lado, py0 + y0 + lado)); im.thumbnail((400, 400)); im.save(out, quality=88); ok = True; break
-    except Exception as e: plog(f'avatar centrado ✕ {type(e).__name__}: {str(e)[:120]}')
+            g = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY); H, W = g.shape; fs = caras(g, W)
+            if not fs and n in _CARA_FICHAS:   # en una ficha sin cara clara: la IA dice dónde está la vista de frente
+                ia = _encuadre_ia(src)
+                if ia:
+                    (a0, b0, a1, b1), (c0, d0, c1, d1) = ia; px, py = int(a0 * W), int(b0 * H); sub = g[py:int(b1 * H), px:int(a1 * W)]; f2 = caras(sub, sub.shape[1]) if sub.size else []
+                    fs = [(f[0] + px, f[1] + py, f[2], f[3]) for f in f2] or [(int(c0 * W), int(d0 * H), int((c1 - c0) * W), int((d1 - d0) * H))]
+            if not fs: continue
+            x, y, w, h = [int(v) for v in max(fs, key=lambda f_: int(f_[2]) * int(f_[3]) * 1000 - (int(f_[0]) + int(f_[1])))]   # una sola: la más grande (a igualdad, la de arriba a la izquierda)
+            cx = x + w / 2
+            if grande:   # de la cabeza a los hombros, 3:4, la cara en el tercio de arriba
+                y0 = int(max(0, y - h * 0.32)); an = int(min(w * 2.6, W)); al = int(min(an * 4 / 3, H - y0)); an = int(min(al * 3 / 4, W)); al = int(an * 4 / 3); x0 = int(min(max(0, cx - an / 2), W - an))   # si la cara está abajo, se encoge (no sube a otro panel)
+                im = Image.open(src).convert('RGB').crop((x0, y0, x0 + an, y0 + al)); im.thumbnail((900, 1200))
+            else:   # el circulito: la cara de cerca
+                lado = int(min(max(w, h) * 1.6, W, H)); cy = y + h * 0.5; x0 = int(min(max(0, cx - lado / 2), W - lado)); y0 = int(min(max(0, cy - lado / 2), H - lado))
+                im = Image.open(src).convert('RGB').crop((x0, y0, x0 + lado, y0 + lado)); im.thumbnail((480, 480))
+            im.save(out, quality=92); ok = True; break
+    except Exception as e: plog(f'portada ✕ {type(e).__name__}: {str(e)[:120]}')
     try:
-        with open(mk, 'w', encoding='utf-8') as o: json.dump({'mt': mt, 'ok': ok}, o)
+        with open(mk, 'w', encoding='utf-8') as o: json.dump({'firma': firma, 'ok': ok}, o)
     except Exception: pass
     return out if ok else None
 def _pub_lista():   # todo lo publicado por todas las cuentas, lo más nuevo primero (caché de 20 s; se vacía con cada cambio)
@@ -2884,7 +2884,7 @@ class H(SimpleHTTPRequestHandler):
                 except Exception: pass   # v230: en grande, su vista de frente o la foto de perfil que ha encuadrado su dueña (no la hoja entera)
             if not fp: return self._corta(404)
             if not grande: fp = _avatar_centrado(base, fp) or fp   # v312: con la cara centrada
-            elif os.path.basename(fp) not in ('vista_frente.jpg', 'avatar.jpg'):   # v313: sin vista de frente, la grande también centrada (sacada de su ficha entera) · v344: su foto elegida (grande), tal cual
+            else:   # v345: en grande, siempre la cara centrada y de cerca (de la mejor foto que haya)
                 c_ = _avatar_centrado(base, fp, True)
                 if c_: b = open(c_, 'rb').read(); self.send_response(200); self.send_header('Content-Type', 'image/jpeg'); self.send_header('Content-Length', str(len(b))); self.send_header('Cache-Control', 'private, max-age=60'); self.end_headers(); self.wfile.write(b); return
             if grande:   # la foto de la ficha, en grande para la galería (copia de 640 px, hecha una vez)
@@ -2912,7 +2912,15 @@ class H(SimpleHTTPRequestHandler):
             return self._json(200, {'ok': True, 'voces': _voces()})
         if u.path == '/api/admin/avisos':   # v290: la burbuja roja de ⚙️ Admin
             if not SERVIDOR or aria_fija(): return self._json(200, {'ok': True, 'total': 0})
-            try: return self._json(200, dict({'ok': True}, **_adm_avisos()))
+            fbn = 0; fbd = str((q.get('fb') or [''])[0])[:19]   # v345: feedback nuevo desde la última vez que se miró
+            try:
+                with open(os.path.join(DATOS, 'feedback.jsonl'), encoding='utf-8') as fh:
+                    for ln in fh.readlines()[-400:]:
+                        try: t_ = str(json.loads(ln).get('t') or '')
+                        except Exception: continue
+                        if t_ > fbd: fbn += 1
+            except FileNotFoundError: pass
+            try: r_ = dict(_adm_avisos()); r_['feedback'] = fbn; r_['total'] = int(r_.get('total') or 0) + fbn; return self._json(200, dict({'ok': True}, **r_))
             except Exception: return self._json(200, {'ok': True, 'total': 0})
         if u.path == '/api/admin/feedback':   # v342: 💡 lo que deja la gente con el botón de feedback (solo el equipo)
             if not SERVIDOR or aria_fija(): return self._json(403, {'error': 'solo el equipo'})

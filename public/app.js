@@ -2256,7 +2256,10 @@ function menuDescarga(btn, ops) { // v342: un menú pequeño junto al botón (no
   ops.forEach(([t, src]) => { const r = el('button', 'it', `<span>⬇</span><b>${esc(t)}</b>`); r.onclick = () => { m.remove(); bajaArchivo(src); }; m.appendChild(r); }); document.body.appendChild(m);
   const r = btn.getBoundingClientRect(); m.style.minWidth = Math.round(Math.min(r.width, 260)) + 'px'; m.style.left = Math.round(Math.min(r.left, innerWidth - m.offsetWidth - 8)) + 'px'; m.style.top = Math.round(r.bottom + 6 + m.offsetHeight > innerHeight ? r.top - m.offsetHeight - 6 : r.bottom + 6) + 'px';
   setTimeout(() => { const fuera = e => { if (!m.isConnected) { document.removeEventListener('click', fuera, true); return; } if (!m.contains(e.target) && !btn.contains(e.target)) { m.remove(); document.removeEventListener('click', fuera, true); } }; document.addEventListener('click', fuera, true); }, 0); }
-function verVersion(it, k) { if (!it || !it.v4k) return; it.ver = k; it.src = k === 'orig' ? it.src0 : it.v4k.src; const i0 = cur(); if (i0 === it) paint(it, true); renderSide(); }   // v342
+function verVersion(it, k) { if (!it || !it.v4k) return; it.ver = k; it.src = k === 'orig' ? it.src0 : it.v4k.src;   // v345: cambia al momento (también en el visor, sin perder el zoom)
+  document.querySelectorAll('.vers4k').forEach(v => [...v.children].forEach((b, i) => b.classList.toggle('on', (i === 0 ? '4k' : 'orig') === k)));
+  const gi = $('#galImg'); if ($('#gal').classList.contains('on') && galIt === it && gi) { gi.src = it.src; try { hiSwap(gi, it.src); } catch (e) {} }
+  const i0 = cur(); if (i0 === it) { try { paint(it, true); } catch (e) {} } }   // v342
 function compara(a, b) { // v342: antes / después con un deslizador (la original a la izquierda, la 4K a la derecha)
   let m0 = $('#cmpm'); if (m0) m0.remove(); m0 = el('div', 'fxm'); m0.id = 'cmpm'; document.body.appendChild(m0); m0.onclick = e => { if (e.target === m0) m0.remove(); };
   const box = el('div', 'devbox cmpbox'); m0.appendChild(box); const x = el('button', 'btn carpverx', '✕'); x.onclick = () => m0.remove(); box.appendChild(x);
@@ -2801,7 +2804,7 @@ function movilMas() { // v280: lo que en el móvil no cabe en la barra de abajo
   return L; }
 var ADM = { sec: 'resumen', r: null, filtro: 'todos', busca: '', abierto: '', av: 0 };
 async function admAvisos() { // v290: lo pendiente del equipo → burbuja roja en ⚙️ Admin (y en «Más» del móvil)
-  if (!state.interno || !(window.CUENTA && CUENTA.web)) return; let r = null; try { r = await fetch('/api/admin/avisos').then(x => x.json()); } catch (e) {} const n = (r && r.total) || 0; if (n === ADM.av) return; ADM.av = n;
+  if (!state.interno || !(window.CUENTA && CUENTA.web)) return; let r = null; let fbv = ''; try { fbv = localStorage.getItem('am_fb_visto') || ''; } catch (e) {} try { r = await fetch('/api/admin/avisos?fb=' + encodeURIComponent(fbv)).then(x => x.json()); } catch (e) {} const n = (r && r.total) || 0; ADM.fb = (r && r.feedback) || 0; if (n === ADM.av) return; ADM.av = n;   /* v345: incluye el feedback nuevo */
   const b = document.querySelector('#nav .admbtn'); if (b) { b.querySelectorAll('.admdotn').forEach(u => u.remove()); if (n) b.insertAdjacentHTML('beforeend', `<u class="admdotn">${n}</u>`); } comPonAvisos(); }
 setTimeout(admAvisos, 4000); setInterval(admAvisos, 120000);
 function admHace(t) { if (!t) return 'nunca'; const s_ = Date.now() / 1000 - t; if (s_ < 180) return 'ahora'; if (s_ < 3600) return 'hace ' + Math.round(s_ / 60) + ' min'; if (s_ < 86400) return 'hace ' + Math.round(s_ / 3600) + ' h'; if (s_ < 7 * 86400) return 'hace ' + Math.round(s_ / 86400) + (s_ < 1.5 * 86400 ? ' día' : ' días'); return new Date(t * 1000).toLocaleDateString('es-ES', { day: 'numeric', month: 'short' }); }
@@ -2825,7 +2828,7 @@ window.admCierra = admCierra;
 function admPinta() {
   const pg = $('#admpage'); if (!pg) return; const r = ADM.r; const sc = pg.querySelector('.admin'); const y = sc ? sc.scrollTop : 0; pg.innerHTML = ''; const w = el('div', 'admin'); pg.appendChild(w);
   const hd = el('div', 'admhd'); hd.appendChild(el('h2', '', '⚙️ Admin')); const tabs = el('div', 'admtabs');
-  [['resumen', '📊 Resumen'], ['miembros', '👥 Miembros'], ['feedback', '💡 Feedback'], ['herramientas', '🧰 Herramientas']].forEach(([k, t]) => { const b = el('button', ADM.sec === k ? 'on' : '', t + (k === 'miembros' && ADM.av ? `<u class="admdotn in">${ADM.av}</u>` : '')); b.onclick = () => { ADM.sec = k; admPinta(); }; tabs.appendChild(b); });
+  [['resumen', '📊 Resumen'], ['miembros', '👥 Miembros'], ['feedback', '💡 Feedback'], ['herramientas', '🧰 Herramientas']].forEach(([k, t]) => { const b = el('button', ADM.sec === k ? 'on' : '', t + (k === 'miembros' && (ADM.av - (ADM.fb || 0)) > 0 ? `<u class="admdotn in">${ADM.av - (ADM.fb || 0)}</u>` : k === 'feedback' && ADM.fb ? `<u class="admdotn in">${ADM.fb}</u>` : '')); b.onclick = () => { ADM.sec = k; admPinta(); }; tabs.appendChild(b); });
   hd.appendChild(tabs); const re = el('button', 'btn', '↻'); re.title = 'Actualizar'; re.onclick = () => { ADM.r = null; admPinta(); admCarga(true); }; hd.appendChild(re); const x = el('button', 'btn', '✕'); x.title = 'Cerrar'; x.onclick = () => { admCierra(); setTab(state.tab); }; hd.appendChild(x); w.appendChild(hd);
   if (ADM.sec === 'herramientas') { admHerr(w); return; }
   if (ADM.sec === 'feedback') { admFeedback(w); return; }   /* v342 */
@@ -2837,7 +2840,7 @@ async function admFeedback(w) { // v342: 💡 lo que deja la gente con el botón
   const host = el('div', 'admfb'); w.appendChild(host); host.appendChild(el('p', 'admvacio', 'Leyendo…')); let r = null; try { r = await fetch('/api/admin/feedback').then(x => x.json()); } catch (e) {}
   host.innerHTML = ''; if (!r || !r.ok) { host.appendChild(el('p', 'admvacio', esc((r && r.error) || 'No se ha podido leer el feedback.'))); return; }
   if (!r.items.length) { host.appendChild(el('p', 'admvacio', 'Todavía nadie ha dejado feedback.')); return; }
-  let visto = ''; try { visto = localStorage.getItem('am_fb_visto') || ''; } catch (e) {} try { localStorage.setItem('am_fb_visto', r.items[0].t || ''); } catch (e) {}
+  let visto = ''; try { visto = localStorage.getItem('am_fb_visto') || ''; } catch (e) {} try { localStorage.setItem('am_fb_visto', r.items[0].t || ''); } catch (e) {} if (ADM.fb) { ADM.fb = 0; ADM.av = -1; admAvisos().then(() => { const t_ = document.querySelector('.admtabs .on .admdotn'); if (t_) t_.remove(); }); }   /* v345: visto → fuera el aviso */
   host.appendChild(el('h4', 'admh4', `Feedback · ${r.items.length}`));
   r.items.forEach(f => { const nuevo = visto && f.t > visto; const c = el('div', 'admfbc' + (nuevo ? ' nuevo' : ''), `<div class="admfbh"><b>${esc((f.usuario || 'alguien').split('@')[0])}</b><small>${esc(f.t || '')}${f.seccion ? ' · ' + esc(f.seccion) : ''}</small><em>${esc(f.tipo || '')}${f.via ? ' · ' + esc(f.via) : ''}</em></div><p>${esc(f.texto || '')}</p>`); host.appendChild(c); }); }
 function admResumen(w, r) {
