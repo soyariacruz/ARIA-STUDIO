@@ -43,7 +43,7 @@ MAX_CUERPO = 40 * 1024 * 1024    # tope de una petición en modo servidor
 MAX_BIBLIO = 200 * 1024 * 1024   # tope de un fichero de la biblioteca común al copiarlo
 KINDS = ('vestidor', 'hair', 'expr')   # las bibliotecas a las que una cuenta puede añadir lo suyo
 _UUID = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
-VERSION = 269
+VERSION = 270
 _ctx = threading.local()   # la cuenta del hilo: la pone cada petición (y, a mano, cada hilo de fondo)
 def uid(): return getattr(_ctx, 'uid', None)   # en local siempre None
 DUENOS = tuple(e.strip().lower() for e in (os.environ.get('ARIA_DUENOS') or 'mix1994max@gmail.com').split(',') if e.strip())   # cuentas que pueden cambiar a Aria Cruz (en la web, la de Max)
@@ -1813,6 +1813,7 @@ def _estado(rid):   # estado de un trabajo; si ha terminado, lo descarga a la ca
             if (j.get('meta') or {}).get('prenda'):
                 try: j['prenda'] = add_prenda(j, os.path.join(live_dir(), fn)); j['file'] = j['prenda']['ficha']
                 except Exception as e: plog('prenda ✕ ' + str(e))
+    if status in ('failed', 'nsfw', 'canceled') and not j.get('failed') and status != 'canceled': fallida_apunta(j.get('meta'), st.get('error') or st.get('detail') or status, (j.get('meta') or {}).get('model') or j.get('model'))   # v270
     if status in ('failed', 'nsfw', 'canceled'): j['failed'] = True; _job_done(rid); out['error'] = st.get('error') or st.get('detail') or status; plog(f"{rid[:8]} {status} · {out['error']} · {j.get('item')}")
     if j.get('casa'):
         try: out['casa'] = casa_info()
@@ -1960,6 +1961,22 @@ def _com_tope(que, n):   # freno por cuenta y hora (solicitudes, mensajes)
 def _pj_guarda(fp, P):   # v260: personaje.json de una vez (fichero temporal + cambio de nombre): nunca queda a medias
     tmp = f'{fp}.tmp{threading.get_ident()}'; json.dump(P, open(tmp, 'w', encoding='utf-8'), ensure_ascii=False, indent=1); os.replace(tmp, fp)
 UPSCALE_EP = 'wavespeed-ai/image-upscaler'; UPSCALE_USD = 0.01   # v266: ampliar a 4K
+_fall_l = threading.Lock()
+def _fall_lee():   # las que no se han podido generar (últimas 24 h), en la casa de la cuenta
+    try: L = json.load(open(os.path.join(casa(), 'fallidas.json'), encoding='utf-8'))
+    except Exception: L = []
+    ahora = time.time(); return [x for x in (L if isinstance(L, list) else []) if isinstance(x, dict) and ahora - float(x.get('t') or 0) < 86400]
+def _fall_guarda(L):
+    fp = os.path.join(casa(), 'fallidas.json'); os.makedirs(os.path.dirname(fp), exist_ok=True)
+    with open(fp + '.tmp', 'w', encoding='utf-8') as f: json.dump(L[:30], f, ensure_ascii=False)
+    os.replace(fp + '.tmp', fp)
+def fallida_apunta(meta, err, modelo=''):   # v270: una generación que no ha salido → 24 h en gris en la galería de la cuenta, en todos sus dispositivos
+    try:
+        if re.search(r'saldo|cr[eé]dito|balance|insufficient|top.?up|no llega|conect|NSFW con Aria|no entra en el saldo|espacio|lleno|hacen falta', str(err), re.I): return   # sin saldo no es un fallo de la imagen
+        m = meta if isinstance(meta, dict) else {}
+        o = {'id': 'f' + hashlib.sha1(f'{time.time()}{err}'.encode()).hexdigest()[:10], 't': time.time() * 1000, 'tab': str(m.get('tab') or 'crear')[:20], 'name': str(m.get('name') or 'Creación')[:80], 'err': str(err)[:400], 'modelo': str(modelo or m.get('model') or '')[:60], 'thumb': ''}
+        with _fall_l: L = _fall_lee(); L.insert(0, o); _fall_guarda(L)
+    except Exception as e: plog('fallida ✕ ' + str(e)[:120])
 _TOPES = {}; _TOPES_L = threading.Lock()
 def _tope(que, n, seg):   # v260: como mucho n veces cada seg segundos por cuenta (en memoria)
     k = (uid(), que); ahora = time.time()
@@ -2337,6 +2354,9 @@ class H(SimpleHTTPRequestHandler):
         if u.path == '/api/video/modelos':   # v255: los modelos de vídeo de WaveSpeed que se ofrecen, con sus opciones
             try: return self._json(200, {'ok': True, 'modelos': _vinfo() if (load_ws() or _casa_base()) else []})
             except Exception as e: return self._json(200, {'ok': False, 'modelos': [], 'error': str(e)[:160]})
+        if u.path == '/api/fallidas':   # v270
+            try: return self._json(200, {'ok': True, 'items': _fall_lee()})
+            except Exception: return self._json(200, {'ok': True, 'items': []})
         if u.path == '/api/bolsa':   # v269: 🎁 la bolsa del saldo regalo (solo el equipo)
             if not SERVIDOR or aria_fija(): return self._json(403, {'error': 'solo el equipo'})
             if 'fresco' in q: _bolsa_saldo(True)
@@ -2888,6 +2908,10 @@ class H(SimpleHTTPRequestHandler):
                     with open(fp, 'a', encoding='utf-8') as fh: fh.write(json.dumps(reg, ensure_ascii=False) + '\n')
             except Exception: pass
             return self._json(200, {'ok': True})
+        if self.path == '/api/fallidas':   # v270: {quitar:id}
+            n = int(self.headers.get('Content-Length') or 0); body = json.loads(self.rfile.read(n) or b'{}')
+            with _fall_l: L = [x for x in _fall_lee() if x.get('id') != body.get('quitar')]; _fall_guarda(L)
+            return self._json(200, {'ok': True, 'items': L})
         if self.path == '/api/bolsa':   # v269: regalar saldo (a una cuenta o a todas) y el aviso — solo el equipo
             n = int(self.headers.get('Content-Length') or 0); body = json.loads(self.rfile.read(n) or b'{}')
             if not SERVIDOR or aria_fija(): return self._json(403, {'error': 'solo el equipo'})
@@ -3468,7 +3492,7 @@ class H(SimpleHTTPRequestHandler):
             rid = res.get('request_id'); jobs[rid] = {'t0': time.time(), 'item': body.get('item', 'img'), 'model': mkey, 'usd': est.get('usd'), 'credits': est.get('credits'), 'meta': body.get('meta') or {}}
             return self._json(200, {'request_id': rid, 'usd': est.get('usd'), 'credits': est.get('credits'), 'model': M['ep'], 'model_key': mkey, 'status_url': res.get('status_url'), 'image_urls': urls, 'payload': {k: v for k, v in payload.items() if k not in ('image_urls', 'image_url')}})
         except Exception as e:
-            plog('generar ✕ ' + str(e)); return self._json(400, {'error': str(e)})
+            plog('generar ✕ ' + str(e)); fallida_apunta((locals().get('body') or {}).get('meta') if isinstance(locals().get('body'), dict) else None, str(e)); return self._json(400, {'error': str(e)})
 
     def do_video(self):   # {mode:i2v|r2v, prompt, image:{path|data}, refs:[{path}], duration, resolution, aspect, audio, item, usd}
         n = int(self.headers.get('Content-Length') or 0); body = json.loads(self.rfile.read(n) or b'{}')
@@ -3539,7 +3563,7 @@ class H(SimpleHTTPRequestHandler):
             rid = res_.get('request_id'); jobs[rid] = {'t0': time.time(), 'item': body.get('item', 'video'), 'kind': 'video', 'model': mode, 'usd': body.get('usd'), 'credits': None, 'meta': body.get('meta') or {}}
             return self._json(200, {'request_id': rid, 'model': M['ep'], 'usd': body.get('usd'), 'status_url': res_.get('status_url'), 'payload': {k: v for k, v in payload.items() if k not in ('image_url', 'image_urls')}})
         except Exception as e:
-            plog('video ✕ ' + str(e)); return self._json(400, {'error': str(e)})
+            plog('video ✕ ' + str(e)); fallida_apunta(dict((body.get('meta') or {}), tab='video') if isinstance(body, dict) else None, str(e)); return self._json(400, {'error': str(e)})
 
 _vig_en = set(); _vig_sem = threading.BoundedSemaphore(8)
 def _vigila_uno(rid, j):   # modo servidor: sin llamarse por HTTP — el estado se pide directamente, como la cuenta dueña del trabajo (hasta 8 a la vez)
