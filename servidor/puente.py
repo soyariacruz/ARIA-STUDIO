@@ -43,7 +43,7 @@ MAX_CUERPO = 40 * 1024 * 1024    # tope de una petición en modo servidor
 MAX_BIBLIO = 200 * 1024 * 1024   # tope de un fichero de la biblioteca común al copiarlo
 KINDS = ('vestidor', 'hair', 'expr')   # las bibliotecas a las que una cuenta puede añadir lo suyo
 _UUID = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
-VERSION = 303
+VERSION = 304
 _ctx = threading.local()   # la cuenta del hilo: la pone cada petición (y, a mano, cada hilo de fondo)
 def uid(): return getattr(_ctx, 'uid', None)   # en local siempre None
 DUENOS = tuple(e.strip().lower() for e in (os.environ.get('ARIA_DUENOS') or 'mix1994max@gmail.com').split(',') if e.strip())   # cuentas que pueden cambiar a Aria Cruz (en la web, la de Max)
@@ -1670,6 +1670,11 @@ def _efx_guarda(E):
     tmp = _efx_f() + '.tmp'
     with open(tmp, 'w', encoding='utf-8') as o: json.dump(E, o, ensure_ascii=False)
     os.replace(tmp, _efx_f())
+def _vistos_fp(): return os.path.join(_dir(), 'vistos.json')   # v304: las ventanas de aviso que esta cuenta ya ha visto (no se repiten)
+def _vistos():
+    try: L = json.load(open(_vistos_fp(), encoding='utf-8'))
+    except Exception: L = []
+    return [x for x in L if isinstance(x, str)][:300] if isinstance(L, list) else []
 def _pub_lista():   # todo lo publicado por todas las cuentas, lo más nuevo primero (caché de 20 s; se vacía con cada cambio)
     if not SERVIDOR or not DATOS: return []
     with _PUB_L:
@@ -1944,6 +1949,10 @@ def _com_lee():
     if not isinstance(d, dict): d = {}
     for k, v in (('sol', []), ('msgs', {}), ('alias', {}), ('visto', {}), ('foto', {}), ('sig', {}), ('borr', {})):
         if not isinstance(d.get(k), type(v)): d[k] = v
+    if any('demo-' in k for k in d['msgs']) or any(isinstance(x, dict) and 'demo-' in f"{x.get('de')}|{x.get('para')}" for x in d['sol']):   # v304: lo que quede de la demo, fuera
+        d['msgs'] = {k: v for k, v in d['msgs'].items() if 'demo-' not in k}; d['sol'] = [x for x in d['sol'] if isinstance(x, dict) and 'demo-' not in f"{x.get('de')}|{x.get('para')}"]
+    for k_ in list(d['sig']):
+        if isinstance(d['sig'][k_], list) and any(str(x).startswith('demo-') for x in d['sig'][k_]): d['sig'][k_] = [x for x in d['sig'][k_] if not str(x).startswith('demo-')]
     ahora = time.time()
     for x in d['sol']:   # v223: un permiso con plazo se apaga solo al vencer (se ve terminado en cuanto se lee; se guarda con el siguiente cambio)
         if isinstance(x, dict) and x.get('estado') == 'aceptada' and isinstance(x.get('hasta'), (int, float)) and x['hasta'] < ahora: x['estado'] = 'terminada'; x['caducada'] = True; x['t2'] = x['hasta']
@@ -2001,13 +2010,25 @@ COM_DEMO = [   # creadores de DEMO para ver cómo queda la Comunidad con gente: 
     {'cid': 'demo-noa', 'alias': 'Noa Creates', 'demo': True, 'personajes': [{'pid': p, 'nombre': n, 'usuario': u, 'edad': e, 'bio': b, 'avatar': True} for p, n, u, e, b in (
         ('julia-mar', 'Julia Mar', '@juliamar', 24, 'Skincare honesto.'), ('dani-rivas', 'Dani Rivas', '@danirivas', 26, 'Tecnología y noches de ordenador.'), ('alba-nieto', 'Alba Nieto', '@albanieto', 23, 'Moda minimal en blanco y negro.'),
         ('clara-voss', 'Clara Voss', '@claravoss', 25, 'Gaming y ciencia ficción.'), ('ines-palma', 'Inés Palma', '@inespalma', 22, 'Coches clásicos y road trips.'), ('zoe-marin', 'Zoe Marín', '@zoemarin', 24, 'Vida real, sin filtros.'))]}]
+COM_DEMO = []   # v304: fuera la demo (Max, 6 oct): ni creadores ni mensajes de ejemplo
 ARIA_CID = 'caria'   # Aria en la comunidad: no es una cuenta, es el personaje de muestra. Le manda a cada cuenta una solicitud de ejemplo y contesta con un mensaje fijo
-ARIA_HOLA = '¡Hola! Soy Aria 💕 Te mando esta solicitud para que veas cómo funcionan las colaboraciones: acéptala y podremos crear imágenes juntas.'
+ARIA_HOLA = '¡Hola! Soy Aria 💕 Ya puedes crear conmigo cuando quieras: elígeme en Crear imagen junto a tu personaje y salimos juntas.'
 ARIA_RESP = '¡Genial! Conmigo puedes crear cuando quieras: elígeme en Crear imagen junto a tu personaje. (Soy el personaje de muestra: este chat es un ejemplo de cómo hablarás con otros creadores.)'
-def _com_aria(d, yo):   # la solicitud de ejemplo de Aria, una sola vez por cuenta → True si ha habido que crearla
-    if any(x.get('de') == ARIA_CID and x.get('para') == yo for x in d['sol']): return False
-    t = time.time(); d['sol'].append({'id': 's' + hashlib.sha1(os.urandom(12)).hexdigest()[:12], 'de': ARIA_CID, 'para': yo, 'pid': 'aria', 'msg': ARIA_HOLA, 'estado': 'pendiente', 't': t, 'demo': True})
-    d['msgs'].setdefault(_com_par(yo, ARIA_CID), []).append({'de': ARIA_CID, 'x': ARIA_HOLA, 't': t}); return True
+def _com_aria(d, yo):   # v304: Aria da permiso a cada cuenta para crear con ella (sin aceptar nada) y sigue a sus personajes; lo nuevo, con aviso en Mensajes → True si ha cambiado algo
+    t = time.time(); cambio = False; M = d['msgs'].setdefault(_com_par(yo, ARIA_CID), [])
+    s_ = next((x for x in d['sol'] if x.get('de') == ARIA_CID and x.get('para') == yo), None)
+    if not s_: d['sol'].append({'id': 's' + hashlib.sha1(os.urandom(12)).hexdigest()[:12], 'de': ARIA_CID, 'para': yo, 'pid': 'aria', 'msg': ARIA_HOLA, 'estado': 'aceptada', 't': t, 't2': t, 'demo': True}); M.append({'de': ARIA_CID, 'x': ARIA_HOLA, 't': t}); cambio = True
+    elif s_.get('estado') == 'pendiente': s_['estado'] = 'aceptada'; s_['t2'] = t; M.append({'de': ARIA_CID, 'x': ARIA_HOLA, 't': t}); cambio = True
+    try: CU = _com_cuentas(); pjs = _com_personajes(CU[yo]) if yo in CU else []
+    except Exception: pjs = []
+    L = d['sig'].setdefault(ARIA_CID, [])
+    for p in pjs:
+        k = f"{yo}:{p.get('pid')}"
+        if not p.get('pid') or k in L: continue
+        L.append(k); cambio = True
+        if p.get('nuevo'): M.append({'de': ARIA_CID, 'x': f"⭐ ¡Me encanta {p.get('nombre') or 'tu personaje'}! Ya le sigo. Cuando quieras, cread algo juntas.", 't': t + 0.5})   # solo los recién creados avisan; los de antes, en silencio
+    if cambio: del M[:-500]; d['sig'][ARIA_CID] = L[-5000:]
+    return cambio
 def _com_par(a, b): return '|'.join(sorted([a, b]))
 # ---- el «préstamo» (v202): con una colaboración ACEPTADA, quien la pidió puede crear con el personaje del otro creador.
 #      Su ficha y su cuerpo solo los lee el servidor al generar; al navegador solo le llega su avatar. Nunca con NSFW. Un personaje oculto no se presta.
@@ -2647,6 +2668,7 @@ class H(SimpleHTTPRequestHandler):
                 P = k.split('/'); v = v if isinstance(v, dict) else {}
                 out.append({'k': k, 'f': 'assets/publica/' + k, 'kind': 'video' if len(P) == 3 and P[1] == 'video' else 'image', 'autor': str(d['alias'].get(P[0]) or 'Creador sin nombre')[:40], 'por': str(d['alias'].get(v.get('por')) or 'Creador sin nombre')[:40], 't': v.get('t') or 0, 'vista': bool(v.get('vista'))})
             return self._json(200, {'ok': True, 'items': out})
+        if u.path == '/api/vistos': return self._json(200, {'ok': True, 'vistos': _vistos()})   # v304
         if u.path == '/api/efectos': return self._json(200, {'ok': True, 'items': _efx_lee()})   # v300
         if u.path == '/api/publicas':   # v237: la Fototeca / Filmoteca de la comunidad (tipo=image|video · cid=un creador · sig=1 solo de quien sigo)
             q = urllib.parse.parse_qs(u.query); tipo = (q.get('tipo') or [''])[0]; de = (q.get('cid') or [''])[0]; yo = _cid(); L = _pub_lista()
@@ -2915,6 +2937,12 @@ class H(SimpleHTTPRequestHandler):
                     if con == ARIA_CID and not any(m.get('x') == ARIA_RESP for m in M): M.append({'de': ARIA_CID, 'x': ARIA_RESP, 't': time.time() + 1})
                     del M[:-500]; _com_guarda(d); return self._json(200, {'ok': True})
             return self._json(400, {'error': 'acción desconocida'})
+        if self.path == '/api/vistos':   # v304: apuntar que esta cuenta ya ha visto un aviso
+            n = int(self.headers.get('Content-Length') or 0); body = json.loads(self.rfile.read(min(n, 2000)) or b'{}'); k = str(body.get('k') or '')
+            if not re.fullmatch(r'[a-z0-9_.-]{1,60}', k): return self._json(400, {'error': 'aviso no válido'})
+            L = _vistos()
+            if k not in L: L.append(k); fp = _vistos_fp(); open(fp + '.tmp', 'w', encoding='utf-8').write(json.dumps(L[-300:])); os.replace(fp + '.tmp', fp)
+            return self._json(200, {'ok': True})
         if self.path == '/api/publicas/subir':   # v303: subir a la comunidad algo hecho FUERA de la web — solo con su archivo Y su prompt
             if not SERVIDOR or not DATOS: return self._json(400, {'error': 'Esto solo funciona en la web'})
             n = int(self.headers.get('Content-Length') or 0); body = json.loads(self.rfile.read(n) or b'{}')
@@ -3316,7 +3344,8 @@ class H(SimpleHTTPRequestHandler):
             try: d0 = json.load(open(_voces_fp(), encoding='utf-8'))
             except Exception: d0 = {}
             d0 = d0 if isinstance(d0, dict) else {}
-            d0[pid] = {k: str(body.get(k) or '').strip()[:600] for k in ('eleven', 'eleven_nombre', 'preset', 'seed', 'desc')}
+            prev = d0.get(pid) if isinstance(d0.get(pid), dict) else (d.get(pid) if isinstance(d.get(pid), dict) else {})   # v304: lo que no llega, se conserva
+            d0[pid] = {k: str((body.get(k) if k in body else prev.get(k)) or '').strip()[:600] for k in ('eleven', 'eleven_nombre', 'preset', 'seed', 'desc')}
             fp = _voces_fp(); open(fp + '.tmp', 'w', encoding='utf-8').write(json.dumps(d0, ensure_ascii=False)); os.replace(fp + '.tmp', fp)
             return self._json(200, {'ok': True, 'voces': _voces()})
         if self.path == '/api/prompter':   # v297: {tipo:'audio', pedido, contexto} → {prompt, nota, usd}
