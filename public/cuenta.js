@@ -86,7 +86,7 @@ html.sinapi #livedot,html.sinapi .meter{display:none!important}
     root.classList.add('gate');
   }
   cara('');
-  async function salir() { try { await CU.sb.auth.signOut(); } catch (x) {} location.reload(); }   // recargar: no queda nada de esta cuenta en la página
+  async function salir() { try { await CU.sb.auth.signOut(); } catch (x) {} try { sessionStorage.removeItem('am_comtam_s'); } catch (x) {} location.reload(); }   // recargar: no queda nada de esta cuenta en la página
   G('gateOut').onclick = (ev) => { ev.target.disabled = true; salir(); };
 
   const info = (u) => { const m = u.user_metadata || {}; return { name: m.full_name || m.name || (u.email || '').split('@')[0], email: u.email || '', pic: m.avatar_url || m.picture || '' }; };

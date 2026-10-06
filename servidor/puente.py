@@ -43,7 +43,7 @@ MAX_CUERPO = 40 * 1024 * 1024    # tope de una petición en modo servidor
 MAX_BIBLIO = 200 * 1024 * 1024   # tope de un fichero de la biblioteca común al copiarlo
 KINDS = ('vestidor', 'hair', 'expr')   # las bibliotecas a las que una cuenta puede añadir lo suyo
 _UUID = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
-VERSION = 313
+VERSION = 314
 _ctx = threading.local()   # la cuenta del hilo: la pone cada petición (y, a mano, cada hilo de fondo)
 def uid(): return getattr(_ctx, 'uid', None)   # en local siempre None
 DUENOS = tuple(e.strip().lower() for e in (os.environ.get('ARIA_DUENOS') or 'mix1994max@gmail.com').split(',') if e.strip())   # cuentas que pueden cambiar a Aria Cruz (en la web, la de Max)
@@ -2274,6 +2274,7 @@ Devuelves UN solo prompt final, EN ESPAÑOL, con LAS MISMAS secciones y en el mi
 - Marca entre ⟦ y ⟧ lo que venga de LO ELEGIDO (los nombres de sección también) y entre ⟪ y ⟫ lo que venga de LA IDEA del usuario, para que la web los resalte con colores distintos.
 - Sin explicaciones: responde SOLO con el prompt. Máximo unos 3500 caracteres."""
 _MON_L = threading.Lock()
+_VPRE = {}   # v314: precios exactos de WaveSpeed ya preguntados (6 h)
 def _montar_gasto(usd=0.0, quien=None):   # lo que lleva hoy la clave de la casa → {'dia', 'usd', 'por': {cuenta: veces}}
     fp = os.path.join(DATOS or ROOT, 'claude_casa.json'); hoy = time.strftime('%Y-%m-%d')
     with _MON_L:
@@ -3049,6 +3050,28 @@ class H(SimpleHTTPRequestHandler):
                     if con == ARIA_CID and not any(m.get('x') == ARIA_RESP for m in M): M.append({'de': ARIA_CID, 'x': ARIA_RESP, 't': time.time() + 1})
                     del M[:-500]; _com_guarda(d); return self._json(200, {'ok': True})
             return self._json(400, {'error': 'acción desconocida'})
+        if self.path == '/api/video/precio':   # v314: el precio EXACTO de WaveSpeed para ese modelo, modo, duración, resolución, formato y audio (no genera ni cobra; con la clave de la cuenta)
+            n = int(self.headers.get('Content-Length') or 0); body = json.loads(self.rfile.read(min(n, 4000)) or b'{}')
+            md = _vmodos(str(body.get('vm') or ''))
+            if not md: return self._json(200, {'ok': False, 'error': 'modelo desconocido'})
+            mid = md.get(str(body.get('mode') or '')) or md.get('i2v') or md.get('t2v') or next(iter(md.values())); p = _vcat()[mid]['p']; en = lambda k_: ((p.get(k_) or {}).get('enum') or [])
+            inp = {'prompt': 'x'}
+            if 'image' in p: inp['image'] = 'https://example.com/a.jpg'
+            if 'duration' in p:
+                d0 = int(body.get('duration') or 5); E = en('duration')
+                inp['duration'] = min(E, key=lambda x: abs(int(x) - d0)) if E else d0
+            if 'resolution' in p and body.get('resolution'): inp['resolution'] = str(body['resolution'])
+            if 'aspect_ratio' in p and body.get('aspect'): inp['aspect_ratio'] = str(body['aspect'])
+            for k_ in ('generate_audio', 'sound', 'audio'):
+                if (p.get(k_) or {}).get('type') == 'boolean': inp[k_] = bool(body.get('audio')); break
+            ck = json.dumps([mid, inp], sort_keys=True); c = _VPRE.get(ck)
+            if c and time.time() - c[0] < 6 * 3600: return self._json(200, {'ok': True, 'usd': c[1], 'lista': c[2], 'mid': mid})
+            try: dd = (ws('POST', '/api/v3/model/price', {'model_id': mid, 'inputs': inp}) or {}).get('data') or {}
+            except Exception as e: return self._json(200, {'ok': False, 'error': str(e)[:160]})
+            if dd.get('price') is None: return self._json(200, {'ok': False, 'error': 'sin precio'})
+            lista = float(dd.get('price') or 0); usd = float(dd['discounted_price']) if dd.get('discounted_price') is not None else lista
+            if len(_VPRE) > 3000: _VPRE.clear()
+            _VPRE[ck] = (time.time(), usd, lista); return self._json(200, {'ok': True, 'usd': usd, 'lista': lista, 'mid': mid})
         if self.path == '/api/prompt/montar':   # v307: la idea del usuario + lo elegido → un solo prompt (Claude Haiku; lo paga la casa)
             n = int(self.headers.get('Content-Length') or 0); body = json.loads(self.rfile.read(min(n, 60000)) or b'{}')
             idea = str(body.get('idea') or '')[:4000]; auto = str(body.get('auto') or '')[:9000]
