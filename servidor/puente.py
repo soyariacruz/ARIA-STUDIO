@@ -43,7 +43,7 @@ MAX_CUERPO = 40 * 1024 * 1024    # tope de una petición en modo servidor
 MAX_BIBLIO = 200 * 1024 * 1024   # tope de un fichero de la biblioteca común al copiarlo
 KINDS = ('vestidor', 'hair', 'expr')   # las bibliotecas a las que una cuenta puede añadir lo suyo
 _UUID = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
-VERSION = 321
+VERSION = 322
 _ctx = threading.local()   # la cuenta del hilo: la pone cada petición (y, a mano, cada hilo de fondo)
 def uid(): return getattr(_ctx, 'uid', None)   # en local siempre None
 DUENOS = tuple(e.strip().lower() for e in (os.environ.get('ARIA_DUENOS') or 'mix1994max@gmail.com').split(',') if e.strip())   # cuentas que pueden cambiar a Aria Cruz (en la web, la de Max)
@@ -2323,6 +2323,7 @@ Devuelves UN solo prompt final, EN ESPAÑOL, con LAS MISMAS secciones y en el mi
 - Marca entre ⟦ y ⟧ lo que venga de LO ELEGIDO (los nombres de sección también) y entre ⟪ y ⟫ lo que venga de LA IDEA del usuario, para que la web los resalte con colores distintos.
 - Sin explicaciones: responde SOLO con el prompt. Máximo unos 3500 caracteres."""
 _MON_L = threading.Lock()
+_ESC = {}   # v322: quién está escribiendo a quién ahora mismo ((de, para) → cuándo), solo en memoria
 _VPRE = {}   # v314: precios exactos de WaveSpeed ya preguntados (6 h)
 def _montar_gasto(usd=0.0, quien=None):   # lo que lleva hoy la clave de la casa → {'dia', 'usd', 'por': {cuenta: veces}}
     fp = os.path.join(DATOS or ROOT, 'claude_casa.json'); hoy = time.strftime('%Y-%m-%d')
@@ -2738,7 +2739,7 @@ class H(SimpleHTTPRequestHandler):
                 if not M: continue
                 chats.append({'con': otra, 'ultimo': M[-1], 'sin_leer': sum(1 for m in M if m.get('de') != yo and m.get('t', 0) > visto)})
             chats.sort(key=lambda c: -c['ultimo'].get('t', 0))
-            return self._json(200, {'ok': True, 'yo': yo, 'alias': str(d['alias'].get(yo) or ''), 'cuentas': cuentas, 'solicitudes': [x for x in d['sol'] if yo in (x.get('de'), x.get('para'))][-200:], 'soy_aria': uid() == ARIA_UID, 'chats': chats, 'borrados': (d['borr'].get(yo) or {}), 'avisos': _com_avisos(d, yo), 'denuncias': (0 if aria_fija() else sum(1 for v in (d.get('den') or {}).values() if not (isinstance(v, dict) and v.get('vista')))), 'siguiendo': [x for x in d['sig'].get(yo) or [] if isinstance(x, str)], 'carpetas': _comp_lista(d, yo), 'prestados': _prest_lista(d, yo)})
+            return self._json(200, {'ok': True, 'yo': yo, 'alias': str(d['alias'].get(yo) or ''), 'cuentas': cuentas, 'solicitudes': [x for x in d['sol'] if yo in (x.get('de'), x.get('para'))][-200:], 'soy_aria': uid() == ARIA_UID, 'escriben': [k_[0] for k_, t_ in list(_ESC.items()) if k_[1] == yo and time.time() - t_ < 7], 'chats': chats, 'borrados': (d['borr'].get(yo) or {}), 'avisos': _com_avisos(d, yo), 'denuncias': (0 if aria_fija() else sum(1 for v in (d.get('den') or {}).values() if not (isinstance(v, dict) and v.get('vista')))), 'siguiendo': [x for x in d['sig'].get(yo) or [] if isinstance(x, str)], 'carpetas': _comp_lista(d, yo), 'prestados': _prest_lista(d, yo)})
         if u.path == '/api/comunidad/avisos':   # (la solicitud de ejemplo de Aria nace aquí también: así el aviso sale sin haber abierto la comunidad)
             yo = _cid()
             with _com_l:
@@ -2770,7 +2771,7 @@ class H(SimpleHTTPRequestHandler):
                 d = _com_lee(); M = d['msgs'].get(_com_par(yo, con)) or []
                 if M and (d['visto'].get(yo) or {}).get(con, 0) < M[-1].get('t', 0): d['visto'].setdefault(yo, {})[con] = time.time(); _com_guarda(d)
             b_ = (d['borr'].get(yo) or {}).get(con, 0)   # v300
-            return self._json(200, {'ok': True, 'mensajes': [m for m in M if m.get('t', 0) > b_][-300:]})
+            return self._json(200, {'ok': True, 'mensajes': [m for m in M if m.get('t', 0) > b_][-300:], 'escribe': time.time() - _ESC.get((con, yo), 0) < 7})   # v322
         if u.path == '/api/comunidad/avatar':   # el avatar de un personaje PÚBLICO de otra cuenta (lo único suyo que se sirve)
             cid = (q.get('c') or [''])[0]; pid = (q.get('p') or [''])[0]; grande = (q.get('t') or [''])[0] == 'foto'
             if (q.get('t') or [''])[0] == 'creador':   # v229: la foto de un creador (la sube él; es pública dentro de la Comunidad)
@@ -3042,6 +3043,12 @@ class H(SimpleHTTPRequestHandler):
                     k = f"{str(body.get('cid') or '')[:40]}:{str(body.get('pid') or '')[:80]}"; L = [x for x in d['sig'].get(yo) or [] if isinstance(x, str) and x != k]
                     if body.get('on', True) and re.fullmatch(r'[a-z0-9-]+:[A-Za-z0-9_.-]+', k): L.append(k)
                     d['sig'][yo] = L[-500:]; _com_guarda(d); return self._json(200, {'ok': True, 'siguiendo': d['sig'][yo]})
+                if ac == 'escribe':   # v322: «escribiendo…» (dura unos segundos)
+                    con = str(body.get('con') or '')[:40]
+                    if con and con != yo:
+                        if len(_ESC) > 5000: _ESC.clear()
+                        _ESC[(yo, con)] = time.time()
+                    return self._json(200, {'ok': True})
                 if ac == 'borrar_chat':   # v300: eliminar una conversación de MI lado (como en WhatsApp): el otro la sigue teniendo; si vuelve a escribir, reaparece
                     con = str(body.get('con') or '')[:40]
                     if not con or con == yo: return self._json(400, {'error': 'conversación no válida'})
