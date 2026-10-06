@@ -619,7 +619,7 @@ C.chars = C.chars || [{ id: 'aria', name: C.perfil.name || 'Aria Cruz', avatar: 
 document.addEventListener('DOMContentLoaded', () => { const mt = document.querySelector('header .meter'); if (mt) { mt.style.cursor = 'pointer'; mt.addEventListener('click', () => openGasto()); } });   // v266: «Gasto» abre el registro
 document.addEventListener('DOMContentLoaded', () => { const d = document.getElementById('livedot'); if (d) { d.style.cursor = 'pointer'; d.title = 'Tu API: clave y saldo'; d.addEventListener('click', () => openClaves()); } });
 const esPrest = id => typeof id === 'string' && id.startsWith('com:');   // «com:<creador>:<personaje>» = el personaje de otro creador, prestado por una colaboración aceptada
-function prestInfo(id) { // un personaje prestado: solo entra como persona AÑADIDA; su ficha la pone el servidor al generar (aquí solo llega su avatar)
+function prestInfo(id) { // un personaje prestado: solo entra como persona AÑADIDA · v330: su ficha 360 ya se ve en Referencias (con la colaboración aceptada)
   if (!esPrest(id)) return null; const L = (COM && COM.D && COM.D.prestados) || []; const t = id.split(':'); const q = L.find(x => x.cid === t[1] && x.pid === t[2]); if (!q) return null;
   const base = `assets/prestamo/${q.cid}/${q.pid}/`; const eyes = window.pjEyes ? pjEyes(q) : '';
   return { id, prestado: true, nsfwOk: !!q.nsfw, de: q.creador || 'otro creador', name: q.nombre, short: (q.nombre || 'Personaje').split(' ')[0], avatar: base + 'foto.jpg', ficha: base + 'ficha.jpg', cuerpo: q.cuerpo ? base + 'cuerpo.jpg' : '', foto: base + 'foto.jpg', gen: q.genero || 'fem', body: window.pjBody ? pjBody(q) : '', ident: 'same face' + (eyes ? ', ' + eyes + ' eyes' : ''), hair: window.pjHair ? pjHair(q) : { color: '', style: '' } }; }

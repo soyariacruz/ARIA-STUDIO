@@ -43,7 +43,7 @@ MAX_CUERPO = 40 * 1024 * 1024    # tope de una petición en modo servidor
 MAX_BIBLIO = 200 * 1024 * 1024   # tope de un fichero de la biblioteca común al copiarlo
 KINDS = ('vestidor', 'hair', 'expr')   # las bibliotecas a las que una cuenta puede añadir lo suyo
 _UUID = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
-VERSION = 329
+VERSION = 330
 _ctx = threading.local()   # la cuenta del hilo: la pone cada petición (y, a mano, cada hilo de fondo)
 def uid(): return getattr(_ctx, 'uid', None)   # en local siempre None
 DUENOS = tuple(e.strip().lower() for e in (os.environ.get('ARIA_DUENOS') or 'mix1994max@gmail.com').split(',') if e.strip())   # cuentas que pueden cambiar a Aria Cruz (en la web, la de Max)
@@ -2619,8 +2619,8 @@ class H(SimpleHTTPRequestHandler):
             if 'm=1' in (urllib.parse.urlparse(self.path).query or ''): full = _mini_de(full)   # v239: miniatura
             self._cc = 'private, no-cache'; self._fijo = full
             return super().do_HEAD() if cabeza else super().do_GET()
-        if rel.startswith('assets/prestamo/'):   # del personaje de otro creador, al navegador solo se le sirve el avatar (su ficha y su cuerpo los lee el servidor al generar)
-            full = _prestado(rel) if rel.endswith('/foto.jpg') else None
+        if rel.startswith('assets/prestamo/'):   # del personaje de otro creador: su foto, su ficha 360 y su cuerpo · v330: también la ficha (Max: quien colabora la ve en Referencias), solo con la colaboración aceptada
+            full = _prestado(rel)
             if not full: return self._corta(404)
             self._cc = 'private, no-cache'; self._fijo = full
             return super().do_HEAD() if cabeza else super().do_GET()
@@ -2853,7 +2853,16 @@ class H(SimpleHTTPRequestHandler):
             uu = _com_cuentas().get(cid, '__no__')
             if uu == '__no__' or not _pid_ok(pid) or not any(x['pid'] == pid for x in _com_personajes(uu, cid == _cid())): return self._corta(404)
             with como(uu): base = os.path.join(pers_dir(), pid)
-            fp = next((os.path.join(base, n) for n in (('vista_frente.jpg', 'avatar.jpg', 'foto.jpg') if grande else ('avatar.jpg', 'foto.jpg')) if os.path.isfile(os.path.join(base, n))), None)   # v230: en grande, su vista de frente o la foto de perfil que ha encuadrado su dueña (no la hoja entera)
+            fp = next((os.path.join(base, n) for n in (('vista_frente.jpg', 'avatar.jpg', 'foto.jpg') if grande else ('avatar.jpg', 'foto.jpg')) if os.path.isfile(os.path.join(base, n))), None)
+            if not fp:   # v330: su foto de perfil con otro nombre (la que dice su ficha)
+                try:
+                    pj_ = json.load(open(os.path.join(base, 'personaje.json'), encoding='utf-8'))
+                    for k_ in ('avatar', 'foto'):
+                        r_ = _rel_ok(str(pj_.get(k_) or '').split('?')[0])
+                        if r_ and r_.startswith('assets/personajes/' + pid + '/'):
+                            f_ = os.path.join(base, os.path.basename(r_))
+                            if os.path.isfile(f_): fp = f_; break
+                except Exception: pass   # v230: en grande, su vista de frente o la foto de perfil que ha encuadrado su dueña (no la hoja entera)
             if not fp: return self._corta(404)
             if not grande: fp = _avatar_centrado(base, fp) or fp   # v312: con la cara centrada
             elif os.path.basename(fp) != 'vista_frente.jpg':   # v313: sin vista de frente, la grande también centrada (sacada de su ficha entera)
