@@ -56,6 +56,7 @@ nav button{width:74px;min-height:46px;flex:0 0 auto;border:0;background:none;bor
 nav button span{font-size:18px;line-height:1}
 nav button{letter-spacing:.02em!important;padding-left:2px;padding-right:2px;box-sizing:border-box}   /* v287: «Creaciones» se salía de su botón */
 nav button:hover{background:rgba(255,255,255,.7)}
+nav button.pronto{opacity:.45;cursor:default}nav button.pronto:hover{opacity:.7}nav button .nvpronto{display:block;font-style:normal;font-size:7px;letter-spacing:.1em;color:var(--acc);margin-top:1px}
 .navmore .navsep2{height:1px;background:var(--line);margin:5px 10px}
 nav button.on{background:#fff;color:var(--ink);box-shadow:0 2px 12px rgba(0,0,0,.07)}
 nav .sp{flex:1}
@@ -1715,6 +1716,8 @@ nav .navlib button.more span{font-size:9px}
   .mlbbox>*{min-width:0}
   .camcards{grid-template-columns:1fr 1fr!important}
   .navmore.mvsheet .navsep2{grid-column:1/-1;margin:2px 6px}
+  nav .audiobtn{display:none!important}
+  .navmore.mvsheet .it.dim{opacity:.5}
   /* v280: el menú de abajo, como una app — 5 botones grandes (Perfil, Imagen, Vídeo, Creaciones, Más); lo demás vive en «Más» */
   nav{justify-content:space-around!important;overflow:hidden!important;padding:4px 2px env(safe-area-inset-bottom)!important;gap:0!important}
   nav .navmain{display:contents!important}

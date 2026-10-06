@@ -121,6 +121,7 @@ function buildNav() {
     /* v253: Crear vídeo, abierto */
     if (LIBS.includes(k)) { const w = el('div', 'navlib'); w.appendChild(b); const mb = el('button', 'more', 'Más <span>▾</span>'); mb.title = 'Vestidor, Efectos, Movie looks, Cartoon, Expresiones y Peinados (Lugares y Poses, pronto)'; mb.onclick = () => navMore(w, LIBS_ORD.concat(LUGARES_ON ? ['lugar'] : []).map(q => q === '-' ? '-' : [TABS[q].icon, TABS[q].label, () => setTab(q), '', q === state.tab]).concat(['-']).concat(LUGARES_ON ? [] : [['📍', 'Lugares', () => toast('Lugares: próximamente'), 'pronto']]).concat([['🤸', 'Poses', () => toast('Poses: próximamente'), 'pronto']])); w.appendChild(mb); host.appendChild(w); }
     else host.appendChild(b); });
+  { const au = el('button', 'pronto audiobtn', '<span>🎙️</span>Crear audio<i class="nvpronto">pronto</i>'); au.title = 'Crear audio (la voz de tu personaje, ambiente, lip sync para vídeo): próximamente'; au.onclick = () => toast('🎙️ Crear audio: próximamente'); main.appendChild(au); }   // v289
   { nav.appendChild(el('div', 'nav-sep')); const cb = el('button', 'more combtn' + (COM && COM.on ? ' on' : ''), '<span>🤝</span>Comunidad');   /* v250: abierta */ cb.title = 'Comunidad: los creadores y sus personajes, colaboraciones y mensajes';
       cb.onclick = () => { if (COM.on) { comIr('dir').then(comPonAvisos); return; } COM.visto = true; comAbre('dir'); }; nav.appendChild(cb);
       const mb = el('button', 'more msgbtn', '<span>💬</span>Mensajes'); mb.title = 'Tus conversaciones con otros creadores: solicitudes, colaboraciones y carpetas compartidas'; mb.onclick = () => { if (COM.on) { comIr('msg').then(comPonAvisos); return; } COM.visto = true; comAbre('msg'); }; nav.appendChild(mb); }
@@ -2336,6 +2337,7 @@ function movilMas() { // v280: lo que en el móvil no cabe en la barra de abajo
   const L = [T('biblio'), T('videoteca'), '-'].concat(LIBS_ORD.map(q => q === '-' ? '-' : T(q))).concat(LUGARES_ON ? [T('lugar')] : []).concat(['-']);
   L.push(['🤝', 'Comunidad', () => { COM.visto = true; COM.on ? comIr('dir').then(comPonAvisos) : comAbre('dir'); }, '', COM && COM.on && COM.vista === 'dir']);
   L.push(['💬', 'Mensajes', () => { COM.visto = true; COM.on ? comIr('msg').then(comPonAvisos) : comAbre('msg'); }, COM.n ? COM.n + ' sin leer' : '', COM && COM.on && COM.vista === 'msg']);
+  L.push(['🎙️', 'Crear audio', () => toast('🎙️ Crear audio: próximamente'), 'pronto']);   // v289
   L.push(['💡', 'Feedback', () => window.fbAbre && fbAbre(), '']);
   if (state.interno) L.push(['⚙️', 'Admin', () => adminAbre(), '', !!$('#admpage')]);
   return L; }
