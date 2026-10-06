@@ -43,7 +43,7 @@ MAX_CUERPO = 40 * 1024 * 1024    # tope de una petición en modo servidor
 MAX_BIBLIO = 200 * 1024 * 1024   # tope de un fichero de la biblioteca común al copiarlo
 KINDS = ('vestidor', 'hair', 'expr')   # las bibliotecas a las que una cuenta puede añadir lo suyo
 _UUID = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
-VERSION = 291
+VERSION = 292
 _ctx = threading.local()   # la cuenta del hilo: la pone cada petición (y, a mano, cada hilo de fondo)
 def uid(): return getattr(_ctx, 'uid', None)   # en local siempre None
 DUENOS = tuple(e.strip().lower() for e in (os.environ.get('ARIA_DUENOS') or 'mix1994max@gmail.com').split(',') if e.strip())   # cuentas que pueden cambiar a Aria Cruz (en la web, la de Max)
@@ -635,12 +635,12 @@ def _adm_panel():
     with _visto_l: _visto_carga(); vis = json.loads(json.dumps(_VISTO))
     uid_de = {str(v.get('email') or '').lower(): k for k, v in vis.items()}
     for e, a in auth.items(): uid_de.setdefault(e, str(a.get('id') or '').lower())
-    d = _com_lee(); ahora = time.time(); filas = []
+    d = _com_lee(); ahora = time.time(); filas = []; ig = _ign_lee()
     for e in sorted(set(por_mail) | set(auth)):
         m = por_mail.get(e) or {}; a = auth.get(e) or {}; u = uid_de.get(e) or ''
         v = vis.get(u) or {}; tiene = bool(u and _UUID.fullmatch(u) and os.path.isdir(os.path.join(DATOS, 'usuarios', u)))
         x = _adm_cuenta(u) if tiene else {}
-        filas.append(dict({'email': e, 'acceso': e in por_mail, 'interno': bool(m.get('interno')), 'dueno': e in DUENOS, 'precio': m.get('precio'), 'alta': m.get('alta') or '',
+        filas.append(dict({'email': e, 'acceso': e in por_mail, 'ignorado': e in ig and e not in por_mail, 'interno': bool(m.get('interno')), 'dueno': e in DUENOS, 'precio': m.get('precio'), 'alta': m.get('alta') or '',
                            'cid': _cid(u) if tiene else '', 'alias': str(d['alias'].get(_cid(u)) or '')[:40] if tiene else '',
                            'registro': str(a.get('created_at') or '')[:19], 'login': str(a.get('last_sign_in_at') or '')[:19],
                            'visto': int(v.get('t') or 0), 'online': bool(v.get('t') and ahora - v['t'] < 180), 'movil': bool(v.get('movil'))}, **x))
@@ -649,7 +649,7 @@ def _adm_panel():
     res = {'filas': filas, 'disco': disco, 'cuota': CUOTA, 'bolsa': _bolsa_saldo(), 'casa_mes': round(_casa_global(), 4), 't': int(ahora),
            'resumen': {'miembros': sum(1 for r in filas if r['acceso']), 'equipo': sum(1 for r in filas if r['interno']), 'online': sum(1 for r in filas if r['online']),
                        'h24': sum(1 for r in filas if r['visto'] and ahora - r['visto'] < 86400), 'd7': sum(1 for r in filas if r['visto'] and ahora - r['visto'] < 7 * 86400),
-                       'sin_acceso': sum(1 for r in filas if not r['acceso']), 'nunca': sum(1 for r in filas if r['acceso'] and not r['login']),
+                       'sin_acceso': sum(1 for r in filas if not r['acceso'] and not r.get('ignorado')), 'nunca': sum(1 for r in filas if r['acceso'] and not r['login']),
                        'creaciones': sum(r.get('creaciones') or 0 for r in filas), 'gasto_mes': round(sum(r.get('gasto_mes') or 0 for r in filas), 2)}}
     _ADM_P[0], _ADM_P[1] = time.time(), res; return res
 def _ses_olvida(email):   # quien se quita de la lista deja de entrar ya, sin esperar a que caduque su sesión recordada
@@ -2114,6 +2114,14 @@ def _audio_info():   # modelos, precios del catálogo y voces disponibles
     vel = (((M.get('elevenlabs/voice-changer') or {}).get('p') or {}).get('voice_id') or {}).get('enum') or []
     vse = (((M.get('bytedance/seed-speech-tts-2.0') or {}).get('p') or {}).get('voice') or {}).get('enum') or []
     return {'modelos': r, 'voces_el': vel, 'voces_seed': vse, 'aria_voz': ARIA_VOZ}
+VOZ_ARIA = {'eleven': ARIA_VOZ, 'eleven_nombre': 'Ivanna (la voz de Aria)', 'preset': 'Alicia', 'seed': 'vivi_mixed_en_zh_ja_es_id',
+            'desc': 'Chica joven española de 25 años, voz cálida, cercana y casual; habla rápido cuando se emociona y se ríe con facilidad.'}
+def _voces_fp(): return os.path.join(casa(), 'voces.json')   # v292: la voz de cada personaje (en la casa de la cuenta, fuera de assets)
+def _voces():
+    try: d = json.load(open(_voces_fp(), encoding='utf-8'))
+    except Exception: d = {}
+    d = d if isinstance(d, dict) else {}
+    d['aria'] = dict(VOZ_ARIA, **(d.get('aria') or {})); return d
 def _audios():   # mis audios, lo último primero
     d = audio_dir(); out = []
     for n in os.listdir(d):
@@ -2129,12 +2137,18 @@ class _Trozo:   # v290: un trozo de un fichero (respuesta 206)
         k = self.n if k is None or k < 0 else min(k, self.n); d = self.f.read(k); self.n -= len(d); return d
     def close(self): self.f.close()
 _AV = [0.0, None]
+def _ign_fp(): return os.path.join(DATOS, 'adm_ignorados.json')
+def _ign_lee():   # v292: correos que el equipo ha decidido ignorar (no cuentan en la burbuja)
+    try: d = json.load(open(_ign_fp(), encoding='utf-8')); return set(x for x in d if isinstance(x, str))
+    except Exception: return set()
+def _ign_guarda(S):
+    fp = _ign_fp(); open(fp + '.tmp', 'w', encoding='utf-8').write(json.dumps(sorted(S))); os.replace(fp + '.tmp', fp)
 def _adm_avisos():   # v290: lo pendiente del equipo (la burbuja roja de ⚙️ Admin): quien entró con Google sin estar en la lista
     if _AV[1] is not None and time.time() - _AV[0] < 60: return _AV[1]
     L = {m['email'] for m in _mi_lista()}
     try: us = (_sb_adm('GET', '/auth/v1/admin/users?page=1&per_page=1000') or {}).get('users') or []
     except Exception: us = []
-    sin = sum(1 for x in us if isinstance(x, dict) and str(x.get('email') or '').lower() not in L)
+    ig = _ign_lee(); sin = sum(1 for x in us if isinstance(x, dict) and str(x.get('email') or '').lower() not in L and str(x.get('email') or '').lower() not in ig)
     r = {'sin_acceso': sin, 'total': sin}; _AV[0], _AV[1] = time.time(), r; return r
 class H(SimpleHTTPRequestHandler):
     timeout = 120 if SERVIDOR else None   # en servidor, una conexión que no dice nada se corta
@@ -2530,6 +2544,9 @@ class H(SimpleHTTPRequestHandler):
             if SERVIDOR and aria_fija(): return self._json(403, {'error': 'Crear audio: próximamente'})
             try: return self._json(200, dict({'ok': True, 'audios': _audios()}, **_audio_info()))
             except Exception as e: plog('audio ✕ ' + str(e)[:160]); return self._json(200, {'ok': False, 'error': 'No se ha podido abrir Crear audio.'})
+        if u.path == '/api/voz':   # v292: la voz de cada personaje (de momento, solo el equipo)
+            if SERVIDOR and aria_fija(): return self._json(403, {'error': 'próximamente'})
+            return self._json(200, {'ok': True, 'voces': _voces()})
         if u.path == '/api/admin/avisos':   # v290: la burbuja roja de ⚙️ Admin
             if not SERVIDOR or aria_fija(): return self._json(200, {'ok': True, 'total': 0})
             try: return self._json(200, dict({'ok': True}, **_adm_avisos()))
@@ -3098,6 +3115,18 @@ class H(SimpleHTTPRequestHandler):
             n = int(self.headers.get('Content-Length') or 0); body = json.loads(self.rfile.read(n) or b'{}')
             with _fall_l: L = [x for x in _fall_lee() if x.get('id') != body.get('quitar')]; _fall_guarda(L)
             return self._json(200, {'ok': True, 'items': L})
+        if self.path == '/api/voz':   # v292: {pid, eleven, eleven_nombre, preset, seed, desc}
+            n = int(self.headers.get('Content-Length') or 0); body = json.loads(self.rfile.read(min(n, 20000)) or b'{}')
+            if SERVIDOR and aria_fija(): return self._json(403, {'error': 'próximamente'})
+            pid = str(body.get('pid') or '')
+            if not re.fullmatch(r'[A-Za-z0-9_-]{1,60}', pid): return self._json(400, {'error': 'personaje no válido'})
+            d = _voces(); d.pop('aria', None) if pid != 'aria' else None
+            try: d0 = json.load(open(_voces_fp(), encoding='utf-8'))
+            except Exception: d0 = {}
+            d0 = d0 if isinstance(d0, dict) else {}
+            d0[pid] = {k: str(body.get(k) or '').strip()[:600] for k in ('eleven', 'eleven_nombre', 'preset', 'seed', 'desc')}
+            fp = _voces_fp(); open(fp + '.tmp', 'w', encoding='utf-8').write(json.dumps(d0, ensure_ascii=False)); os.replace(fp + '.tmp', fp)
+            return self._json(200, {'ok': True, 'voces': _voces()})
         if self.path == '/api/audio':   # v291: 🎙️ generar un audio {modelo, texto, voz, direccion, estabilidad, similitud, velocidad, duracion, audio:{data|path}}
             n = int(self.headers.get('Content-Length') or 0); body = json.loads(self.rfile.read(min(n, 30_000_000)) or b'{}')
             try:
@@ -3145,6 +3174,9 @@ class H(SimpleHTTPRequestHandler):
             if not _tope('admin', 60, 3600): return self._json(429, {'error': 'Demasiados cambios seguidos: espera un rato.'})
             ac = body.get('accion'); e = str(body.get('email') or '').strip().lower(); quien = (getattr(_ctx, 'email', '') or '').lower()
             try:
+                if ac in ('ignorar', 'no_ignorar'):   # v292: quien quiere entrar y no se le va a dar acceso: deja de contar en la burbuja
+                    S = _ign_lee(); (S.add if ac == 'ignorar' else S.discard)(e); _ign_guarda(S); _AV[1] = None; _ADM_P[1] = None
+                    return self._json(200, dict({'ok': True, 'yo_dueno': quien in DUENOS}, **_adm_panel()))
                 L = {m['email']: m for m in _mi_lista()}
                 if e not in L: return self._json(404, {'error': 'Ese correo no está en la lista de miembros: dale acceso primero.'})
                 if ac == 'equipo':
@@ -3175,7 +3207,7 @@ class H(SimpleHTTPRequestHandler):
                     if pr is not None and not (0 <= pr <= 5000): return self._json(400, {'error': 'El plan tiene que ser entre 0 y 5000 $.'})
                     filas = [dict({'email': e}, **({'precio': pr} if pr is not None else {})) for e in em if e not in equipo]   # las del equipo no se tocan
                     if filas: _sb_adm('POST', '/rest/v1/miembros', filas, 'resolution=merge-duplicates,return=minimal')
-                    nuevos = [e for e in em if e not in ya]; plog(f'👥 miembros: {quien} da de alta {len(nuevos)} nuevos ({len(filas)} filas)')
+                    _AV[1] = None; nuevos = [e for e in em if e not in ya]; plog(f'👥 miembros: {quien} da de alta {len(nuevos)} nuevos ({len(filas)} filas)')
                     return self._json(200, {'ok': True, 'nuevos': len(nuevos), 'actualizados': len(filas) - len(nuevos), 'equipo': len(em) - len(filas), 'items': _mi_lista()})
                 if ac == 'baja':
                     e = str(body.get('email') or '').strip().lower()
