@@ -43,7 +43,7 @@ MAX_CUERPO = 40 * 1024 * 1024    # tope de una petición en modo servidor
 MAX_BIBLIO = 200 * 1024 * 1024   # tope de un fichero de la biblioteca común al copiarlo
 KINDS = ('vestidor', 'hair', 'expr')   # las bibliotecas a las que una cuenta puede añadir lo suyo
 _UUID = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
-VERSION = 357
+VERSION = 358
 _ctx = threading.local()   # la cuenta del hilo: la pone cada petición (y, a mano, cada hilo de fondo)
 def uid(): return getattr(_ctx, 'uid', None)   # en local siempre None
 DUENOS = tuple(e.strip().lower() for e in (os.environ.get('ARIA_DUENOS') or 'mix1994max@gmail.com').split(',') if e.strip())   # cuentas que pueden cambiar a Aria Cruz (en la web, la de Max)
@@ -880,7 +880,7 @@ def _casa_key():
     return k
 CASA_KEY = _casa_key() if SERVIDOR else ''
 CASA_TOPE = float(os.environ.get('ARIA_CASA_TOPE') or 1000)   # $ al mes entre TODAS las cuentas: freno de seguridad, no recorta a nadie en condiciones normales
-CASA_MODELOS = ('seedflash', 'gptimg', 'nbp'); CASA_DEF = 'seedflash'   # con el saldo regalo: el barato por defecto y los dos que traen su propio filtro; Seedream 5.0 Pro (sin filtro) queda fuera
+CASA_MODELOS = ('gptimg', 'nbp'); CASA_DEF = 'gptimg'   # v358: sin Seedream 5.0 Flash (no acepta filtro de seguridad: comprobado en el catálogo de WaveSpeed); estos dos traen el suyo   # con el saldo regalo: el barato por defecto y los dos que traen su propio filtro; Seedream 5.0 Pro (sin filtro) queda fuera
 BIENVENIDA = 1.0; LECTURA_USD = 0.002   # cada lectura de una imagen con IA (describir una foto, detectar personas…)
 SIN_SALDO = 'Saldo regalo agotado. Se repone el día 1; para seguir ahora, conecta tu propia clave en «Mis APIs».'
 _NSFW_RE = re.compile(r"\b(nsfw|topless|nipples?|areolas?|genitals?|genitalia|pubic|vagina|vulva|penis|no clothes|(?:is|are|she'?s|he'?s|fully|completely|totally|stark) naked|naked (?:woman|women|man|men|girl|boy|body|person|people|figure|torso|chest|skin)|(?:fully|completely|totally) nude|nude body|bare breasts?|no underwear|sexually explicit|explicit nud|desnud[oa]s?|sin ropa|sin nada de ropa|en pelotas|en bolas|pezon(?:es)?|pez[oó]n|sin sujetador|tetas al aire|pechos al aire|senos? desnudos?|genitales|sin bragas|en topless)", re.I)
@@ -980,7 +980,7 @@ def casa_info():   # el monedero tal como lo ve la web; None si la cuenta no va 
     if not casa_on(): return None
     with _cerrojo('mon'): m = _mon_lee()
     saldo = max(0.0, round(float(m['resto']) + float(m.get('extra') or 0) + float(m['bienvenida']) - _casa_en_curso(), 4)); p = WS_MODELS[CASA_DEF]['usd']['std']
-    return {'saldo': saldo, 'mensual': m['mensual'], 'resto': m['resto'], 'extra': float(m.get('extra') or 0), 'bienvenida': m['bienvenida'], 'mes': m['mes'], 'imagen': p, 'imagenes': int((saldo + 1e-6) // p), 'modelos': list(CASA_MODELOS), 'pausa': _casa_global() >= CASA_TOPE}
+    return {'saldo': saldo, 'mensual': m['mensual'], 'resto': m['resto'], 'extra': float(m.get('extra') or 0), 'bienvenida': m['bienvenida'], 'mes': m['mes'], 'imagen': p, 'imagenes': int((saldo + 1e-6) // p), 'modelo': WS_MODELS[CASA_DEF]['name'], 'modelos': list(CASA_MODELOS), 'pausa': _casa_global() >= CASA_TOPE}
 def casa_puede(usd):   # ¿llega el saldo regalo para esto? Si no, error claro
     if _casa_global() >= CASA_TOPE: plog(f'🎁 TOPE GLOBAL del saldo regalo alcanzado ({CASA_TOPE} $ este mes)'); raise RuntimeError('El saldo regalo está en pausa unos días. Mientras tanto puedes generar con tu propia clave en «Mis APIs».')
     c = casa_info()

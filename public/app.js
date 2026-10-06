@@ -2367,7 +2367,7 @@ async function openMonedero() { // 🎁 el saldo regalo: cuánto queda, de dónd
   b.appendChild(el('div', 'devemo', '🎁')); b.appendChild(el('h3', '', 'Tu saldo regalo'));
   if (!c) { b.appendChild(el('p', '', 'Ahora generas con tu propia clave, así que no gastas saldo regalo.')); }
   else { const mesNom = new Date(c.mes + '-01T12:00:00').toLocaleDateString('es-ES', { month: 'long' });
-    b.appendChild(el('div', 'casan', dolar(c.saldo))); b.appendChild(el('p', '', c.pausa ? 'El saldo regalo está en pausa unos días. Mientras tanto puedes generar con tu propia clave.' : c.imagenes < 1 ? 'Se te ha acabado. Se repone el día 1; si quieres seguir ahora, conecta tu propia clave.' : `Te da para unas <b>${c.imagenes} imágenes</b> con Seedream 5.0 Flash (${fmtUsd(c.imagen)} cada una). Se descuenta lo que cuesta de verdad cada imagen.`));
+    b.appendChild(el('div', 'casan', dolar(c.saldo))); b.appendChild(el('p', '', c.pausa ? 'El saldo regalo está en pausa unos días. Mientras tanto puedes generar con tu propia clave.' : c.imagenes < 1 ? 'Se te ha acabado. Se repone el día 1; si quieres seguir ahora, conecta tu propia clave.' : `Te da para unas <b>${c.imagenes} imágenes</b> con ${esc(c.modelo || 'GPT Image 2.5')} (${fmtUsd(c.imagen)} cada una). Se descuenta lo que cuesta de verdad cada imagen.`));
     b.appendChild(el('div', 'casal', `<span>De ${esc(mesNom)} · se repone el día 1 y no se acumula</span><b>${dolar(c.resto)} de ${dolar(c.mensual)}</b>`));
     if (c.extra > 0) b.appendChild(el('div', 'casal', `<span>🎁 Regalos del equipo · no caducan</span><b>${dolar(c.extra)}</b>`));   /* v269 */
     b.appendChild(el('div', 'casal', `<span>De bienvenida · no caduca</span><b>${dolar(c.bienvenida)}</b>`));
