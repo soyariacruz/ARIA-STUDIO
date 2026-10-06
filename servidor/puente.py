@@ -43,7 +43,7 @@ MAX_CUERPO = 40 * 1024 * 1024    # tope de una petición en modo servidor
 MAX_BIBLIO = 200 * 1024 * 1024   # tope de un fichero de la biblioteca común al copiarlo
 KINDS = ('vestidor', 'hair', 'expr')   # las bibliotecas a las que una cuenta puede añadir lo suyo
 _UUID = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
-VERSION = 309
+VERSION = 310
 _ctx = threading.local()   # la cuenta del hilo: la pone cada petición (y, a mano, cada hilo de fondo)
 def uid(): return getattr(_ctx, 'uid', None)   # en local siempre None
 DUENOS = tuple(e.strip().lower() for e in (os.environ.get('ARIA_DUENOS') or 'mix1994max@gmail.com').split(',') if e.strip())   # cuentas que pueden cambiar a Aria Cruz (en la web, la de Max)
@@ -2216,6 +2216,8 @@ Recibes dos cosas:
 2) LO ELEGIDO: un prompt técnico que la web ha montado con lo que el usuario ha elegido (personaje, prenda, peinado, expresión, estilo, lugar, referencias @Image1, @Image2…).
 Devuelves UN solo prompt final, EN ESPAÑOL, natural y claro, listo para un generador de imágenes:
 - La idea del usuario manda en la escena, la acción, la pose, el ambiente, la luz y el encuadre. No inventes nada que la contradiga.
+- El LUGAR y el FONDO los decide la idea: si LO ELEGIDO pide fondo de estudio, fondo liso (blanco o gris) o «plain backdrop» y la idea describe un sitio (un bar, una playa, una calle…), quita ese fondo y pon el sitio de la idea, con su luz. Si lo elegido pide plano entero para que se vea la ropa, mantenlo salvo que la idea pida otro plano.
+- Las etiquetas se escriben SIEMPRE así, en inglés y pegadas: @Image1, @Image2… (nunca «@Imagen1», «imagen 1» ni «@image_1»).
 - Conserva TODO lo técnico de lo elegido: cada etiqueta @ImageN EXACTAMENTE igual (mismo número, mismo formato), la identidad (misma cara, mismos rasgos), la prenda, el peinado, la expresión, el estilo y las restricciones (una sola foto, no un collage ni una hoja de personaje, sin texto ni logos…).
 - Si chocan (por ejemplo, la idea habla de otra ropa y hay una prenda elegida), para lo elegido gana lo elegido, salvo que la idea lo pida claramente.
 - Ignora lo que no describe la imagen (saludos, «gracias», comentarios).
@@ -2227,6 +2229,7 @@ Recibes dos cosas:
 2) LO ELEGIDO: un prompt técnico por secciones (REFERENCIAS, PUNTO DE PARTIDA o INICIO, PERSONAJE, VESTUARIO, PEINADO, COMPLEMENTOS, FORMATO, CÁMARA, ESTILO, LUGAR, ACCIÓN con tiempos, TÉCNICO) montado con lo que el usuario ha elegido.
 Devuelves UN solo prompt final, EN ESPAÑOL, con LAS MISMAS secciones y en el mismo orden:
 - Mete la idea del usuario donde toca: sobre todo en ACCIÓN (reparte lo que pasa por tramos de tiempo 0:00–0:0X que sumen la duración), y en LUGAR, CÁMARA o ESTILO si la idea lo dice. Si dice frases, van entre comillas en ACCIÓN, en el idioma en que las escriba.
+- Las etiquetas se escriben SIEMPRE así, en inglés y pegadas: @Image1, @Image2… (nunca «@Imagen1» ni «imagen 1»).
 - Conserva TODO lo técnico: cada etiqueta @ImageN EXACTAMENTE igual, la duración, el formato, la identidad (su cara no cambia nunca), la ropa, el peinado, el punto de partida y el TÉCNICO.
 - Si chocan, para lo elegido gana lo elegido, salvo que la idea lo pida claramente.
 - Ignora lo que no describe el vídeo (saludos, «gracias», comentarios).
@@ -2253,16 +2256,28 @@ def _montar(idea, auto, tipo='imagen'):   # v307 → {'prompt', 'usd', 'casa'}: 
     if not k: k = _env('ANTHROPIC_API_KEY', 'anthropic.env')
     if not k: raise RuntimeError('sin_clave')
     msg = f"LA IDEA DEL USUARIO:\n{idea.strip() or '(no ha escrito nada: monta el prompt solo con lo elegido, en español)'}\n\nLO ELEGIDO:\n{auto.strip()}"
-    vid = tipo == 'video'; body = {'model': MONTAR_LLM, 'max_tokens': 2600 if vid else 1500, 'system': MONTAR_SIS_V if vid else MONTAR_SIS, 'messages': [{'role': 'user', 'content': msg}]}
-    rq = urllib.request.Request('https://api.anthropic.com/v1/messages', data=json.dumps(body).encode(), method='POST', headers={'x-api-key': k, 'anthropic-version': '2023-06-01', 'content-type': 'application/json', 'User-Agent': UA})
-    try: r = json.loads(urllib.request.urlopen(rq, timeout=60).read())
-    except urllib.error.HTTPError as e: raise RuntimeError(f'Claude respondió {e.code}: ' + e.read().decode('utf-8', 'replace')[:160])
-    t = ''.join(b.get('text', '') for b in r.get('content') or [] if b.get('type') == 'text').strip().strip('"«»').strip()
-    u = r.get('usage') or {}; usd = round((u.get('input_tokens', 0) * 1 + u.get('output_tokens', 0) * 5) / 1e6, 5)
+    vid = tipo == 'video'; tags = list(dict.fromkeys(re.findall(r'@Image\d+', auto)))
+    def pide(extra=''):
+        body = {'model': MONTAR_LLM, 'max_tokens': 2600 if vid else 1500, 'system': MONTAR_SIS_V if vid else MONTAR_SIS, 'messages': [{'role': 'user', 'content': msg + extra}]}
+        rq = urllib.request.Request('https://api.anthropic.com/v1/messages', data=json.dumps(body).encode(), method='POST', headers={'x-api-key': k, 'anthropic-version': '2023-06-01', 'content-type': 'application/json', 'User-Agent': UA})
+        try: r = json.loads(urllib.request.urlopen(rq, timeout=60).read())
+        except urllib.error.HTTPError as e: raise RuntimeError(f'Claude respondió {e.code}: ' + e.read().decode('utf-8', 'replace')[:160])
+        t_ = ''.join(b.get('text', '') for b in r.get('content') or [] if b.get('type') == 'text').strip().strip('"«»').strip()
+        t_ = re.sub(r'(?:@\s*|(?<![\w@]))imag(?:e|en)[\s_]*(\d+)\b', r'@Image\1', t_, flags=re.I)   # v310: @Imagen1, @image_1, «imagen 1»… → @Image1
+        u = r.get('usage') or {}; return t_, (u.get('input_tokens', 0) * 1 + u.get('output_tokens', 0) * 5) / 1e6
+    t, usd = pide(); falta = [x for x in tags if x not in t]
+    if t and falta:   # v310: una segunda vez, recordándole las etiquetas
+        t2, u2 = pide(f"\n\nOJO: en el prompt tienen que salir TODAS estas etiquetas, escritas exactamente así: {', '.join(tags)}."); usd += u2; f2 = [x for x in tags if x not in t2]
+        if t2 and len(f2) < len(falta): t, falta = t2, f2
+    usd = round(usd, 5)
     if casa_: _montar_gasto(usd, yo)
-    falta = [x for x in dict.fromkeys(re.findall(r'@Image\d+', auto)) if x not in t]
-    if not t or falta: t = (idea.strip() + '\n\n' if idea.strip() else '') + '⟦' + auto.strip() + '⟧'   # si se ha comido alguna referencia, mejor juntarlo tal cual
-    return {'prompt': t[:6000], 'usd': usd, 'casa': casa_}
+    aviso = ''
+    if not t: t = (idea.strip() + '\n\n' if idea.strip() else '') + '⟦' + auto.strip() + '⟧'; aviso = 'Claude no ha respondido: se ha juntado tal cual'
+    elif falta:   # solo lo que falta: la frase de lo elegido que nombra esa referencia
+        fr = [next((x.strip() for x in re.split(r'(?<=[.!?])\s+|\n', auto) if g_ in x), f'Usa {g_} como referencia.') for g_ in falta]
+        t += '\n⟦' + ' '.join(dict.fromkeys(fr)) + '⟧'; aviso = 'faltaba ' + ', '.join(falta)
+    if aviso: plog(f'montar · {tipo} · {aviso}')
+    return {'prompt': t[:6000], 'usd': usd, 'casa': casa_, 'aviso': aviso}
 def _audios():   # mis audios, lo último primero
     d = audio_dir(); out = []
     for n in os.listdir(d):
