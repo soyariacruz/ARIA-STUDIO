@@ -1663,7 +1663,9 @@ nav .navlib button.more span{font-size:9px}
   var calc = function () { if (innerWidth < 768) return 1;   /* v262: el móvil, a tamaño real */ try { if (innerWidth < 1200 && matchMedia('(pointer:coarse)').matches) return 1; } catch (e) {}   /* y las tabletas táctiles */ var k = Math.min(1, innerWidth / REF_W, innerHeight / REF_H); return Math.max(MIN, Math.round(BASE * k * 50) / 50); };   // pasos de 0,02
   var Z = calc(); window.ESCALA = Z;
   var re = /url\([^)]*\)|(\d*\.?\d+)px\b/g;
-  var esc = function (t) { return Z === 1 ? t : t.replace(re, function (m, n) { if (n === undefined) return m; var v = parseFloat(n); return v <= 1 ? m : (Math.round(v * Z * 100) / 100) + 'px'; }); };   // las líneas de 1 px se quedan en 1 px
+  var FS = /font-size:\s*(\d*\.?\d+)px/g;   /* v278: suelo de letra — lo de menos de 12 px se sube a 10,5–11,8 px (mantiene el orden de tamaños) */
+  var suelo = function (t) { return t.replace(FS, function (m, n) { var v = parseFloat(n); if (v >= 12) return m; v = Math.max(8, v); return 'font-size:' + (Math.round((10.5 + (v - 8) * 0.375) * 100) / 100) + 'px'; }); };
+  var esc = function (t) { t = suelo(t); return Z === 1 ? t : t.replace(re, function (m, n) { if (n === undefined) return m; var v = parseFloat(n); return v <= 1 ? m : (Math.round(v * Z * 100) / 100) + 'px'; }); };   // las líneas de 1 px se quedan en 1 px
   window.escalaCss = esc;
   var una = function (st) { if (st._orig === undefined) st._orig = st.textContent; if (st._z === Z) return; st._z = Z; st.dataset.z = '1'; st.textContent = esc(st._orig); };
   var todas = function () { document.querySelectorAll('style').forEach(una); };
