@@ -43,7 +43,7 @@ MAX_CUERPO = 40 * 1024 * 1024    # tope de una petición en modo servidor
 MAX_BIBLIO = 200 * 1024 * 1024   # tope de un fichero de la biblioteca común al copiarlo
 KINDS = ('vestidor', 'hair', 'expr')   # las bibliotecas a las que una cuenta puede añadir lo suyo
 _UUID = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
-VERSION = 306
+VERSION = 307
 _ctx = threading.local()   # la cuenta del hilo: la pone cada petición (y, a mano, cada hilo de fondo)
 def uid(): return getattr(_ctx, 'uid', None)   # en local siempre None
 DUENOS = tuple(e.strip().lower() for e in (os.environ.get('ARIA_DUENOS') or 'mix1994max@gmail.com').split(',') if e.strip())   # cuentas que pueden cambiar a Aria Cruz (en la web, la de Max)
@@ -2208,6 +2208,50 @@ def _prompter(tipo, pedido, ctx_txt=''):   # v297: el asistente de prompts, con 
     try: j = json.loads(t[t.index('{'):t.rindex('}') + 1])
     except Exception: j = {'prompt': t.strip(), 'nota': ''}
     u = r.get('usage') or {}; j['usd'] = round((u.get('input_tokens', 0) * 3 + u.get('output_tokens', 0) * 15) / 1e6, 4); return j
+MONTAR_LLM = os.environ.get('ARIA_MONTAR_LLM') or 'claude-haiku-4-5-20251001'   # v307: junta la idea del usuario con lo elegido en los presets (el modelo más barato de Claude)
+MONTAR_TOPE = float(os.environ.get('ARIA_CLAUDE_TOPE') or 3)   # dólares al día, como mucho, que paga la casa por esto (luego, la clave de cada cuenta o se junta sin Claude)
+MONTAR_SIS = """Eres el montador de prompts de ARIA STUDIO, una web española para crear imágenes con IA de un personaje (una influencer virtual).
+Recibes dos cosas:
+1) LA IDEA del usuario, con sus palabras (puede ser informal, corta o con faltas).
+2) LO ELEGIDO: un prompt técnico que la web ha montado con lo que el usuario ha elegido (personaje, prenda, peinado, expresión, estilo, lugar, referencias @Image1, @Image2…).
+Devuelves UN solo prompt final, EN ESPAÑOL, natural y claro, listo para un generador de imágenes:
+- La idea del usuario manda en la escena, la acción, la pose, el ambiente, la luz y el encuadre. No inventes nada que la contradiga.
+- Conserva TODO lo técnico de lo elegido: cada etiqueta @ImageN EXACTAMENTE igual (mismo número, mismo formato), la identidad (misma cara, mismos rasgos), la prenda, el peinado, la expresión, el estilo y las restricciones (una sola foto, no un collage ni una hoja de personaje, sin texto ni logos…).
+- Si chocan (por ejemplo, la idea habla de otra ropa y hay una prenda elegida), para lo elegido gana lo elegido, salvo que la idea lo pida claramente.
+- Ignora lo que no describe la imagen (saludos, «gracias», comentarios).
+- Marca entre ⟦ y ⟧ cada frase o trozo que venga de LO ELEGIDO y no de la idea, para que la web pueda resaltarlo. Lo que sale de la idea del usuario va sin marcar.
+- Sin listas, sin títulos, sin comillas alrededor, sin explicaciones: responde SOLO con el prompt. Máximo unos 1500 caracteres."""
+_MON_L = threading.Lock()
+def _montar_gasto(usd=0.0, quien=None):   # lo que lleva hoy la clave de la casa → {'dia', 'usd', 'por': {cuenta: veces}}
+    fp = os.path.join(DATOS or ROOT, 'claude_casa.json'); hoy = time.strftime('%Y-%m-%d')
+    with _MON_L:
+        try: g = json.load(open(fp, encoding='utf-8'))
+        except Exception: g = {}
+        if not isinstance(g, dict) or g.get('dia') != hoy: g = {'dia': hoy, 'usd': 0.0, 'por': {}}
+        if quien:
+            g['usd'] = round(float(g.get('usd') or 0) + usd, 5); g['por'][quien] = int(g['por'].get(quien, 0)) + 1
+            tmp = fp + '.tmp'; open(tmp, 'w', encoding='utf-8').write(json.dumps(g)); os.replace(tmp, fp)
+        return g
+def _montar(idea, auto):   # v307 → {'prompt', 'usd', 'casa'}: paga la casa (ARIA_CLAUDE_CASA o la clave de Claude de la cuenta de Aria) hasta el tope del día; si no, la clave de la cuenta
+    yo = uid() or 'local'; k = ''; casa_ = False; g = _montar_gasto()
+    if float(g.get('usd') or 0) < MONTAR_TOPE and int(g['por'].get(yo, 0)) < 300:
+        k = os.environ.get('ARIA_CLAUDE_CASA') or ''
+        if not k and SERVIDOR and re.fullmatch(r'[0-9a-f-]{36}', ARIA_UID or ''):
+            with como(ARIA_UID): k = _env('ANTHROPIC_API_KEY', 'anthropic.env')
+        casa_ = bool(k)
+    if not k: k = _env('ANTHROPIC_API_KEY', 'anthropic.env')
+    if not k: raise RuntimeError('sin_clave')
+    msg = f"LA IDEA DEL USUARIO:\n{idea.strip() or '(no ha escrito nada: monta el prompt solo con lo elegido, en español)'}\n\nLO ELEGIDO:\n{auto.strip()}"
+    body = {'model': MONTAR_LLM, 'max_tokens': 1500, 'system': MONTAR_SIS, 'messages': [{'role': 'user', 'content': msg}]}
+    rq = urllib.request.Request('https://api.anthropic.com/v1/messages', data=json.dumps(body).encode(), method='POST', headers={'x-api-key': k, 'anthropic-version': '2023-06-01', 'content-type': 'application/json', 'User-Agent': UA})
+    try: r = json.loads(urllib.request.urlopen(rq, timeout=60).read())
+    except urllib.error.HTTPError as e: raise RuntimeError(f'Claude respondió {e.code}: ' + e.read().decode('utf-8', 'replace')[:160])
+    t = ''.join(b.get('text', '') for b in r.get('content') or [] if b.get('type') == 'text').strip().strip('"«»').strip()
+    u = r.get('usage') or {}; usd = round((u.get('input_tokens', 0) * 1 + u.get('output_tokens', 0) * 5) / 1e6, 5)
+    if casa_: _montar_gasto(usd, yo)
+    falta = [x for x in dict.fromkeys(re.findall(r'@Image\d+', auto)) if x not in t]
+    if not t or falta: t = (idea.strip() + '\n\n' if idea.strip() else '') + '⟦' + auto.strip() + '⟧'   # si se ha comido alguna referencia, mejor juntarlo tal cual
+    return {'prompt': t[:6000], 'usd': usd, 'casa': casa_}
 def _audios():   # mis audios, lo último primero
     d = audio_dir(); out = []
     for n in os.listdir(d):
@@ -2937,6 +2981,12 @@ class H(SimpleHTTPRequestHandler):
                     if con == ARIA_CID and not any(m.get('x') == ARIA_RESP for m in M): M.append({'de': ARIA_CID, 'x': ARIA_RESP, 't': time.time() + 1})
                     del M[:-500]; _com_guarda(d); return self._json(200, {'ok': True})
             return self._json(400, {'error': 'acción desconocida'})
+        if self.path == '/api/prompt/montar':   # v307: la idea del usuario + lo elegido → un solo prompt (Claude Haiku; lo paga la casa)
+            n = int(self.headers.get('Content-Length') or 0); body = json.loads(self.rfile.read(min(n, 60000)) or b'{}')
+            idea = str(body.get('idea') or '')[:4000]; auto = str(body.get('auto') or '')[:9000]
+            if not auto.strip(): return self._json(400, {'error': 'no hay nada que montar'})
+            try: return self._json(200, dict(_montar(idea, auto), ok=True))
+            except RuntimeError as e: return self._json(400, {'error': str(e)})
         if self.path == '/api/vistos':   # v304: apuntar que esta cuenta ya ha visto un aviso
             n = int(self.headers.get('Content-Length') or 0); body = json.loads(self.rfile.read(min(n, 2000)) or b'{}'); k = str(body.get('k') or '')
             if not re.fullmatch(r'[a-z0-9_.-]{1,60}', k): return self._json(400, {'error': 'aviso no válido'})
