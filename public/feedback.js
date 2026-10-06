@@ -19,6 +19,7 @@
   // Un círculo rosa abajo a la derecha. Al pulsarlo se despliega el panel desde ahí. La app añade sola dónde está la persona, con qué personaje y modelo,
   // qué acaba de generar y si hay algún error a la vista. Se puede escribir, dictar (si el navegador deja) o grabar una nota de voz, que se guarda para transcribirla después.
   let SECCION = null; const F = { open: false, tipo: '💬 Comentario', voz: false, texto: '', rec: null, oyendo: false, enviando: false, audio: null, seg: 0, mr: null, sinSR: false, archivos: [] };
+  window.fbAbre = function () { F.open = true; paint(); };   // v280: desde «Más» en el móvil
   window.feedbackSection = function (name) { SECCION = name || null; paint(); };
   window.fbContext = null; // cada módulo puede dejar aquí una función que devuelve más contexto
   const donde = () => SECCION || ((TABS[state.tab] || {}).label || state.tab);
@@ -29,7 +30,7 @@
       t(() => { const it = cur(); return it && it._err ? 'ERROR a la vista: ' + String(it._err).slice(0, 200) : ''; }), t(() => { const n = [...JOBS.values()].filter(j => !j.end).length; return n ? n + ' generándose' : ''; }), ult,
       t(() => window.CUENTA && CUENTA.web ? 'web' + (typeof CASA !== 'undefined' && CASA ? ' · saldo regalo' : '') : 'app local'), `pantalla ${innerWidth}×${innerHeight}`, t(() => 'escala ' + (window.ESCALA || 1)), `navegador ${navigator.userAgent.replace(/^Mozilla\/5\.0 /, '').slice(0, 90)}`].filter(Boolean).join(' · '); }
   function paint() {
-    let w = document.getElementById('fbw'); if (!w) { w = el('div', ''); w.id = 'fbw'; document.body.appendChild(w); } w.innerHTML = '';
+    let w = document.getElementById('fbw'); if (!w) { w = el('div', ''); w.id = 'fbw'; document.body.appendChild(w); } w.innerHTML = ''; w.classList.toggle('abierto', !!(F.open || F.gracias));   // v280: en el móvil solo se ve abierto (se abre desde «Más»)
     if (F.gracias) { const p = el('div', 'fbpanel fbok', `<div class="fbokc">✓</div><b>¡Gracias! Tu comentario ha llegado</b><small>${esc(F.gracias)}</small>`); w.appendChild(p); }
     else if (F.open) {
       const p = el('div', 'fbpanel'); p.appendChild(el('div', 'fbhd', `<b>💬 Cuéntanos</b><small>estás en ${esc(donde())} · eso ya lo sabemos, no hace falta que lo expliques</small>`)); const x = el('button', 'fbx', '×'); x.title = 'Cerrar'; x.onclick = () => { F.open = false; stopMic(); paint(); }; p.appendChild(x);

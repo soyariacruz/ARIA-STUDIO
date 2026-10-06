@@ -43,7 +43,7 @@ MAX_CUERPO = 40 * 1024 * 1024    # tope de una petición en modo servidor
 MAX_BIBLIO = 200 * 1024 * 1024   # tope de un fichero de la biblioteca común al copiarlo
 KINDS = ('vestidor', 'hair', 'expr')   # las bibliotecas a las que una cuenta puede añadir lo suyo
 _UUID = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
-VERSION = 279
+VERSION = 280
 _ctx = threading.local()   # la cuenta del hilo: la pone cada petición (y, a mano, cada hilo de fondo)
 def uid(): return getattr(_ctx, 'uid', None)   # en local siempre None
 DUENOS = tuple(e.strip().lower() for e in (os.environ.get('ARIA_DUENOS') or 'mix1994max@gmail.com').split(',') if e.strip())   # cuentas que pueden cambiar a Aria Cruz (en la web, la de Max)
@@ -577,6 +577,80 @@ def _mi_lista():
         if e.code != 400: raise
         L = _sb_adm('GET', '/rest/v1/miembros?select=email,interno,alta&order=alta.desc')
     return [{'email': str(m.get('email') or ''), 'interno': m.get('interno') is True, 'precio': m.get('precio'), 'alta': str(m.get('alta') or '')[:10]} for m in (L or []) if isinstance(m, dict)]
+_VISTO = {}; _visto_l = threading.Lock(); _visto_g = [0.0, False]   # v280: uid → {email, t (última petición), primera, movil}
+def _visto_fp(): return os.path.join(DATOS, 'visto.json')
+def _visto_carga():
+    if _visto_g[1]: return
+    _visto_g[1] = True
+    try: d = json.load(open(_visto_fp(), encoding='utf-8'))
+    except Exception: d = {}
+    if isinstance(d, dict): _VISTO.update({k: v for k, v in d.items() if isinstance(v, dict) and k not in _VISTO})
+def _visto_pon(u, email, ua):
+    if not SERVIDOR or not DATOS or not u: return
+    ahora = time.time()
+    with _visto_l:
+        _visto_carga(); v = _VISTO.setdefault(u, {'primera': int(ahora)})
+        v.update({'t': int(ahora), 'email': email, 'movil': bool(re.search(r'iPhone|iPad|Android|Mobile', ua or ''))})
+        if ahora - _visto_g[0] < 60: return
+        _visto_g[0] = ahora; d = json.loads(json.dumps(_VISTO))
+    try:
+        fp = _visto_fp(); open(fp + '.tmp', 'w', encoding='utf-8').write(json.dumps(d)); os.replace(fp + '.tmp', fp)
+    except Exception as e: plog('visto ✕ ' + str(e)[:120])
+_ADM_C = {}   # uid → (cuándo, datos de la cuenta) · se recalcula como mucho cada 2 min
+def _adm_cuenta(u):
+    c = _ADM_C.get(u)
+    if c and time.time() - c[0] < 120: return c[1]
+    b = os.path.join(DATOS, 'usuarios', u); mes = time.strftime('%Y-%m', time.gmtime()); n = 0; gasto = 0.0; ult = 0
+    for sub in ('live', 'video'):
+        dd = os.path.join(b, 'assets', sub)
+        try: L = os.listdir(dd)
+        except OSError: continue
+        for x in L:
+            if x.startswith('.') or not x.endswith('.json'): continue
+            n += 1
+            try:
+                m = json.load(open(os.path.join(dd, x), encoding='utf-8')); t = float(m.get('t') or 0); ult = max(ult, t)
+                if t and time.strftime('%Y-%m', time.gmtime(t)) == mes: gasto += float(m.get('usd') if m.get('usd') is not None else m.get('usd_est') or 0)
+            except Exception: pass
+    try: mo = json.load(open(os.path.join(b, 'monedero.json'), encoding='utf-8'))
+    except Exception: mo = {}
+    mo = mo if isinstance(mo, dict) else {}
+    queda = (float(mo.get('resto') or 0) if mo.get('mes') == mes else 0.0) + float(mo.get('extra') or 0) + float(mo.get('bienvenida') or 0)
+    regalo = sum(float(h.get('usd') or 0) for h in (mo.get('hist') or []) if isinstance(h, dict) and str(h.get('dia') or '').startswith(mes) and float(h.get('usd') or 0) > 0)
+    try: pj = sum(1 for x in os.listdir(os.path.join(b, 'assets', 'personajes')) if not x.startswith(('.', '_')))
+    except OSError: pj = 0
+    try: clave = os.path.getsize(os.path.join(b, 'claves.env')) > 10
+    except OSError: clave = False
+    with como(u, '', False): esp = espacio(True)
+    r = {'creaciones': n, 'ultima': int(ult), 'gasto_mes': round(gasto, 4), 'regalo_mes': round(regalo, 4), 'queda_regalo': round(queda, 4), 'personajes': pj, 'clave': clave, 'espacio': esp}
+    _ADM_C[u] = (time.time(), r); return r
+_ADM_P = [0.0, None]
+def _adm_panel():
+    if _ADM_P[1] and time.time() - _ADM_P[0] < 20: return _ADM_P[1]
+    L = _mi_lista(); por_mail = {m['email']: m for m in L}
+    try: us = (_sb_adm('GET', '/auth/v1/admin/users?page=1&per_page=1000') or {}).get('users') or []
+    except Exception as e: plog('admin: usuarios ✕ ' + str(e)[:120]); us = []
+    auth = {str(x.get('email') or '').lower(): x for x in us if isinstance(x, dict) and x.get('email')}
+    with _visto_l: _visto_carga(); vis = json.loads(json.dumps(_VISTO))
+    uid_de = {str(v.get('email') or '').lower(): k for k, v in vis.items()}
+    for e, a in auth.items(): uid_de.setdefault(e, str(a.get('id') or '').lower())
+    d = _com_lee(); ahora = time.time(); filas = []
+    for e in sorted(set(por_mail) | set(auth)):
+        m = por_mail.get(e) or {}; a = auth.get(e) or {}; u = uid_de.get(e) or ''
+        v = vis.get(u) or {}; tiene = bool(u and _UUID.fullmatch(u) and os.path.isdir(os.path.join(DATOS, 'usuarios', u)))
+        x = _adm_cuenta(u) if tiene else {}
+        filas.append(dict({'email': e, 'acceso': e in por_mail, 'interno': bool(m.get('interno')), 'dueno': e in DUENOS, 'precio': m.get('precio'), 'alta': m.get('alta') or '',
+                           'cid': _cid(u) if tiene else '', 'alias': str(d['alias'].get(_cid(u)) or '')[:40] if tiene else '',
+                           'registro': str(a.get('created_at') or '')[:19], 'login': str(a.get('last_sign_in_at') or '')[:19],
+                           'visto': int(v.get('t') or 0), 'online': bool(v.get('t') and ahora - v['t'] < 180), 'movil': bool(v.get('movil'))}, **x))
+    try: du = shutil.disk_usage(DATOS); disco = {'usado': du.used, 'total': du.total}
+    except Exception: disco = None
+    res = {'filas': filas, 'disco': disco, 'cuota': CUOTA, 'bolsa': _bolsa_saldo(), 'casa_mes': round(_casa_global(), 4), 't': int(ahora),
+           'resumen': {'miembros': sum(1 for r in filas if r['acceso']), 'equipo': sum(1 for r in filas if r['interno']), 'online': sum(1 for r in filas if r['online']),
+                       'h24': sum(1 for r in filas if r['visto'] and ahora - r['visto'] < 86400), 'd7': sum(1 for r in filas if r['visto'] and ahora - r['visto'] < 7 * 86400),
+                       'sin_acceso': sum(1 for r in filas if not r['acceso']), 'nunca': sum(1 for r in filas if r['acceso'] and not r['login']),
+                       'creaciones': sum(r.get('creaciones') or 0 for r in filas), 'gasto_mes': round(sum(r.get('gasto_mes') or 0 for r in filas), 2)}}
+    _ADM_P[0], _ADM_P[1] = time.time(), res; return res
 def _ses_olvida(email):   # quien se quita de la lista deja de entrar ya, sin esperar a que caduque su sesión recordada
     with _ses_l:
         for k in [k for k, s in _ses.items() if isinstance(s[1], tuple) and s[1][1] == email]: del _ses[k]
@@ -2048,6 +2122,8 @@ class H(SimpleHTTPRequestHandler):
             if n < 0 or n > MAX_CUERPO: self.close_connection = True; return self._corta(400 if n < 0 else 413, 'petición no válida' if n < 0 else 'petición demasiado grande')
         try: c = _quien(self)
         except _NoEntra as e: return self._corta(e.code, e.msg)
+        try: _visto_pon(c[0], c[1], self.headers.get('User-Agent'))   # v280: para el panel ⚙️ Admin (quién está conectado)
+        except Exception: pass
         if self.headers.get('X-Ver-Como') == 'miembro': c = (c[0], c[1], False)   # 👁 «Ver como miembro» (equipo): sin permisos de equipo
         with como(*c):
             _ctx.ver_miembro = self.headers.get('X-Ver-Como') == 'miembro'
@@ -2375,6 +2451,11 @@ class H(SimpleHTTPRequestHandler):
         if u.path == '/api/fallidas':   # v270
             try: return self._json(200, {'ok': True, 'items': _fall_lee()})
             except Exception: return self._json(200, {'ok': True, 'items': []})
+        if u.path == '/api/admin/panel':   # v280: ⚙️ Admin (solo el equipo)
+            if not SERVIDOR or aria_fija(): return self._json(403, {'error': 'solo el equipo'})
+            if 'fresco' in q: _ADM_P[1] = None; _ADM_C.clear()
+            try: return self._json(200, dict({'ok': True, 'yo_dueno': (getattr(_ctx, 'email', '') or '').lower() in DUENOS}, **_adm_panel()))
+            except Exception as e: plog('admin ✕ ' + str(e)[:200]); return self._json(200, {'ok': False, 'error': 'No se ha podido leer el panel.'})
         if u.path == '/api/miembros':   # v277: 👥 la lista de miembros (solo el equipo)
             if not SERVIDOR or aria_fija(): return self._json(403, {'error': 'solo el equipo'})
             try: return self._json(200, {'ok': True, 'items': _mi_lista()})
@@ -2934,6 +3015,27 @@ class H(SimpleHTTPRequestHandler):
             n = int(self.headers.get('Content-Length') or 0); body = json.loads(self.rfile.read(n) or b'{}')
             with _fall_l: L = [x for x in _fall_lee() if x.get('id') != body.get('quitar')]; _fall_guarda(L)
             return self._json(200, {'ok': True, 'items': L})
+        if self.path == '/api/admin/acciones':   # v280
+            n = int(self.headers.get('Content-Length') or 0); body = json.loads(self.rfile.read(min(n, 20000)) or b'{}')
+            if not SERVIDOR or aria_fija(): return self._json(403, {'error': 'solo el equipo'})
+            if not _tope('admin', 60, 3600): return self._json(429, {'error': 'Demasiados cambios seguidos: espera un rato.'})
+            ac = body.get('accion'); e = str(body.get('email') or '').strip().lower(); quien = (getattr(_ctx, 'email', '') or '').lower()
+            try:
+                L = {m['email']: m for m in _mi_lista()}
+                if e not in L: return self._json(404, {'error': 'Ese correo no está en la lista de miembros: dale acceso primero.'})
+                if ac == 'equipo':
+                    if quien not in DUENOS: return self._json(403, {'error': 'Solo Max puede cambiar quién es del equipo.'})
+                    if e in DUENOS: return self._json(400, {'error': 'Esa cuenta es la del dueño: siempre es del equipo.'})
+                    _sb_adm('POST', '/rest/v1/miembros', [{'email': e, 'interno': bool(body.get('on'))}], 'resolution=merge-duplicates,return=minimal')
+                elif ac == 'precio':
+                    p = float(str(body.get('precio')).replace(',', '.'))
+                    if not (0 <= p <= 5000): return self._json(400, {'error': 'El plan tiene que ser entre 0 y 5000 $.'})
+                    _sb_adm('POST', '/rest/v1/miembros', [{'email': e, 'precio': p}], 'resolution=merge-duplicates,return=minimal')
+                else: return self._json(400, {'error': 'acción desconocida'})
+                _ses_olvida(e); _ADM_P[1] = None; plog(f'⚙️ admin: {quien} · {ac} · {e} · {body.get("on", body.get("precio"))}')
+                return self._json(200, dict({'ok': True, 'yo_dueno': quien in DUENOS}, **_adm_panel()))
+            except (ValueError, TypeError): return self._json(400, {'error': 'El plan tiene que ser un número.'})
+            except Exception as ex: plog('admin acciones ✕ ' + str(ex)[:200]); return self._json(400, {'error': 'No se ha podido guardar el cambio.'})
         if self.path == '/api/miembros':   # v277: {accion:'alta', emails:'texto', precio?} · {accion:'baja', email} — solo el equipo; nunca toca las cuentas del equipo
             n = int(self.headers.get('Content-Length') or 0); body = json.loads(self.rfile.read(min(n, 200000)) or b'{}')
             if not SERVIDOR or aria_fija(): return self._json(403, {'error': 'solo el equipo'})

@@ -123,13 +123,16 @@ function buildNav() {
   { nav.appendChild(el('div', 'nav-sep')); const cb = el('button', 'more combtn' + (COM && COM.on ? ' on' : ''), '<span>🤝</span>Comunidad');   /* v250: abierta */ cb.title = 'Comunidad: los creadores y sus personajes, colaboraciones y mensajes';
       cb.onclick = () => { if (COM.on) { comIr('dir').then(comPonAvisos); return; } COM.visto = true; comAbre('dir'); }; nav.appendChild(cb);
       const mb = el('button', 'more msgbtn', '<span>💬</span>Mensajes'); mb.title = 'Tus conversaciones con otros creadores: solicitudes, colaboraciones y carpetas compartidas'; mb.onclick = () => { if (COM.on) { comIr('msg').then(comPonAvisos); return; } COM.visto = true; comAbre('msg'); }; nav.appendChild(mb); }
-  if (state.interno) {
-    nav.appendChild(el('div', 'nav-sep')); const wb = el('button', 'more', '<span>🧰</span>Workflows'); wb.title = 'Programas internos del equipo (solo cuentas autorizadas)'; wb.onclick = () => navMore(wb, [['🥊', 'Duelos', () => { if (window.CUENTA && CUENTA.web) { ligaAbre(); return; } location.href = 'liga.html'; }, 'interno']].concat(window.CUENTA && CUENTA.web && innerWidth >= 768 ? [['👥', 'Miembros', () => openMiembros(), 'interno'], ['🎁', 'Bolsa del saldo regalo', () => openBolsa(), 'interno']] : [])); nav.appendChild(wb); }
+  if (state.interno) {   /* v280: el botón del equipo es ⚙️ Admin: abre su página (miembros, quién está conectado, saldo regalo, denuncias, duelos…) */
+    nav.appendChild(el('div', 'nav-sep')); const wb = el('button', 'more admbtn' + ($('#admpage') ? ' on' : ''), '<span>⚙️</span>Admin'); wb.title = 'Panel de administración (solo el equipo)'; wb.onclick = () => adminAbre(); nav.appendChild(wb); }
+  { const mm = el('button', 'more mvmore', '<span>☰</span>Más'); mm.title = 'Más secciones'; mm.onclick = () => { navMore(mm, movilMas()); const m = $('#navmore'); if (m) m.classList.add('mvsheet'); }; nav.appendChild(mm); }   // v280: solo en el móvil
+  if (innerWidth < 768) { const cb = nav.querySelector('button[data-tab=crear]'), vb = nav.querySelector('button[data-tab=video]'); [[cb, 'Imagen'], [vb, 'Vídeo']].forEach(([b, t]) => { const n = b && [...b.childNodes].find(x => x.nodeType === 3 && x.textContent.trim()); if (n) n.textContent = t; }); }
   nav.appendChild(el('div', 'sp')); comPonAvisos();
 }
 function setTab(k) {
   try { document.body.dataset.tab = k; } catch (e) {}   // v262: para el móvil (qué se enseña en cada sección)
   if ($('#ligapage')) ligaCierra();   // cualquier sección del menú cierra los Workflows
+  if ($('#admpage')) admCierra();   // y el panel ⚙️ Admin
   if (k === 'lugar' && !LUGARES_ON) k = 'vestidor';   // Lugares, pronto
   if (COM && COM.on) comCierra();   // cualquier sección del menú cierra la página de la Comunidad
   if (state.spinning || state.busy) return;
@@ -2112,7 +2115,9 @@ function ariaBody() { const v = (C.vestidor || []).find(x => x.looks && x.looks[
   window.avisaError = (donde, e) => { try { console.error('[' + donde + ']', e); } catch (x) {} manda('capturado', donde + ': ' + ((e && (e.message || e)) || ''), { pila: e ? String(e.stack || '').slice(0, 1200) : '' }); };
 })();
 function bienvenida(forzar) { // web: mientras la cuenta no tenga personaje, se la recibe con los tres pasos y dos botones claros (crear el personaje o importarlo). «Ahora no» la quita hasta la próxima visita
-  if (!(window.CUENTA && CUENTA.web) || !window.PJ) return; const tiene = (PJ.list || []).some(p => p.ficha360);
+  if (!(window.CUENTA && CUENTA.web) || !window.PJ) return;
+  if (!forzar && !lastLiveJ && (bienvenida._n = (bienvenida._n || 0) + 1) < 12) { setTimeout(() => bienvenida(), 700); return; }   /* v280: espera a saber si ya tiene creaciones */
+  const tiene = (PJ.list || []).some(p => p.ficha360) || state.interno || TABS.creaciones.items.some(i => !i.pending && i.src);   // v280: quien ya ha creado algo (o es del equipo) no es nuevo
   if (!forzar) { if (tiene || $('#clavesm') || PJ.wiz) return; try { if (sessionStorage.getItem('am_bienv') === '1') return; } catch (e) {} }
   let m0 = $('#bienvm'); if (m0) m0.remove(); m0 = el('div', 'fxm'); m0.id = 'bienvm'; document.body.appendChild(m0);
   const quita = () => m0.remove(); const ahoraNo = () => { try { sessionStorage.setItem('am_bienv', '1'); } catch (e) {} quita(); }; m0.onclick = e => { if (e.target === m0) ahoraNo(); };
@@ -2130,13 +2135,13 @@ function bienvenida(forzar) { // web: mientras la cuenta no tenga personaje, se 
     b.appendChild(ft); const no = el('button', 'bvno', 'Ahora no'); no.type = 'button'; no.onclick = ahoraNo; b.appendChild(no); };
   pinta(!!CASA || LIVE); fetch('/api/claves').then(x => x.json()).then(j => { if (m0.isConnected) pinta(!!(j && (j.casa || (j.apis || []).some(a => a.on)))); }).catch(() => {}); }
 window.bienvenida = bienvenida;
-function bienvenidaToca() { return !!(window.CUENTA && CUENTA.web && window.PJ && PJ.cargado && !(PJ.list || []).some(p => p.ficha360)); }   // a una cuenta nueva no se le abre «Tus APIs» de golpe: la recibe la bienvenida
+function bienvenidaToca() { return !!(window.CUENTA && CUENTA.web && window.PJ && PJ.cargado && !(PJ.list || []).some(p => p.ficha360) && !state.interno && !TABS.creaciones.items.some(i => !i.pending && i.src)); }   // a una cuenta nueva no se le abre «Tus APIs» de golpe: la recibe la bienvenida
 function guiaInicio() { // web: tres pasos hasta la primera imagen. Se quita sola al completarlos (o con la ×) y no vuelve a salir en esa cuenta
   if (!(window.CUENTA && CUENTA.web) || guiaInicio._on) return; const uid = (CUENTA.user && CUENTA.user.id) || ''; const K = 'am_guia_ok';
   try { if (localStorage.getItem(K) === uid + ':1') return; } catch (e) {}
   guiaInicio._on = true; let apis = null; let iv = 0;
   const fin = () => { try { localStorage.setItem(K, uid + ':1'); } catch (e) {} clearInterval(iv); };
-  const hecho = () => [!!CASA || (typeof LIVE !== 'undefined' && LIVE) || !!(apis && apis.some(a => a.on)), !!(window.PJ && (PJ.list || []).some(p => p.ficha360)), TABS.creaciones.items.some(i => !i.pending && i.meta && i.src)];
+  const hecho = () => [!!CASA || (typeof LIVE !== 'undefined' && LIVE) || !!(apis && apis.some(a => a.on)), !!(window.PJ && (PJ.list || []).some(p => p.ficha360)) || state.interno || TABS.creaciones.items.some(i => !i.pending && i.meta && i.src), TABS.creaciones.items.some(i => !i.pending && i.meta && i.src)];   // v280: con creaciones (o del equipo) el paso del personaje ya está
   const PASOS = [[CASA ? 'Saldo regalo listo' : 'Conecta tus APIs', CASA ? 'Ya puedes generar con tu saldo regalo. Si quieres, conecta además tu propia clave' : 'Pega la clave de tu proveedor. Con la de WaveSpeed funciona todo: generar imágenes y leer las fotos que arrastres', () => CASA ? openMonedero() : openClaves()],
     ['Crea tu personaje', 'Su ficha 360 es la referencia de todas sus imágenes', () => { setTab('perfil'); if (window.pjStart && !(window.PJ && (PJ.list || []).length)) setTimeout(pjStart, 50); }],
     ['Tu primera imagen', 'Elige una foto de la Fototeca (o arrastra una) y pulsa Generar', () => setTab('crear')]];
@@ -2168,7 +2173,7 @@ function comPrestSync() { // lo prestado ha cambiado: salen de la imagen los per
   try { if (!Array.isArray(state.extras)) return; const fuera = state.extras.filter(id => esPrest(id) && !prestInfo(id)); const hay = state.extras.some(esPrest); if (fuera.length) { state.extras = state.extras.filter(id => !fuera.includes(id)); fuera.forEach(id => { delete state.compBy[id]; }); saveExtras(); toast('Un personaje de otro creador ya no está disponible y ha salido de tu imagen'); }
     const sig = JSON.stringify(((COM.D || {}).prestados || []).map(p => p.cid + p.pid + (p.nsfw ? '!' : ''))); if (sig !== COM.psig) { COM.psig = sig; if ((fuera.length || hay) && state.ready && state.tab === 'crear') { badge(); renderSide(); const it = cur(); if (it) paint(it, true); } } } catch (e) {} }
 function comConPrestado(p) { comCierra(true); extraChars(); addExtra(`com:${p.cid}:${p.pid}`); setTab('crear'); }
-function comPonAvisos() { const b = document.querySelector('#nav .combtn'), mb = document.querySelector('#nav .msgbtn'); if (b) { document.querySelectorAll('#nav .comdot').forEach(u => u.remove()); if (COM.n) (mb || b).insertAdjacentHTML('beforeend', `<u class="comdot">${COM.n}</u>`); b.classList.toggle('on', !!COM.on && COM.vista !== 'msg'); if (mb) mb.classList.toggle('on', !!COM.on && COM.vista === 'msg'); }
+function comPonAvisos() { { const mm = document.querySelector('#nav .mvmore'); if (mm) { mm.querySelectorAll('.mvdot').forEach(u => u.remove()); if (COM.n) mm.insertAdjacentHTML('beforeend', `<u class="mvdot">${COM.n}</u>`); } } const b = document.querySelector('#nav .combtn'), mb = document.querySelector('#nav .msgbtn'); if (b) { document.querySelectorAll('#nav .comdot').forEach(u => u.remove()); if (COM.n) (mb || b).insertAdjacentHTML('beforeend', `<u class="comdot">${COM.n}</u>`); b.classList.toggle('on', !!COM.on && COM.vista !== 'msg'); if (mb) mb.classList.toggle('on', !!COM.on && COM.vista === 'msg'); }
   let bell = $('#comBell'); if (!bell) { const m = document.querySelector('header .meter'); if (!m) return; bell = el('button', 'combell'); bell.id = 'comBell'; bell.type = 'button'; bell.onclick = () => { const d = COM.D; comAbre(d && (d.solicitudes.some(x => x.para === d.yo && x.estado === 'pendiente') || d.chats.some(c => c.sin_leer)) ? 'msg' : 'dir', d ? comPendiente() : null); }; m.parentElement.insertBefore(bell, m); }
   bell.style.display = 'none';   /* v260: el globito de Mensajes ya lo cuenta */ bell.innerHTML = `🔔 <b>${COM.n}</b>`; bell.title = 'Comunidad: tienes solicitudes o mensajes sin leer'; }
 setTimeout(comAvisos, 7000); setInterval(comAvisos, 60000);
@@ -2180,6 +2185,92 @@ function ligaAbre() { // 🧰 Workflows › Duelos en la web: la página de Duel
   if (COM && COM.on) comCierra(); let pg = $('#ligapage'); if (pg) return; pg = el('div', ''); pg.id = 'ligapage'; document.body.appendChild(pg);
   const coloca = () => { const m = document.querySelector('main'), n = $('#nav'); const r = m ? m.getBoundingClientRect() : { top: 0, bottom: innerHeight }; pg.style.top = Math.round(r.top) + 'px'; pg.style.bottom = Math.max(0, Math.round(innerHeight - r.bottom)) + 'px'; pg.style.left = Math.round(n ? n.getBoundingClientRect().right : 0) + 'px'; };
   coloca(); window.addEventListener('resize', coloca); pg._coloca = coloca; const fr = document.createElement('iframe'); fr.src = 'liga.html?v=' + Date.now(); fr.title = 'Workflows · Duelos'; pg.appendChild(fr); }
+function movilMas() { // v280: lo que en el móvil no cabe en la barra de abajo
+  const T = k => [TABS[k].icon, TABS[k].label, () => setTab(k), '', state.tab === k && !(COM && COM.on)];
+  const L = [T('biblio'), T('videoteca')].concat(LIBS.filter(q => LUGARES_ON || q !== 'lugar').map(T));
+  L.push(['🤝', 'Comunidad', () => { COM.visto = true; COM.on ? comIr('dir').then(comPonAvisos) : comAbre('dir'); }, '', COM && COM.on && COM.vista === 'dir']);
+  L.push(['💬', 'Mensajes', () => { COM.visto = true; COM.on ? comIr('msg').then(comPonAvisos) : comAbre('msg'); }, COM.n ? COM.n + ' sin leer' : '', COM && COM.on && COM.vista === 'msg']);
+  L.push(['💡', 'Feedback', () => window.fbAbre && fbAbre(), '']);
+  if (state.interno) L.push(['⚙️', 'Admin', () => adminAbre(), '', !!$('#admpage')]);
+  return L; }
+var ADM = { sec: 'resumen', r: null, filtro: 'todos', busca: '', abierto: '' };
+function admHace(t) { if (!t) return 'nunca'; const s_ = Date.now() / 1000 - t; if (s_ < 180) return 'ahora'; if (s_ < 3600) return 'hace ' + Math.round(s_ / 60) + ' min'; if (s_ < 86400) return 'hace ' + Math.round(s_ / 3600) + ' h'; if (s_ < 7 * 86400) return 'hace ' + Math.round(s_ / 86400) + (s_ < 1.5 * 86400 ? ' día' : ' días'); return new Date(t * 1000).toLocaleDateString('es-ES', { day: 'numeric', month: 'short' }); }
+const admIso = x => x ? Math.round(Date.parse(x.replace(' ', 'T') + (/[zZ+]/.test(x.slice(10)) ? '' : 'Z')) / 1000) : 0;
+const admTam = x => !x ? '0 MB' : x < 1024 ** 3 ? Math.max(1, Math.round(x / 1024 ** 2)) + ' MB' : (x / 1024 ** 3).toFixed(1).replace('.', ',') + ' GB';
+async function admCarga(fresco) { let r; try { r = await fetch('/api/admin/panel' + (fresco ? '?fresco=1' : '')).then(x => x.json()); } catch (e) { r = null; } ADM.r = r; if ($('#admpage')) admPinta(); }
+async function admManda(url, body) { const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).then(y => y.json()).catch(() => null); if (!r || !r.ok) { toast((r && r.error) || 'No se ha podido hacer'); return null; } return r; }
+function adminAbre(sec) { // v280: ⚙️ Admin — una página (como Duelos) con el resumen, los miembros y las herramientas del equipo
+  if (!state.interno) return; if (COM && COM.on) comCierra(); if ($('#ligapage')) ligaCierra();
+  if (sec) ADM.sec = sec; let pg = $('#admpage');
+  if (!pg) { pg = el('div', ''); pg.id = 'admpage'; document.body.appendChild(pg);
+    const coloca = () => { if (innerWidth < 768) { ['top', 'bottom', 'left'].forEach(k => pg.style.removeProperty(k)); return; } const m = document.querySelector('main'), n = $('#nav'); const r = m ? m.getBoundingClientRect() : { top: 0, bottom: innerHeight }; pg.style.top = Math.round(r.top) + 'px'; pg.style.bottom = Math.max(0, Math.round(innerHeight - r.bottom)) + 'px'; pg.style.left = Math.round(n ? n.getBoundingClientRect().right : 0) + 'px'; };
+    coloca(); window.addEventListener('resize', coloca); pg._coloca = coloca; }
+  document.querySelectorAll('#nav button').forEach(b => b.classList.toggle('on', b.classList.contains('admbtn')));
+  admPinta(); admCarga(); }
+window.adminAbre = adminAbre;
+function admCierra() { const pg = $('#admpage'); if (!pg) return; window.removeEventListener('resize', pg._coloca); pg.remove(); const b = document.querySelector('#nav .admbtn'); if (b) b.classList.remove('on'); }
+window.admCierra = admCierra;
+function admPinta() {
+  const pg = $('#admpage'); if (!pg) return; const r = ADM.r; const sc = pg.querySelector('.admin'); const y = sc ? sc.scrollTop : 0; pg.innerHTML = ''; const w = el('div', 'admin'); pg.appendChild(w);
+  const hd = el('div', 'admhd'); hd.appendChild(el('h2', '', '⚙️ Admin')); const tabs = el('div', 'admtabs');
+  [['resumen', '📊 Resumen'], ['miembros', '👥 Miembros'], ['herramientas', '🧰 Herramientas']].forEach(([k, t]) => { const b = el('button', ADM.sec === k ? 'on' : '', t); b.onclick = () => { ADM.sec = k; admPinta(); }; tabs.appendChild(b); });
+  hd.appendChild(tabs); const re = el('button', 'btn', '↻'); re.title = 'Actualizar'; re.onclick = () => { ADM.r = null; admPinta(); admCarga(true); }; hd.appendChild(re); const x = el('button', 'btn', '✕'); x.title = 'Cerrar'; x.onclick = () => { admCierra(); setTab(state.tab); }; hd.appendChild(x); w.appendChild(hd);
+  if (ADM.sec === 'herramientas') { admHerr(w); return; }
+  if (!r) { w.appendChild(el('p', 'admvacio', 'Leyendo…')); return; }
+  if (!r.ok) { w.appendChild(el('p', 'admvacio', esc(r.error || 'No se ha podido abrir el panel.'))); return; }
+  if (ADM.sec === 'resumen') admResumen(w, r); else admMiembros(w, r);
+  w.scrollTop = y; }
+function admResumen(w, r) {
+  const R = r.resumen, dk = r.disco; const g = el('div', 'admstats');
+  const st = (ic, n, t, sub, fn) => { const c = el(fn ? 'button' : 'div', 'admstat', `<span>${ic}</span><b>${n}</b><small>${t}</small>${sub ? `<i>${sub}</i>` : ''}`); if (fn) c.onclick = fn; g.appendChild(c); };
+  const ve = f_ => () => { ADM.sec = 'miembros'; ADM.filtro = f_; admPinta(); };
+  st('🟢', R.online, 'en directo ahora', 'con la web abierta en los últimos 3 min', ve('online'));
+  st('📅', R.h24, 'activos hoy', `${R.d7} en los últimos 7 días`);
+  st('👥', R.miembros, 'con acceso', `${R.equipo} del equipo`, ve('todos'));
+  st('🙋', R.sin_acceso, 'quieren entrar', 'entraron con Google pero no están en la lista', ve('sin'));
+  st('💤', R.nunca, 'nunca han entrado', 'tienen acceso pero aún no han venido', ve('nunca'));
+  st('🖼️', R.creaciones, 'creaciones', `${fmtUsd(R.gasto_mes)} gastado este mes`);
+  st('🎁', r.bolsa == null ? '—' : fmtUsd(r.bolsa), 'en la bolsa del saldo regalo', `${fmtUsd(r.casa_mes)} regalado este mes`, () => openBolsa());
+  if (dk) st('💾', Math.round(dk.usado / dk.total * 100) + ' %', 'del disco del servidor', `${admTam(dk.usado)} de ${admTam(dk.total)} · ${admTam(r.cuota)} por cuenta`);
+  w.appendChild(g);
+  const on = r.filas.filter(z => z.online); w.appendChild(el('h4', 'admh4', `En directo ahora · ${on.length}`));
+  if (!on.length) w.appendChild(el('p', 'admvacio', 'Ahora mismo no hay nadie con la web abierta.')); else on.forEach(z => w.appendChild(admFila(z, r)));
+  const ult = r.filas.filter(z => z.visto && !z.online).sort((a, b) => b.visto - a.visto).slice(0, 8);
+  if (ult.length) { w.appendChild(el('h4', 'admh4', 'Los últimos en pasar')); ult.forEach(z => w.appendChild(admFila(z, r))); } }
+function admMiembros(w, r) {
+  const alta = el('div', 'admalta'); const ta = el('textarea', 'search'); ta.rows = 2; ta.placeholder = 'Dar acceso: pega uno o varios correos de Google…'; alta.appendChild(ta);
+  const pr = el('input', 'search'); pr.type = 'number'; pr.min = 0; pr.placeholder = 'Plan $ (opcional)'; alta.appendChild(pr);
+  const g = el('button', 'btn acc', 'Dar acceso'); g.onclick = async () => { if (!ta.value.trim()) { toast('Pega algún correo'); return; } g.disabled = true; const z = await admManda('/api/miembros', { accion: 'alta', emails: ta.value, precio: pr.value }); g.disabled = false; if (z) { toast(`👥 ${z.nuevos} con acceso nuevo${z.actualizados ? ` · ${z.actualizados} ya estaban` : ''}`); ta.value = ''; admCarga(true); } };
+  alta.appendChild(g); w.appendChild(alta);
+  const F = { todos: ['Todos', z => z.acceso], online: ['🟢 En directo', z => z.online], equipo: ['Equipo', z => z.interno], sin: ['🙋 Quieren entrar', z => !z.acceso], nunca: ['💤 Nunca han entrado', z => z.acceso && !z.login] };
+  const fb = el('div', 'admfil'); Object.entries(F).forEach(([k, [t, fn]]) => { const n = r.filas.filter(fn).length; const b = el('button', ADM.filtro === k ? 'on' : '', `${t} <i>${n}</i>`); b.onclick = () => { ADM.filtro = k; admPinta(); }; fb.appendChild(b); });
+  const bu = el('input', 'search'); bu.placeholder = 'Buscar…'; bu.value = ADM.busca; fb.appendChild(bu); w.appendChild(fb);
+  const lista = el('div', 'admlista'); w.appendChild(lista);
+  const pon = () => { lista.innerHTML = ''; const q = ADM.busca.trim().toLowerCase(); const V = r.filas.filter((F[ADM.filtro] || F.todos)[1]).filter(z => !q || z.email.includes(q) || (z.alias || '').toLowerCase().includes(q)).sort((a, b) => (b.online - a.online) || ((b.visto || admIso(b.login)) - (a.visto || admIso(a.login))));
+    V.forEach(z => lista.appendChild(admFila(z, r, true))); if (!V.length) lista.appendChild(el('p', 'admvacio', 'Nadie por aquí.')); };
+  bu.oninput = () => { ADM.busca = bu.value; pon(); }; pon(); }
+function admFila(z, r, acciones) {
+  const visto = z.visto || admIso(z.login); const row = el('div', 'admrow' + (z.online ? ' online' : '') + (z.acceso ? '' : ' sin'));
+  const tags = (z.dueno ? '<em class="eq">dueño</em>' : z.interno ? '<em class="eq">equipo</em>' : '') + (z.acceso ? '' : '<em class="sinac">sin acceso</em>') + (z.online ? `<em class="on">● en directo${z.movil ? ' · 📱' : ' · 💻'}</em>` : '');
+  const datos = [z.acceso ? `entró ${admHace(visto)}` : `lo intentó ${admHace(admIso(z.login))}`, z.creaciones != null ? `${z.creaciones} creaciones` : '', z.personajes ? `${z.personajes} personaje${z.personajes > 1 ? 's' : ''}` : '', z.gasto_mes ? `${fmtUsd(z.gasto_mes)} este mes` : '', z.queda_regalo != null && z.cid ? `regalo: le queda ${fmtUsd(z.queda_regalo)}` : '', z.clave ? '🔑 su propia API' : '', z.espacio ? admTam(z.espacio) : '', z.acceso && !z.interno ? `plan ${z.precio != null ? fmtUsd(z.precio) : '4 $ (por defecto)'}` : ''].filter(Boolean).join(' · ');
+  row.appendChild(el('div', 'admq', `<i class="admdot"></i><div><b>${esc(z.email)}</b>${z.alias ? ` <span class="admal">${esc(z.alias)}</span>` : ''} ${tags}<small>${datos}</small></div>`));
+  if (!acciones) return row; const ac = el('div', 'admac'); row.appendChild(ac);
+  const btn = (t, ti, fn, cls) => { const b = el('button', 'btn' + (cls ? ' ' + cls : ''), t); b.title = ti; b.onclick = e => { e.stopPropagation(); fn(b); }; ac.appendChild(b); return b; };
+  const pide = (ph, val, ok) => { ac.innerHTML = ''; const i_ = el('input', 'search'); i_.type = 'number'; i_.step = '0.5'; i_.min = 0; i_.placeholder = ph; i_.value = val; ac.appendChild(i_); const s_ = el('button', 'btn acc', '✓'); s_.onclick = async () => { const v = parseFloat(String(i_.value).replace(',', '.')); if (!(v >= 0)) { toast('Pon un número'); return; } s_.disabled = true; await ok(v); }; ac.appendChild(s_); const c_ = el('button', 'btn', '✕'); c_.onclick = () => admPinta(); ac.appendChild(c_); setTimeout(() => i_.focus(), 0); };
+  if (!z.acceso) { btn('✓ Dar acceso', 'Añadirlo a la lista de miembros: podrá entrar ya', async b => { b.disabled = true; if (await admManda('/api/miembros', { accion: 'alta', emails: z.email })) { toast('Ya tiene acceso'); admCarga(true); } else b.disabled = false; }, 'acc'); return row; }
+  if (z.cid) btn('🎁 Regalar', 'Regalarle saldo (solo imágenes, no caduca)', () => pide('$', 1, async v => { if (!(v > 0)) { toast('Más de 0 $'); return; } if (await admManda('/api/bolsa', { accion: 'regalar', cid: z.cid, usd: v, nota: 'regalo del equipo' })) { toast(`🎁 ${fmtUsd(v)} para ${z.email}`); admCarga(true); } }));
+  if (!z.interno) btn('Plan', 'Lo que paga en Skool: de ahí sale su saldo regalo de cada mes', () => pide('Plan en $', z.precio != null ? z.precio : 4, async v => { if (await admManda('/api/admin/acciones', { accion: 'precio', email: z.email, precio: v })) { toast('Plan guardado'); ADM.r = await fetch('/api/admin/panel?fresco=1').then(x => x.json()).catch(() => ADM.r); admPinta(); } }));
+  if (r.yo_dueno && !z.dueno) btn(z.interno ? 'Quitar del equipo' : 'Hacer del equipo', z.interno ? 'Deja de ver lo del equipo (Admin, Aria editable, NSFW…)' : 'Verá lo del equipo: Admin, Aria editable, Duelos…', async () => { if (!(await pregunta(z.interno ? `¿Quitar a ${z.email} del equipo?` : `¿Hacer a ${z.email} del equipo?\n\nVerá el panel Admin, podrá editar a Aria y regalar saldo.`))) return; const k = await admManda('/api/admin/acciones', { accion: 'equipo', email: z.email, on: !z.interno }); if (k) { ADM.r = k; admPinta(); toast('Hecho'); } });
+  if (!z.interno) btn('Quitar acceso', 'Deja de poder entrar (su cuenta y sus creaciones no se borran)', async () => { if (!(await pregunta(`¿Quitar el acceso a ${z.email}?\n\nDeja de poder entrar al momento. Su cuenta y sus creaciones no se borran: si vuelve a tener acceso, lo recupera todo.`))) return; if (await admManda('/api/miembros', { accion: 'baja', email: z.email })) { toast('Acceso quitado'); admCarga(true); } }, 'rojo');
+  return row; }
+function admHerr(w) {
+  const g = el('div', 'admstats'); const it = (ic, t, sub, fn) => { const c = el('button', 'admstat', `<span>${ic}</span><b>${t}</b><i>${sub}</i>`); c.onclick = fn; g.appendChild(c); };
+  it('🎁', 'Bolsa del saldo regalo', 'cuánto queda, quién gasta más, regalar a todos', () => openBolsa());
+  it('🚩', 'Denuncias', 'lo que ha denunciado la comunidad: restaurar o dejarlo retirado', () => denAbre());
+  it('🥊', 'Duelos', 'la AI League: preparar y publicar duelos', () => { admCierra(); ligaAbre(); });
+  it('📒', 'Registro de gasto', 'lo que has gastado tú, por día y por modelo', () => openGasto());
+  it('👁', 'Ver como miembro', 'la web tal como la ve un miembro normal (sin lo del equipo)', () => { try { localStorage.setItem('am_vermiembro', '1'); } catch (e) {} location.reload(); });
+  w.appendChild(g); }
 window.ligaCierra = function () { const pg = $('#ligapage'); if (!pg) return; window.removeEventListener('resize', pg._coloca); pg.remove(); };
 const comIgU = u => { const m = String(u || '').match(/instagram\.com\/([^/?#]+)/i); return m ? m[1] : ''; };   // el usuario de Instagram a partir de su enlace
 const comFoto = (c, p) => p && p.src ? `<img src="${p.src}" alt="">` : p ? `<img data-av="/api/comunidad/avatar?c=${c.cid}&p=${encodeURIComponent(p.pid)}&t=foto${COM.avv ? '&v=' + COM.avv : ''}" alt="${esc((p.nombre || '?')[0])}">` : '';   // la foto grande de un influencer (galería)
@@ -2202,7 +2293,7 @@ function comFichaPaso(d) { const O = COM.orden || []; if (!COM.pz || COM.pz.crea
 document.addEventListener('keydown', e => { if (!COM.on || !COM.pz || /^(INPUT|TEXTAREA)$/.test((document.activeElement || {}).tagName || '') || document.getElementById('avm') || document.getElementById('compide')) return; if (e.key === 'ArrowRight') { e.preventDefault(); comFichaPaso(1); } else if (e.key === 'ArrowLeft') { e.preventDefault(); comFichaPaso(-1); } else if (e.key === 'Escape') { COM.pz = null; comPinta(); } });
 function comPendiente() { const d = COM.D; if (!d) return null; const x = d.solicitudes.find(z => z.para === d.yo && z.estado === 'pendiente'); if (x) return x.de; const c = d.chats.find(z => z.sin_leer); return c ? c.con : (d.chats[0] || {}).con || null; }   // la conversación que más pide atención
 async function comIr(v, a) { COM.noAuto = false; if (v === 'sol') { v = 'msg'; a = a || comPendiente(); } if (v === 'msg' && !a) a = comPendiente(); COM.vista = v; COM.arg = a || null; COM.pz = null; await comChat(); { const ch = COM.arg && COM.D && COM.D.chats.find(z => z.con === COM.arg); if (ch && ch.sin_leer) { COM.n = Math.max(0, (COM.n || 0) - ch.sin_leer); ch.sin_leer = 0; } }   /* al abrirla queda leída también en la lista, sin esperar al siguiente refresco */ comPinta(); comPonAvisos(); }
-async function comAbre(vista, arg) { COM.on = true; if (vista) { COM.vista = vista; COM.arg = arg || null; } COM.pz = null; let pg = $('#compage'); if (!pg) { pg = el('div', ''); pg.id = 'compage'; document.body.appendChild(pg); }
+async function comAbre(vista, arg) { if ($('#admpage')) admCierra(); COM.on = true; if (vista) { COM.vista = vista; COM.arg = arg || null; } COM.pz = null; let pg = $('#compage'); if (!pg) { pg = el('div', ''); pg.id = 'compage'; document.body.appendChild(pg); }
   const coloca = () => { const m = document.querySelector('main'), n = $('#nav'); const r = m ? m.getBoundingClientRect() : { top: 0, bottom: innerHeight }; pg.style.top = Math.round(r.top) + 'px'; pg.style.bottom = Math.max(0, Math.round(innerHeight - r.bottom)) + 'px'; pg.style.left = Math.round(n ? n.getBoundingClientRect().right : 0) + 'px'; }; coloca(); if (COM.coloca) window.removeEventListener('resize', COM.coloca); COM.coloca = coloca; window.addEventListener('resize', coloca);
   try { history.replaceState(null, '', '#comunidad'); } catch (e) {} document.querySelectorAll('#nav button.on').forEach(b => b.classList.remove('on')); comPonAvisos(); comPinta(); await comCarga(); const d = COM.D;
   if (d && !vista) COM.vista = 'dir';   // al entrar, siempre «Creadores»
