@@ -47,15 +47,15 @@ const mirror = $('#mirror'), layers = [$('#lA'), $('#lB')]; let front = 0;
 const rail = $('#rail'), side = $('#side'), logEl = $('#log');
 
 // ----------------------------------------------------------------- utilidades
-function miniLb(src, cap, btns, extra) { $('#mlbImg').src = src; hiSwap($('#mlbImg'), src); $('#mlbCap').textContent = cap || ''; const box = $('#mlbBtns'); box.innerHTML = ''; if (extra) box.appendChild(extra);   /* v319: p. ej. el crédito de lo publicado */ (btns || []).forEach(([t, fn], i) => { const b = el('button', 'btn w' + (i === 0 ? ' acc' : ''), t); b.onclick = fn; box.appendChild(b); }); $('#mlb').classList.add('on'); }
-function closeMiniLb() { $('#mlb').classList.remove('on'); }
+function miniLb(src, cap, btns, extra) { visorFichas([{ src, nombre: cap || '', acts: btns || [], extra }], 0); }   // v340: el visor único
+function closeMiniLb() { $('#mlb').classList.remove('on'); const v = $('#fvis'); if (v) v.remove(); }
 $('#mlbX').onclick = closeMiniLb; $('#mlb').onclick = e => { if (e.target === $('#mlb')) closeMiniLb(); };
 function fullOf(src) { // la original sin reducir de una imagen de biblioteca (Fototeca y Vestidor se bajaron a 1024 / 1200 px para que la cuadrícula cargue rápido)
   const s = String(src || '').split('?')[0]; let m = s.match(/^assets\/biblio\/([^\/]+\.jpg)$/); if (m && !/_t\.jpg$/.test(m[1])) return 'assets/biblio/full/' + m[1];
   m = s.match(/^assets\/vestidor\/(n\d+_ficha\.jpg)$/); return m ? 'assets/vestidor/full/' + m[1] : null; }
 function hiSwap(im, low) { // se ve al instante la copia ligera y, cuando llega, la original (si existe)
   const full = fullOf(low); if (!full) return; const hi = new Image(); hi.onload = () => { if (im.getAttribute('src') === low) { im.src = full; im.dataset.full = '1'; } }; hi.src = full; }
-function lightbox(src, cap) { $('#lbImg').src = src; hiSwap($('#lbImg'), src); $('#lbCap').textContent = cap || ''; $('#lb').classList.add('on'); }
+function lightbox(src, cap) { visorFichas([{ src, nombre: cap || '' }], 0); }   // v340: el visor único
 $('#lb').onclick = () => $('#lb').classList.remove('on');
 function toast(msg) { const t = $('#toast'); t.textContent = msg; t.classList.add('on'); clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove('on'), 1800); }
 function log(html) { const d = el('div', 'l', `<span class="t">${now()}</span>${html}`); logEl.appendChild(d); logEl.scrollTop = logEl.scrollHeight; while (logEl.children.length > 400) logEl.removeChild(logEl.firstChild); }
@@ -3107,15 +3107,18 @@ async function openPapelera(tipo0) { // v294: 🗑 papelera general — creacion
   b.innerHTML = '<p>Mirando la papelera…</p>'; try { r = await fetch('/api/papelera').then(x => x.json()); } catch (e) { r = null; } if (m0.isConnected) pinta(); }
 window.openPapelera = openPapelera;
 // Galería de fichas: imagen grande, ◀ ▶ (también con las flechas del teclado) y, a la derecha, lo que se puede hacer con cada una
-function visorFichas(items, i) { if (!items || !items.length) return; let m0 = $('#fvis'); if (m0) m0.remove(); m0 = el('div', 'fxm'); m0.id = 'fvis'; document.body.appendChild(m0);
-  const tecla = e => { if (!m0.isConnected) { document.removeEventListener('keydown', tecla, true); return; } if (e.key === 'Escape') { e.stopPropagation(); cerrar(); } else if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') { if (/INPUT|TEXTAREA/.test((e.target || {}).tagName || '')) return; e.preventDefault(); e.stopPropagation(); ir(e.key === 'ArrowRight' ? 1 : -1); } };
-  const cerrar = () => { m0.remove(); document.removeEventListener('keydown', tecla, true); }; const ir = d => { i = (i + d + items.length) % items.length; pinta(); };
-  const box = el('div', 'fvisbox'); m0.appendChild(box); m0.onclick = e => { if (e.target === m0) cerrar(); };
-  const pinta = () => { const f = items[i]; box.innerHTML = ''; const med = el('div', 'fvismed', `<img src="${f.src}" alt="">`);
-    if (items.length > 1) { const p = el('button', 'fvisnav p', '‹'); p.title = 'Anterior (←)'; p.onclick = () => ir(-1); const n = el('button', 'fvisnav n', '›'); n.title = 'Siguiente (→)'; n.onclick = () => ir(1); med.appendChild(p); med.appendChild(n); } box.appendChild(med);
-    const sd = el('div', 'fvisside'); sd.appendChild(el('small', '', `${i + 1} / ${items.length}`)); sd.appendChild(el('h3', '', esc(f.nombre || 'Ficha'))); if (f.info) sd.appendChild(el('small', '', esc(f.info)));
-    const st = el('div', 'stack'); (f.acts || []).forEach(([t, fn, tip]) => { const corto = [...String(t)].length <= 2; const bt = el('button', 'btn w', corto && tip ? `${t} ${tip}` : t); if (tip) bt.title = tip; bt.onclick = async () => { cerrar(); await fn(); }; st.appendChild(bt); }); sd.appendChild(st);
-    const x = el('button', 'btn w', 'Cerrar'); x.style.marginTop = 'auto'; x.onclick = cerrar; sd.appendChild(x); box.appendChild(sd); };
+function visorFichas(items, i) { // v340: EL visor de imágenes de toda la web (mismo aspecto que el de la Fototeca). items: [{src, nombre, info, acts: [[texto, fn, tip]], extra}]
+  if (!items || !items.length) return; i = Math.max(0, Math.min(items.length - 1, i || 0)); let m0 = $('#fvis'); if (m0) m0.remove(); m0 = el('div', 'fxm fvisw'); m0.id = 'fvis'; document.body.appendChild(m0);
+  const tecla = e => { if (!m0.isConnected) { document.removeEventListener('keydown', tecla, true); return; } if (e.key === 'Escape') { e.stopPropagation(); cerrar(); } else if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') { if (/INPUT|TEXTAREA/.test((e.target || {}).tagName || '') || items.length < 2) return; e.preventDefault(); e.stopPropagation(); ir(e.key === 'ArrowRight' ? 1 : -1); } };
+  const cerrar = () => { m0.remove(); document.removeEventListener('keydown', tecla, true); }; const ir = d => { i = (i + d + items.length) % items.length; pinta(); }; m0._cierra = cerrar;
+  const box = el('div', 'galbox fvisgal'); m0.appendChild(box); m0.onclick = e => { if (e.target === m0) cerrar(); };
+  const pinta = () => { const f = items[i]; box.innerHTML = ''; const med = el('div', 'galmedia'); const im = document.createElement('img'); im.alt = ''; im.src = f.src; med.appendChild(im); try { if (typeof hiSwap === 'function') hiSwap(im, f.src); } catch (e) {}
+    if (items.length > 1) { med.appendChild(el('span', 'galn', `${i + 1} / ${items.length}`)); const p = el('button', 'galnav l', '‹'); p.title = 'Anterior (←)'; p.onclick = e => { e.stopPropagation(); ir(-1); }; const n = el('button', 'galnav r', '›'); n.title = 'Siguiente (→)'; n.onclick = e => { e.stopPropagation(); ir(1); }; med.appendChild(p); med.appendChild(n); }
+    box.appendChild(med); const sd = el('div', 'galside');
+    if (f.nombre || f.info) { const s1 = el('div', 'sec'); if (f.nombre) s1.appendChild(el('div', 'big', esc(f.nombre))); if (f.info) s1.appendChild(el('small', 'fvisinfo', esc(f.info))); sd.appendChild(s1); }
+    if (f.extra) { const s2 = el('div', 'sec'); s2.appendChild(f.extra); sd.appendChild(s2); }
+    if ((f.acts || []).length) { const st = el('div', 'sec stack'); f.acts.forEach(([t, fn, tip], k) => { const corto = [...String(t)].length <= 2; const bt = el('button', 'btn w' + (k === 0 ? ' acc' : ''), corto && tip ? `${t} ${tip}` : t); if (tip) bt.title = tip; bt.onclick = async () => { cerrar(); await fn(); }; st.appendChild(bt); }); sd.appendChild(st); }
+    box.appendChild(sd); const x = el('button', 'btn carpverx', '✕'); x.title = 'Cerrar (Esc)'; x.onclick = cerrar; box.appendChild(x); };
   document.addEventListener('keydown', tecla, true); pinta(); }
 function fichaRef(src, nombre) { const p = String(src).split('?')[0]; return { id: 'ficha:' + p, kind: 'image', name: nombre || 'Ficha', src: p, thumb: src }; }
 function fichaAImagen(src, nombre) { if (!state.ipool) state.ipool = []; poolAdd(fichaRef(src, nombre), false, state.ipool); setTab('crear'); }   // la ficha, como referencia extra de Crear imagen
