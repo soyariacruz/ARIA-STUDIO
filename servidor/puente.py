@@ -43,7 +43,7 @@ MAX_CUERPO = 40 * 1024 * 1024    # tope de una petición en modo servidor
 MAX_BIBLIO = 200 * 1024 * 1024   # tope de un fichero de la biblioteca común al copiarlo
 KINDS = ('vestidor', 'hair', 'expr')   # las bibliotecas a las que una cuenta puede añadir lo suyo
 _UUID = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
-VERSION = 314
+VERSION = 315
 _ctx = threading.local()   # la cuenta del hilo: la pone cada petición (y, a mano, cada hilo de fondo)
 def uid(): return getattr(_ctx, 'uid', None)   # en local siempre None
 DUENOS = tuple(e.strip().lower() for e in (os.environ.get('ARIA_DUENOS') or 'mix1994max@gmail.com').split(',') if e.strip())   # cuentas que pueden cambiar a Aria Cruz (en la web, la de Max)
@@ -623,7 +623,16 @@ def _adm_cuenta(u):
     try: clave = os.path.getsize(os.path.join(b, 'claves.env')) > 10
     except OSError: clave = False
     with como(u, '', False): esp = espacio(True)
-    r = {'creaciones': n, 'ultima': int(ult), 'gasto_mes': round(gasto, 4), 'regalo_mes': round(regalo, 4), 'queda_regalo': None if sin_mon else round(queda, 4), 'personajes': pj, 'clave': clave, 'espacio': esp}
+    apis = []   # v315: qué APIs propias tiene conectadas (solo el nombre del servicio; las claves nunca salen)
+    try:
+        K = {}
+        for ln in open(os.path.join(b, 'claves.env'), encoding='utf-8'):
+            k_, _, v_ = ln.strip().partition('=')
+            if k_ and v_.strip(): K[k_] = v_.strip()
+        NOM = {'WS_API_KEY': 'WaveSpeed', 'ANTHROPIC_API_KEY': 'Claude', 'ARK_API_KEY': 'BytePlus', 'ELEVENLABS_API_KEY': 'ElevenLabs', 'HF_API_KEY': 'Higgsfield', 'HF_KEY': 'Higgsfield', 'HIGGSFIELD_KEY': 'Higgsfield'}
+        apis = sorted({NOM.get(k_, k_.replace('_API_KEY', '').replace('_KEY', '').title()) for k_ in K if not k_.endswith('_OFF') and k_ + '_OFF' not in K})
+    except OSError: pass
+    r = {'apis': apis, 'creaciones': n, 'ultima': int(ult), 'gasto_mes': round(gasto, 4), 'regalo_mes': round(regalo, 4), 'queda_regalo': None if sin_mon else round(queda, 4), 'personajes': pj, 'clave': clave, 'espacio': esp}
     _ADM_C[u] = (time.time(), r); return r
 _ADM_P = [0.0, None]
 def _adm_panel():
