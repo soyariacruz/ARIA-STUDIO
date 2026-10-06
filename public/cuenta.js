@@ -23,7 +23,7 @@
 html.gate body>*:not(#gate){visibility:hidden!important}
 #gate{position:fixed;inset:0;z-index:99999;background:var(--bg);display:none;align-items:center;justify-content:center;padding:16px;overflow:auto}
 html.gate #gate{display:flex}
-#gate .gwrap{display:flex;align-items:center;justify-content:center;gap:44px;width:100%;max-width:1040px}
+#gate .gwrap{display:flex;align-items:center;justify-content:center;gap:44px;width:100%;max-width:1220px}
 #gate .gfotos{display:none;gap:14px;align-items:center;flex:1;min-width:0;justify-content:flex-end}
 #gate.entrar .gfotos{display:flex}
 #gate .gfotos img{width:32%;max-width:260px;aspect-ratio:3/4;object-fit:cover;border-radius:20px;box-shadow:0 0 0 4px #fff,0 0 0 5px #cfa966,0 22px 50px rgba(0,0,0,.35);background:var(--panel)}
