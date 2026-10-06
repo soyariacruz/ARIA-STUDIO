@@ -110,6 +110,9 @@ html.sinapi #livedot,html.sinapi .meter{display:none!important}
     out.onclick = () => { out.disabled = true; out.textContent = 'Cerrando…'; salir(); };
     const mk = (t, fn) => { const b = document.createElement('button'); b.className = 'cmx'; b.textContent = t; b.onclick = () => { closeMenu(); fn(); }; return b; };   // v267
     const extra = [window.openGasto ? mk('📒 Registro de gasto', () => openGasto()) : null, window.openAyuda ? mk('❓ Ayuda', () => openAyuda()) : null].filter(Boolean);
+    { const T = [['Pequeño', 0.92], ['Normal', 1], ['Grande', 1.1]]; let cur = 1; try { const g = parseFloat(localStorage.getItem('am_escala')); if (g >= 0.8 && g <= 1.6) cur = g; } catch (e) {}   // v286: tamaño de la interfaz (solo en el ordenador)
+      if (innerWidth >= 768) { const w = document.createElement('div'); w.className = 'cmtam'; const l = document.createElement('small'); l.textContent = 'Tamaño'; w.appendChild(l);
+        T.forEach(([t, v]) => { const b = document.createElement('button'); b.type = 'button'; b.textContent = t; if (Math.abs(cur - v) < 0.01) b.className = 'on'; b.onclick = () => { try { if (v === 1) localStorage.removeItem('am_escala'); else localStorage.setItem('am_escala', String(v)); } catch (e) {} location.reload(); }; w.appendChild(b); }); extra.push(w); } }
     if (window.LEGAL_OK) { const lg = document.createElement('a'); lg.className = 'cmlegal'; lg.href = '/legal.html'; lg.target = '_blank'; lg.textContent = 'Aviso legal · Privacidad · Condiciones'; extra.push(lg); }   // v271
     menu.append(av, n, e, ...extra, out);
     menu.style.top = (r.bottom + 8) + 'px'; menu.style.right = Math.max(8, innerWidth - r.right) + 'px';
