@@ -1469,22 +1469,30 @@ function comFichaDr(c, p, o) { // v323: LA ficha de un influencer, igual en toda
   { const cr = el(c.yo || c.aria ? 'div' : 'button', 'cpfde', c.yo ? '<span>Tu influencer</span>' : `${comAvC(c, 'sm')}<span>${c.aria ? 'Team Aria Cruz' : 'de <b>' + esc(comNom(c)) + '</b>'}</span>`); if (!c.yo && !c.aria) { cr.title = 'Ver al creador y todos sus influencers'; cr.onclick = () => o.ver({ cid: c.cid, creador: true }); } de.appendChild(cr); }
   const x1 = !c.yo && !c.aria ? D0.solicitudes.find(z => z.de === D0.yo && z.para === c.cid && sViva(z) && (!z.pid || z.pid === p.pid)) : null;
   const xc = !c.yo && !c.aria ? D0.solicitudes.find(z => z.estado === 'aceptada' && ((z.de === D0.yo && z.para === c.cid) || (z.de === c.cid && z.para === D0.yo)) && (!z.pid || z.pid === p.pid)) : null;
-  { const est = c.yo ? (p.oculto ? 'Oculto: solo lo ves tú' : p.abierto ? 'Abierto a colaborar' : '') : xc ? 'Colaboráis' : x1 ? 'Solicitud enviada el ' + comDia(x1.t) : p.abierto ? 'Abierto a colaborar' : '';
-    if (est) de.appendChild(el('div', 'cpfest' + (xc ? ' ok' : ''), '<i></i>' + esc(est))); }
-  if (p.bio) de.appendChild(el('p', 'cpbio', esc(p.bio)));
+  const mia = c.yo || (c.aria && D0.soy_aria); const pend = x1 && x1.estado === 'pendiente';
+  // v325: SIEMPRE los mismos huecos, en el mismo orden y sitio: estado · descripción · (abajo) botón principal · fila de dos · enlace
+  { const est = mia ? (p.oculto ? 'Oculto: solo lo ves tú' : p.abierto ? 'Tu influencer · abierto a colaborar' : 'Tu influencer') : c.aria ? 'Para todos los miembros' : xc ? 'Colaboráis' : pend ? 'Solicitud enviada el ' + comDia(x1.t) : p.abierto ? 'Abierto a colaborar' : 'Sin colaborar todavía';
+    de.appendChild(el('div', 'cpfest' + (mia || c.aria || xc ? ' ok' : pend ? ' pend' : p.abierto ? '' : ' no'), '<i></i>' + esc(est))); }
+  de.appendChild(el('p', 'cpbio' + (p.bio ? '' : ' vac'), esc(p.bio || 'Todavía no tiene descripción.')));
   if ((p.nicho || []).length) de.appendChild(el('div', 'cpfnicho', p.nicho.map(n => `<span>${esc(n)}</span>`).join('')));
-  const a = el('div', 'cpf2acts'); de.appendChild(a);
-  if (c.aria) { B(a, 'Crear con Aria', () => { o.fuera(); comConAria(); }, 'acc'); if (!D0.soy_aria) B(a, 'Mensaje', () => o.msg('caria')); }   /* v324: en la cuenta de Aria, es tuya: sin «Mensaje» */
-  else if (!c.yo) { const pp = (D0.prestados || []).find(z => z.cid === c.cid && z.pid === p.pid);
-    if (xc && pp) B(a, 'Crear con ' + esc(p.nombre), () => { o.fuera(); comConPrestado(pp); }, 'acc');
-    else if (x1 && x1.estado === 'pendiente') B(a, 'Cancelar la solicitud', () => comHaz({ accion: 'terminar', id: x1.id }, 'Solicitud cancelada'));
-    else if (!xc && p.abierto) B(a, 'Colaborar ahora', () => comHaz({ accion: 'solicitar', para: c.cid, pid: p.pid, msg: '' }, 'Ya colaboráis: lo tienes en Crear imagen'), 'acc');
-    else if (!xc) B(a, 'Pedir colaborar', () => comPide(c, p), 'acc');
-    { const k = c.cid + ':' + p.pid, on = (D0.siguiendo || []).includes(k); const sb = B(a, on ? 'Siguiendo' : 'Seguir', () => comHaz({ accion: 'seguir', cid: c.cid, pid: p.pid, on: !on }, on ? 'Ya no le sigues' : 'Siguiendo'), 'cpf2seg' + (on ? ' on' : '')); sb.title = on ? 'Dejar de seguir' : 'Síguelo para tenerlo siempre arriba. No da ningún permiso: colaborar es aparte.'; }
-    B(a, 'Mensaje', () => o.msg(c.cid));
-    if (xc) { const q = el('button', 'cpf2lnk', 'Dejar de colaborar'); q.onclick = async () => { if ((await pregunta(`¿Dejar de colaborar con ${p.nombre}?\n\nLo que ya habéis creado se queda. Para volver a colaborar habrá que pedirlo de nuevo.`))) comHaz({ accion: 'terminar', id: xc.id }, 'Colaboración terminada'); }; de.appendChild(q); } }
-  else { // tu influencer: sus ajustes, discretos
-    const aj = el('div', 'cpf2aj'); de.appendChild(aj); a.remove();
+  const pie = el('div', 'cpf2pie'); const a = el('div', 'cpf2acts'); const a2 = el('div', 'cpf2row'); const lk = el('div', 'cpf2lk'); pie.appendChild(a); pie.appendChild(a2); pie.appendChild(lk);
+  const nom = esc(p.nombre); const k_ = c.cid + ':' + p.pid, sig = (D0.siguiendo || []).includes(k_);
+  const seguir = () => { const sb = B(a2, sig ? 'Siguiendo' : 'Seguir', () => comHaz({ accion: 'seguir', cid: c.cid, pid: p.pid, on: !sig }, sig ? 'Ya no le sigues' : 'Siguiendo'), 'cpf2seg' + (sig ? ' on' : '')); sb.title = sig ? 'Dejar de seguir' : 'Síguelo para tenerlo siempre arriba. No da ningún permiso: colaborar es aparte.'; };
+  const enlace = (t, fn) => { const q = el('button', 'cpf2lnk', t); q.onclick = fn; lk.appendChild(q); };
+  if (mia) { B(a, 'Crear con ' + nom, () => { o.fuera(); if (c.aria) comConAria(); else { comCierra(true); setTab('crear'); setChar(p.pid); } }, 'acc');
+    B(a2, 'Editar en el Perfil', () => { o.fuera(); comCierra(true); if (window.PJ) { PJ.sel = c.aria ? 'aria' : p.pid; PJ.wiz = null; } setTab('perfil'); }); }
+  else if (c.aria) { B(a, 'Crear con Aria', () => { o.fuera(); comConAria(); }, 'acc'); seguir(); B(a2, 'Mensaje', () => o.msg('caria')); }
+  else { const pp = (D0.prestados || []).find(z => z.cid === c.cid && z.pid === p.pid);
+    if (xc && pp) B(a, 'Crear con ' + nom, () => { o.fuera(); comConPrestado(pp); }, 'acc');
+    else if (xc) B(a, 'Colaboráis', () => {}, 'acc').disabled = true;
+    else if (pend) B(a, 'Solicitud enviada', () => {}, 'acc').disabled = true;
+    else if (p.abierto) B(a, 'Colaborar ahora', () => comHaz({ accion: 'solicitar', para: c.cid, pid: p.pid, msg: '' }, 'Ya colaboráis: lo tienes en Crear imagen'), 'acc');
+    else B(a, 'Pedir colaborar', () => comPide(c, p), 'acc');
+    seguir(); B(a2, 'Mensaje', () => o.msg(c.cid));
+    if (xc) enlace('Dejar de colaborar', async () => { if ((await pregunta(`¿Dejar de colaborar con ${p.nombre}?\n\nLo que ya habéis creado se queda. Para volver a colaborar habrá que pedirlo de nuevo.`))) comHaz({ accion: 'terminar', id: xc.id }, 'Colaboración terminada'); });
+    else if (pend) enlace('Cancelar la solicitud', () => comHaz({ accion: 'terminar', id: x1.id }, 'Solicitud cancelada')); }
+  if (c.yo) { // tu influencer: sus ajustes, discretos (encima de los botones)
+    const aj = el('div', 'cpf2aj'); de.appendChild(aj);
     const sw = (txt, on, fn) => { const r = el('button', 'cpsw2' + (on ? ' on' : ''), `<span class="cpswt"><i></i></span><b>${txt}</b>`); r.onclick = fn; aj.appendChild(r); };
     sw('Público en la Comunidad', !p.oculto, () => comHaz({ accion: 'visible', pid: p.pid, publico: !!p.oculto }, p.oculto ? 'Ahora es público' : 'Ahora está oculto'));
     if (!p.oculto) sw('Abierto a colaborar (solo SFW)', !!p.abierto, () => comHaz({ accion: 'abierto', pid: p.pid, on: !p.abierto }, p.abierto ? 'Ya no está abierto' : 'Abierto a colaborar'));
@@ -1493,6 +1501,7 @@ function comFichaDr(c, p, o) { // v323: LA ficha de un influencer, igual en toda
     const col = D0.solicitudes.filter(z => z.estado === 'aceptada' && z.para === D0.yo && (!z.pid || z.pid === p.pid));
     if (col.length) { de.appendChild(el('div', 'cpfmast', `Colabora con · ${col.length}`)); col.forEach(z => { const oc = comCta(z.de); const r = el('div', 'cpcolr', `${comAvC(oc, 'sm')}<div><b>${esc(comNom(oc))}</b><small>${z.usos ? z.usos + (z.usos === 1 ? ' imagen creada' : ' imágenes creadas') : 'aún sin imágenes'}${z.hasta ? ' · ' + plazoTxt(z.hasta) : ''}</small></div>`); const m = el('button', 'btn', '💬'); m.title = 'Abrir vuestra conversación'; m.onclick = () => o.msg(z.de); const q = el('button', 'btn', 'Retirar'); q.title = 'Retirar el permiso: dejará de poder crear con ' + p.nombre; q.onclick = async () => { if ((await pregunta(`¿Retirar el permiso? ${comNom(oc)} ya no podrá crear con ${p.nombre}.`))) comHaz({ accion: 'terminar', id: z.id }, 'Permiso retirado'); }; r.appendChild(m); r.appendChild(q); de.appendChild(r); }); } }
   { const mas = c.personajes.filter(z => z.pid !== p.pid && !z.oculto); if (mas.length && !c.yo) { de.appendChild(el('div', 'cpfmast', c.aria ? 'Más' : 'Más de ' + esc(comNom(c)))); const g = el('div', 'cpfmas'); mas.slice(0, 8).forEach(z => { const t = el('button', '', `${comFoto(c, z)}<small>${esc(z.nombre)}</small>`); t.onclick = () => o.ver({ cid: c.cid, pid: z.pid }); g.appendChild(t); }); de.appendChild(g); } }
+  de.appendChild(pie);   /* v325: los botones, siempre abajo */
   return dr; }
 async function fichaPop(cid, pid) { // v323: la MISMA ficha que en la Comunidad (comFichaDr), en una ventana sobre donde estés
   if (typeof COM === 'undefined') return; if (!COM.D) await comCarga(); const c = COM.D && comCta(cid); const p = c && (c.personajes || []).find(z => z.pid === pid);
