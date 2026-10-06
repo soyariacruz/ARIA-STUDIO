@@ -43,7 +43,7 @@ MAX_CUERPO = 40 * 1024 * 1024    # tope de una petición en modo servidor
 MAX_BIBLIO = 200 * 1024 * 1024   # tope de un fichero de la biblioteca común al copiarlo
 KINDS = ('vestidor', 'hair', 'expr')   # las bibliotecas a las que una cuenta puede añadir lo suyo
 _UUID = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
-VERSION = 325
+VERSION = 326
 _ctx = threading.local()   # la cuenta del hilo: la pone cada petición (y, a mano, cada hilo de fondo)
 def uid(): return getattr(_ctx, 'uid', None)   # en local siempre None
 DUENOS = tuple(e.strip().lower() for e in (os.environ.get('ARIA_DUENOS') or 'mix1994max@gmail.com').split(',') if e.strip())   # cuentas que pueden cambiar a Aria Cruz (en la web, la de Max)
@@ -2350,17 +2350,27 @@ def _montar_gasto(usd=0.0, quien=None):   # lo que lleva hoy la clave de la casa
         return g
 def _montar(idea, auto, tipo='imagen'):   # v307 → {'prompt', 'usd', 'casa'}: paga la casa (ARIA_CLAUDE_CASA o la clave de Claude de la cuenta de Aria) hasta el tope del día; si no, la clave de la cuenta
     idea = re.sub(r'@IMG(\d+)', r'@Image\1', idea or '', flags=re.I); auto = re.sub(r'@IMG(\d+)', r'@Image\1', auto or '', flags=re.I)   # v316: en la web se ven como @IMG1
-    yo = uid() or 'local'; k = ''; casa_ = False; g = _montar_gasto()
-    if float(g.get('usd') or 0) < MONTAR_TOPE and int(g['por'].get(yo, 0)) < 300:
+    yo = uid() or 'local'; casa_ = False; g = _montar_gasto(); prov = 'claude'
+    k = _env('ANTHROPIC_API_KEY', 'anthropic.env')   # v326: si el miembro tiene su Claude (o su ChatGPT), usa la suya; si no, paga la casa
+    if not k:
+        k = _env('OPENAI_API_KEY', 'openai.env'); prov = 'oai' if k else 'claude'
+    if not k and float(g.get('usd') or 0) < MONTAR_TOPE and int(g['por'].get(yo, 0)) < 300:
         k = os.environ.get('ARIA_CLAUDE_CASA') or ''
         if not k and SERVIDOR and re.fullmatch(r'[0-9a-f-]{36}', ARIA_UID or ''):
             with como(ARIA_UID): k = _env('ANTHROPIC_API_KEY', 'anthropic.env')
         casa_ = bool(k)
-    if not k: k = _env('ANTHROPIC_API_KEY', 'anthropic.env')
     if not k: raise RuntimeError('sin_clave')
     msg = f"LA IDEA DEL USUARIO:\n{idea.strip() or '(no ha escrito nada: monta el prompt solo con lo elegido, en español)'}\n\nLO ELEGIDO:\n{auto.strip()}"
     vid = tipo == 'video'; tags = list(dict.fromkeys(re.findall(r'@Image\d+', auto)))
     def pide(extra=''):
+        if prov == 'oai':   # v326: con ChatGPT (la clave del miembro)
+            body = {'model': os.environ.get('ARIA_MONTAR_OAI') or 'gpt-5-mini', 'max_completion_tokens': 6000 if vid else 4000, 'messages': [{'role': 'system', 'content': MONTAR_SIS_V if vid else MONTAR_SIS}, {'role': 'user', 'content': msg + extra}]}
+            rq = urllib.request.Request('https://api.openai.com/v1/chat/completions', data=json.dumps(body).encode(), method='POST', headers={'Authorization': 'Bearer ' + k, 'content-type': 'application/json', 'User-Agent': UA})
+            try: r = json.loads(urllib.request.urlopen(rq, timeout=90).read())
+            except urllib.error.HTTPError as e: raise RuntimeError(f'ChatGPT respondió {e.code}: ' + e.read().decode('utf-8', 'replace')[:160])
+            t_ = (((r.get('choices') or [{}])[0].get('message') or {}).get('content') or '').strip().strip('"«»').strip()
+            t_ = re.sub(r'(?:@\s*|(?<![\w@]))imag(?:e|en)[\s_]*(\d+)\b', r'@Image\1', t_, flags=re.I)
+            u = r.get('usage') or {}; return t_, (u.get('prompt_tokens', 0) * 0.25 + u.get('completion_tokens', 0) * 2) / 1e6
         body = {'model': MONTAR_LLM, 'max_tokens': 2600 if vid else 1500, 'system': MONTAR_SIS_V if vid else MONTAR_SIS, 'messages': [{'role': 'user', 'content': msg + extra}]}
         rq = urllib.request.Request('https://api.anthropic.com/v1/messages', data=json.dumps(body).encode(), method='POST', headers={'x-api-key': k, 'anthropic-version': '2023-06-01', 'content-type': 'application/json', 'User-Agent': UA})
         try: r = json.loads(urllib.request.urlopen(rq, timeout=60).read())
