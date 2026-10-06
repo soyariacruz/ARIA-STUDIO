@@ -43,7 +43,7 @@ MAX_CUERPO = 40 * 1024 * 1024    # tope de una petición en modo servidor
 MAX_BIBLIO = 200 * 1024 * 1024   # tope de un fichero de la biblioteca común al copiarlo
 KINDS = ('vestidor', 'hair', 'expr')   # las bibliotecas a las que una cuenta puede añadir lo suyo
 _UUID = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
-VERSION = 333
+VERSION = 334
 _ctx = threading.local()   # la cuenta del hilo: la pone cada petición (y, a mano, cada hilo de fondo)
 def uid(): return getattr(_ctx, 'uid', None)   # en local siempre None
 DUENOS = tuple(e.strip().lower() for e in (os.environ.get('ARIA_DUENOS') or 'mix1994max@gmail.com').split(',') if e.strip())   # cuentas que pueden cambiar a Aria Cruz (en la web, la de Max)
@@ -2675,7 +2675,9 @@ class H(SimpleHTTPRequestHandler):
             P = _aria_perfil()
             try: pub = json.load(open(os.path.join(DATOS, 'aria_publicado.json'), encoding='utf-8'))
             except Exception: pub = {}
-            return self._json(200, {'ok': True, 'editor': True, 'publica': (getattr(_ctx, 'email', '') or '').lower() in ARIA_PUBLICAN, 'pendiente': P is not None and P != pub.get('borrador'), 'publicado': pub.get('t'), 'por': pub.get('por', '').split('@')[0], 'publicando': {'n': _ARIA_PUB.get('n', 0), 'total': _ARIA_PUB.get('total', 0)} if _ARIA_PUB.get('on') else None, 'pub_error': _ARIA_PUB.get('error') or ''})   # v323
+            B_ = pub.get('borrador') if isinstance(pub.get('borrador'), dict) else (_comun().get('perfil') or {})   # v334: qué ha cambiado respecto a lo publicado
+            cambios_ = sorted(k for k in set(P or {}) | set(B_) if (P or {}).get(k) != B_.get(k)) if P is not None else []
+            return self._json(200, {'ok': True, 'editor': True, 'publica': (getattr(_ctx, 'email', '') or '').lower() in ARIA_PUBLICAN, 'pendiente': P is not None and P != pub.get('borrador'), 'cambios': cambios_[:20], 'publicado': pub.get('t'), 'por': pub.get('por', '').split('@')[0], 'publicando': {'n': _ARIA_PUB.get('n', 0), 'total': _ARIA_PUB.get('total', 0)} if _ARIA_PUB.get('on') else None, 'pub_error': _ARIA_PUB.get('error') or ''})   # v323
         if u.path == '/api/monedero':   # 🎁 el saldo regalo de la cuenta y su historial de gasto (lo más nuevo primero)
             c = casa_info()
             if not c and not _casa_base(): return self._json(200, {'ok': True, 'casa': None, 'hist': []})
@@ -3317,6 +3319,17 @@ class H(SimpleHTTPRequestHandler):
                     tmp = os.path.join(carpeta, f'.max.json.tmp{threading.get_ident()}'); json.dump(mx, open(tmp, 'w', encoding='utf-8'), ensure_ascii=False, indent=1); os.replace(tmp, os.path.join(carpeta, 'max.json'))
                 return self._json(200, {'ok': True})
             return self._json(404, {'error': 'no'})
+        if self.path == '/api/aria/descartar':   # v334: tirar los cambios sin publicar de la Aria de equipo (vuelve a la publicada)
+            if aria_fija() or (getattr(_ctx, 'email', '') or '').lower() not in ARIA_PUBLICAN: return self._json(403, {'error': 'Solo lo puede hacer Max'})
+            with _aria_l:
+                fp = _aria_capa_fp()
+                try: capa = json.load(open(fp, encoding='utf-8'))
+                except Exception: capa = {}
+                if 'perfil' in capa:
+                    capa.pop('perfil', None); tmp = f'{fp}.tmp{threading.get_ident()}'
+                    with open(tmp, 'w', encoding='utf-8') as fh: json.dump(capa, fh, ensure_ascii=False)
+                    os.replace(tmp, fp)
+            plog('Aria: cambios sin publicar descartados por ' + (getattr(_ctx, 'email', '') or '')); return self._json(200, {'ok': True})
         if self.path == '/api/aria/publicar':   # «Publicar para todos»: la Aria de equipo pasa a ser la que ven todos los miembros
             if aria_fija() or (getattr(_ctx, 'email', '') or '').lower() not in ARIA_PUBLICAN: return self._json(403, {'error': 'Publicar a Aria para todos solo lo puede hacer Max'})
             if _ARIA_PUB.get('on'): return self._json(200, {'ok': True, 'enMarcha': True})   # v323: ya se está publicando
