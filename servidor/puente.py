@@ -43,7 +43,7 @@ MAX_CUERPO = 40 * 1024 * 1024    # tope de una petición en modo servidor
 MAX_BIBLIO = 200 * 1024 * 1024   # tope de un fichero de la biblioteca común al copiarlo
 KINDS = ('vestidor', 'hair', 'expr')   # las bibliotecas a las que una cuenta puede añadir lo suyo
 _UUID = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
-VERSION = 327
+VERSION = 328
 _ctx = threading.local()   # la cuenta del hilo: la pone cada petición (y, a mano, cada hilo de fondo)
 def uid(): return getattr(_ctx, 'uid', None)   # en local siempre None
 DUENOS = tuple(e.strip().lower() for e in (os.environ.get('ARIA_DUENOS') or 'mix1994max@gmail.com').split(',') if e.strip())   # cuentas que pueden cambiar a Aria Cruz (en la web, la de Max)
@@ -1057,7 +1057,7 @@ UNAVAILABLE = [   # lo que Max usa a diario y la API pública de Higgsfield NO o
     {'key': 'gpt-image-2.5',   'name': 'GPT Image 2.5',    'why': 'próximamente'},
     {'key': 'seedream-5',      'name': 'Seedream 5',       'why': 'próximamente'},
 ]
-def all_models(): return dict((MODELS if _hf_listo() else {}), **(WS_MODELS if load_ws() else ({k: WS_MODELS[k] for k in CASA_MODELOS} if casa_on() else {})))   # solo los modelos de los proveedores con clave
+def all_models(): return dict((MODELS if _hf_listo() else {}), **(WS_MODELS if load_ws() else ({k: WS_MODELS[k] for k in CASA_MODELOS} if casa_on() else {})), **(MG_MODELS if load_mg() else {}))   # v328: + Magnific   # solo los modelos de los proveedores con clave
 def model_list(): return [{'key': k, 'name': m['name'], 'ep': m['ep'], 'refs': m['refs'], 'usd': m['usd'], 'per': m.get('per', 0), 'nota': m['nota'], 'high': m['high'], 'std': m.get('std', '1k'), 'prov': m.get('prov', 'hf')} for k, m in all_models().items()]
 def unavailable(): return [] if (SERVIDOR or load_ws()) else UNAVAILABLE   # v260: en la web no salían repetidos con «próximamente»
 UA = 'aria-mirror/1.0 (puente local; +https://higgsfield.ai)'   # Cloudflare devuelve 403 «error code: 1010» al User-Agent por defecto de Python
@@ -1558,12 +1558,50 @@ APIS = (('ws', 'WaveSpeed', 'WS_API_KEY', 'wavespeed.env', 'Nano Banana Pro, GPT
         ('mg', 'Magnific', 'FREEPIK_API_KEY', 'freepik.env', 'mejorar y escalar imágenes (API de Freepik)'),   # v324
         ('el', 'ElevenLabs', 'ELEVENLABS_API_KEY', 'elevenlabs.env', 'voces y audio'),
         ('oai', 'ChatGPT (OpenAI)', 'OPENAI_API_KEY', 'openai.env', 'prompts e imágenes GPT'))
+MG_URL = 'https://api.magnific.com'
+def load_mg(): return _env('FREEPIK_API_KEY', 'freepik.env')
+def load_el(): return _env('ELEVENLABS_API_KEY', 'elevenlabs.env')
+def _mg(method, path, body=None):   # v328: una llamada a Magnific con la clave de la cuenta
+    k = load_mg()
+    if not k: raise RuntimeError('Magnific no está conectado: conéctalo en «Mis APIs»')
+    rq = urllib.request.Request(MG_URL + path, data=json.dumps(body).encode() if body is not None else None, method=method, headers={'x-magnific-api-key': k, 'Content-Type': 'application/json', 'Accept': 'application/json', 'User-Agent': UA})
+    try: return json.loads(urllib.request.urlopen(rq, timeout=120).read() or b'{}')
+    except urllib.error.HTTPError as e: raise RuntimeError(f'Magnific respondió {e.code}: ' + e.read().decode('utf-8', 'replace')[:200])
+def _mg_sube(data, ctype):   # v328: una referencia → Magnific (pide la URL, la sube y devuelve su asset_url, que dura 24 h). Siempre en JPEG
+    try:
+        from PIL import Image; import io as _io
+        im = Image.open(_io.BytesIO(data)); im = im.convert('RGB'); b = _io.BytesIO(); im.save(b, 'JPEG', quality=93); data = b.getvalue(); ctype = 'image/jpeg'
+    except Exception: pass
+    r = _mg('POST', '/v1/ai/uploads/request-url', {'content_type': ctype}); d = r.get('data') if isinstance(r.get('data'), dict) else r
+    up, asset = d.get('upload_url'), d.get('asset_url')
+    if not (up and asset): raise RuntimeError('Magnific no dio dónde subir la referencia: ' + json.dumps(r)[:160])
+    urllib.request.urlopen(urllib.request.Request(up, data=data, method='PUT', headers={'Content-Type': ctype, 'User-Agent': UA}), timeout=120).read()
+    return asset
+_MG_AR = {'1:1': 'square_1_1', '16:9': 'widescreen_16_9', '9:16': 'social_story_9_16', '2:3': 'portrait_2_3', '3:4': 'traditional_3_4', '3:2': 'standard_3_2', '4:3': 'classic_4_3', '21:9': 'cinematic_21_9', '4:5': 'traditional_3_4', '5:4': 'classic_4_3'}
+def _mg_nbp(p, urls, ar, q): return {'prompt': p, 'reference_images': [{'image': u, 'mime_type': 'image/jpeg'} for u in urls[:14]], 'aspect_ratio': ar if ar in ('1:1', '2:3', '3:2', '4:3', '3:4', '5:4', '4:5', '16:9', '9:16', '21:9') else '3:4', 'resolution': '2K' if q == 'high' else '1K'}
+def _mg_sdrm(p, urls, ar, q): return {'prompt': p[:4096], 'reference_images': urls[:10], 'aspect_ratio': _MG_AR.get(ar, 'traditional_3_4'), 'resolution': '2k' if q == 'high' else '1.5k'}
+MG_MODELS = {   # v328: Magnific, con la clave del miembro · se paga en créditos de su cuenta de Magnific (su API no da el precio: usd = -1 → «créditos»)
+    'mgnbp':  {'ep': 'nano-banana-pro', 'name': 'Nano Banana Pro · Magnific', 'refs': 14, 'usd': {'std': -1, 'high': -1}, 'per': 0, 'body': _mg_nbp, 'nota': 'Google · por Magnific · hasta 14 referencias · se paga en créditos de tu cuenta de Magnific', 'high': '2K', 'prov': 'mg'},
+    'mgsdrm': {'ep': 'seedream-v5-pro-edit', 'name': 'Seedream 5.0 Pro · Magnific', 'refs': 10, 'usd': {'std': -1, 'high': -1}, 'per': 0, 'body': _mg_sdrm, 'nota': 'ByteDance · por Magnific · hasta 10 referencias · se paga en créditos de tu cuenta de Magnific', 'high': '2k', 'std': '1.5k', 'prov': 'mg'},
+}
+def _el_tts(ctx_n, rid, k, voz, texto, modelo, stab, sim):   # v328: ElevenLabs directo (la clave del miembro): devuelve el audio entero → a assets/audio
+    with como(*ctx_n):
+        j = jobs.get(rid) or {}
+        try:
+            body = {'text': texto, 'model_id': modelo, 'voice_settings': {'stability': stab, 'similarity_boost': sim}}
+            rq = urllib.request.Request(f'https://api.elevenlabs.io/v1/text-to-speech/{urllib.parse.quote(voz)}?output_format=mp3_44100_128', data=json.dumps(body).encode(), method='POST', headers={'xi-api-key': k, 'Content-Type': 'application/json', 'Accept': 'audio/mpeg', 'User-Agent': UA})
+            data = urllib.request.urlopen(rq, timeout=300).read()
+            fn = f"{_safe_item(j.get('item') or 'audio')}__{rid[:8]}.mp3"; open(os.path.join(audio_dir(), fn), 'wb').write(data)
+            j['file'] = 'assets/audio/' + fn; j['el_st'] = 'completed'; j['t_end'] = time.time(); write_meta(j, j['file'], rid, {'status': 'completed'}); _job_done(rid)
+        except urllib.error.HTTPError as e: j['el_st'] = 'failed'; j['el_err'] = f'ElevenLabs respondió {e.code}: ' + e.read().decode('utf-8', 'replace')[:200]; _job_done(rid)
+        except Exception as e: j['el_st'] = 'failed'; j['el_err'] = str(e)[:200]; _job_done(rid)
+        if j.get('el_err'): plog('ElevenLabs ✕ ' + j['el_err'])
 def _oai_ok(k):   # v324: comprueba una clave de OpenAI listando modelos (no gasta)
     rq = urllib.request.Request('https://api.openai.com/v1/models', headers={'Authorization': 'Bearer ' + k, 'User-Agent': UA}); urllib.request.urlopen(rq, timeout=30).read(); return True
 def _el_ok(k):   # v324: ElevenLabs, listando sus modelos (no gasta)
     rq = urllib.request.Request('https://api.elevenlabs.io/v1/models', headers={'xi-api-key': k, 'User-Agent': UA}); urllib.request.urlopen(rq, timeout=30).read(); return True
-def _mg_ok(k):   # v324: Magnific va por la API de Freepik; se comprueba con una búsqueda (no gasta)
-    rq = urllib.request.Request('https://api.freepik.com/v1/resources?limit=1', headers={'x-freepik-api-key': k, 'Accept': 'application/json', 'User-Agent': UA}); urllib.request.urlopen(rq, timeout=30).read(); return True
+def _mg_ok(k):   # v328: Magnific (antes la API de Freepik) → api.magnific.com; se comprueba listando tareas (no genera)
+    rq = urllib.request.Request(MG_URL + '/v1/ai/mystic', headers={'x-magnific-api-key': k, 'Accept': 'application/json', 'User-Agent': UA}); urllib.request.urlopen(rq, timeout=30).read(); return True
 def _claude_ok(k):   # comprueba una clave de Anthropic listando sus modelos (no genera ni cobra nada)
     rq = urllib.request.Request('https://api.anthropic.com/v1/models?limit=1', headers={'x-api-key': k, 'anthropic-version': '2023-06-01', 'User-Agent': UA})
     urllib.request.urlopen(rq, timeout=30).read(); return True
@@ -1969,6 +2007,11 @@ def _estado(rid):   # estado de un trabajo; si ha terminado, lo descarga a la ca
             st = {'status': {'succeeded': 'completed', 'failed': 'failed', 'cancelled': 'canceled', 'expired': 'failed'}.get(a.get('status'), 'in_progress'), 'request_id': rid,
                   'video': {'url': (a.get('content') or {}).get('video_url')}, 'error': (a.get('error') or {}).get('message') if a.get('error') else None, 'usage': a.get('usage')}
             if st['status'] == 'completed' and a.get('usage'): j['tokens'] = a['usage'].get('total_tokens')
+        elif j.get('prov') == 'mg':   # v328
+            w = (_mg('GET', j['mgp'] + '/' + rid).get('data') or {}); G = [g if isinstance(g, str) else (g or {}).get('url') for g in (w.get('generated') or [])]; G = [g for g in G if g]
+            stt = str(w.get('status') or '').upper(); st = {'status': 'completed' if stt == 'COMPLETED' and G else 'failed' if stt == 'FAILED' else 'in_progress', 'request_id': rid, 'images': [{'url': u} for u in G], 'video': {'url': G[0] if G else None}, 'error': w.get('error') or ('Magnific no pudo generarla' if stt == 'FAILED' else None)}
+        elif j.get('prov') == 'el':   # v328: ya lo descarga el hilo
+            st = {'status': j.get('el_st') or 'in_progress', 'request_id': rid, 'error': j.get('el_err')}
         elif j.get('prov') == 'ws':
             if SERVIDOR: _ctx.ws_modo = 'casa' if j.get('casa') else 'propia'
             w = (ws('GET', f'/api/v3/predictions/{rid}/result').get('data') or {})
@@ -3610,7 +3653,17 @@ class H(SimpleHTTPRequestHandler):
             try:
                 if SERVIDOR and aria_fija(): return self._json(403, {'error': 'Crear audio: próximamente'})
                 if lleno(): return self._json(413, {'error': LLENO, 'lleno': True})
-                if casa_on(): raise RuntimeError('El audio todavía no entra en el saldo regalo: conecta tu clave de WaveSpeed en «Mis APIs».')
+                k = str(body.get('modelo') or ''); kel = load_el() if k in ('el4', 'el3') else ''   # v328: con su clave de ElevenLabs, directo a ElevenLabs
+                if kel:
+                    texto = str(body.get('texto') or '').strip()[:9000]; voz = str(body.get('voz') or '').strip()[:80] or ARIA_VOZ
+                    if not texto: raise RuntimeError('Escribe lo que tiene que decir.')
+                    num = lambda x, lo, hi, d: max(lo, min(hi, float(body.get(x) if body.get(x) not in (None, '') else d)))
+                    nom = AUDIO_M[k][1]; rid = 'el-' + os.urandom(10).hex(); corto = re.sub(r'[^a-z0-9]+', '-', texto.lower())[:40].strip('-') or 'audio'
+                    meta = {'name': texto[:80], 'tab': 'audio', 'model': nom + ' · tu ElevenLabs', 'modo': 'voz', 'texto': texto, 'direccion': '', 'voz': voz}
+                    jobs[rid] = {'t0': time.time(), 'item': 'audio_' + corto, 'kind': 'audio', 'model': k, 'prov': 'el', 'usd': 0, 'casa': False, 'credits': None, 'meta': meta}
+                    threading.Thread(target=_el_tts, args=((uid(), getattr(_ctx, 'email', ''), getattr(_ctx, 'interno', False)), rid, kel, voz, texto, 'eleven_v4' if k == 'el4' else 'eleven_v3', num('estabilidad', 0, 1, .5), num('similitud', 0, 1, .75)), daemon=True).start()
+                    return self._json(200, {'request_id': rid, 'usd': 0})
+                if casa_on(): raise RuntimeError('El audio todavía no entra en el saldo regalo: conecta tu clave de WaveSpeed (o la de ElevenLabs) en «Mis APIs».')
                 if not _tope('audio', 40, 3600): raise RuntimeError('Has generado muchos audios seguidos: espera un rato.')
                 k = str(body.get('modelo') or '');
                 if k not in AUDIO_M: raise RuntimeError('Ese modelo de audio no existe.')
@@ -4253,6 +4306,14 @@ class H(SimpleHTTPRequestHandler):
         save_inputs(body)
         try:
             AM = all_models(); regalo = casa_on(); mkey = body.get('model') if body.get('model') in AM else (CASA_DEF if regalo else 'qwen'); M = AM[mkey]
+            if M.get('prov') == 'mg':   # v328: Magnific (créditos de la cuenta del miembro)
+                urls = [_mg_sube(*img_bytes(i)) for i in (body.get('images') or [])[:M['refs']]]
+                if not urls: raise RuntimeError('hacen falta imágenes de referencia')
+                payload = M['body'](body.get('prompt', ''), urls, aspect_ok(body.get('aspect')), 'high' if body.get('quality') == 'high' else 'std'); path = '/v1/ai/text-to-image/' + M['ep']
+                r = _mg('POST', path, payload); rid = (r.get('data') or {}).get('task_id')
+                if not rid: raise RuntimeError('Magnific no devolvió id: ' + json.dumps(r)[:200])
+                jobs[rid] = {'t0': time.time(), 'item': body.get('item', 'img'), 'model': mkey, 'prov': 'mg', 'mgp': path, 'usd': 0, 'credits': None, 'meta': body.get('meta') or {}}
+                return self._json(200, {'request_id': rid, 'usd': 0, 'credits': None, 'model': M['ep'], 'model_key': mkey, 'image_urls': urls, 'payload': {k_: v_ for k_, v_ in payload.items() if k_ != 'reference_images'}})
             if M.get('prov') == 'ws':
                 usd = round(M['usd']['high' if body.get('quality') == 'high' else 'std'] + M.get('per', 0) * max(0, min(len(body.get('images', [])), M['refs']) - 1), 4)   # precio de tarifa con sus referencias
                 if regalo:   # 🎁 paga el saldo regalo: nunca NSFW (la clave es la de la casa) y solo si le llega
