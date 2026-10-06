@@ -43,7 +43,7 @@ MAX_CUERPO = 40 * 1024 * 1024    # tope de una petición en modo servidor
 MAX_BIBLIO = 200 * 1024 * 1024   # tope de un fichero de la biblioteca común al copiarlo
 KINDS = ('vestidor', 'hair', 'expr')   # las bibliotecas a las que una cuenta puede añadir lo suyo
 _UUID = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
-VERSION = 361
+VERSION = 362
 _ctx = threading.local()   # la cuenta del hilo: la pone cada petición (y, a mano, cada hilo de fondo)
 def uid(): return getattr(_ctx, 'uid', None)   # en local siempre None
 DUENOS = tuple(e.strip().lower() for e in (os.environ.get('ARIA_DUENOS') or 'mix1994max@gmail.com').split(',') if e.strip())   # cuentas que pueden cambiar a Aria Cruz (en la web, la de Max)
@@ -881,7 +881,7 @@ def _casa_key():
     return k
 CASA_KEY = _casa_key() if SERVIDOR else ''
 CASA_TOPE = float(os.environ.get('ARIA_CASA_TOPE') or 1000)   # $ al mes entre TODAS las cuentas: freno de seguridad, no recorta a nadie en condiciones normales
-CASA_MODELOS = ('gptimg', 'nbp'); CASA_DEF = 'gptimg'   # v358: sin Seedream 5.0 Flash (no acepta filtro de seguridad: comprobado en el catálogo de WaveSpeed); estos dos traen el suyo   # con el saldo regalo: el barato por defecto y los dos que traen su propio filtro; Seedream 5.0 Pro (sin filtro) queda fuera
+CASA_MODELOS = ('seedflash', 'gptimg', 'nbp', 'seedream', 'qwenws'); CASA_DEF = 'seedflash'   # v362 (Max): con el saldo regalo, TODOS los de imagen de WaveSpeed; solo se bloquea el modo NSFW (y los prompts NSFW). Antes v358: solo GPT y Nano Banana   # v358: sin Seedream 5.0 Flash (no acepta filtro de seguridad: comprobado en el catálogo de WaveSpeed); estos dos traen el suyo   # con el saldo regalo: el barato por defecto y los dos que traen su propio filtro; Seedream 5.0 Pro (sin filtro) queda fuera
 BIENVENIDA = 1.0; LECTURA_USD = 0.002   # cada lectura de una imagen con IA (describir una foto, detectar personas…)
 SIN_SALDO = 'Saldo regalo agotado. Se repone el día 1; para seguir ahora, conecta tu propia clave en «Mis APIs».'
 _NSFW_RE = re.compile(r"\b(nsfw|topless|nipples?|areolas?|genitals?|genitalia|pubic|vagina|vulva|penis|no clothes|(?:is|are|she'?s|he'?s|fully|completely|totally|stark) naked|naked (?:woman|women|man|men|girl|boy|body|person|people|figure|torso|chest|skin)|(?:fully|completely|totally) nude|nude body|bare breasts?|no underwear|sexually explicit|explicit nud|desnud[oa]s?|sin ropa|sin nada de ropa|en pelotas|en bolas|pezon(?:es)?|pez[oó]n|sin sujetador|tetas al aire|pechos al aire|senos? desnudos?|genitales|sin bragas|en topless)", re.I)
@@ -1067,7 +1067,12 @@ UNAVAILABLE = [   # lo que Max usa a diario y la API pública de Higgsfield NO o
 ]
 def all_models(): return dict((MODELS if _hf_listo() else {}), **(WS_MODELS if load_ws() else ({k: WS_MODELS[k] for k in CASA_MODELOS} if casa_on() else {})), **(MG_MODELS if load_mg() else {}))   # v328: + Magnific   # solo los modelos de los proveedores con clave
 def model_list(): return [{'key': k, 'name': m['name'], 'ep': m['ep'], 'refs': m['refs'], 'usd': m['usd'], 'per': m.get('per', 0), 'nota': m['nota'], 'high': m['high'], 'std': m.get('std', '1k'), 'prov': m.get('prov', 'hf')} for k, m in all_models().items()]
-def unavailable(): return [] if (SERVIDOR or load_ws()) else UNAVAILABLE   # v260: en la web no salían repetidos con «próximamente»
+def unavailable():   # v362: los modelos que esta cuenta NO puede usar, para enseñarlos en gris con qué API los activa
+    AM = all_models(); out = []
+    for D_, api_ in ((WS_MODELS, 'WaveSpeed'), (MODELS, 'Higgsfield'), (MG_MODELS, 'Magnific')):
+        for k_, m_ in D_.items():
+            if k_ not in AM: out.append({'key': k_, 'name': m_['name'], 'why': 'conecta tu API de ' + api_})
+    return out
 UA = 'aria-mirror/1.0 (puente local; +https://higgsfield.ai)'   # Cloudflare devuelve 403 «error code: 1010» al User-Agent por defecto de Python
 if not SERVIDOR:   # en local las carpetas de siempre existen desde el arranque; en servidor cada cuenta crea las suyas la primera vez (live_dir(), video_dir(), pers_dir(), refs_dir())
     for _d in ('live', 'video', 'personajes', 'refs'): os.makedirs(os.path.join(RAIZ, 'assets', _d), exist_ok=True)
