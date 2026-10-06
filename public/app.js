@@ -3186,7 +3186,7 @@ async function openClaves() { // v324: «Mis APIs» = la misma lista que cuando 
   b.appendChild(el('h3', '', 'Mis APIs')); b.appendChild(el('p', 'apisub', 'Generas con tus propias cuentas y pagas solo lo que usas. Las claves se guardan cifradas y nunca se enseñan.'));
   const cc = el('div', 'apilist'); b.appendChild(cc); const L = el('div', 'apilist'); L.appendChild(el('small', 'apisub', 'Mirando tus conexiones…')); b.appendChild(L);
   let st = {}; try { st = await fetch('/api/claves').then(y => y.json()); } catch (e) {} const casa = st.casa !== undefined ? st.casa : CASA; if (st.casa !== undefined) casaPon(st.casa);
-  if (casa) { const r = el('div', 'apir on casa', `<div class="apirow1"><i class="apid"></i><div class="apin"><b>🎁 Saldo regalo</b><small>Para crear imágenes sin poner tu clave · se repone el día 1</small></div><span class="apist">${casa.pausa ? 'en pausa' : dolar(casa.saldo)}</span></div>`); r.title = 'Ver en qué se ha gastado'; r.onclick = () => { m0.remove(); openMonedero(); }; cc.appendChild(r); }
+  if (casa) { const r = el('div', 'apir on casa', `<div class="apirow1"><i class="apid"></i><div class="apin"><b>🎁 Saldo regalo</b><small>Se gasta primero en tus imágenes (sin NSFW) · se repone el día 1</small></div><span class="apist">${casa.pausa ? 'en pausa' : dolar(casa.saldo)}</span></div>`); r.title = 'Ver en qué se ha gastado'; r.onclick = () => { m0.remove(); openMonedero(); }; cc.appendChild(r); }
   apiLista(L, st.apis || [], { hecho: r => { dirty = true; APIS_ON = new Set((r.apis || []).filter(z => z.on).map(z => z.id)); } }); }
 window.openClaves = openClaves;
 function basePhoto(kind) { // imagen 1 para las ediciones: la foto del usuario si la hay; si no, Aria

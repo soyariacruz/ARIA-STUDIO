@@ -43,7 +43,7 @@ MAX_CUERPO = 40 * 1024 * 1024    # tope de una petición en modo servidor
 MAX_BIBLIO = 200 * 1024 * 1024   # tope de un fichero de la biblioteca común al copiarlo
 KINDS = ('vestidor', 'hair', 'expr')   # las bibliotecas a las que una cuenta puede añadir lo suyo
 _UUID = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
-VERSION = 356
+VERSION = 357
 _ctx = threading.local()   # la cuenta del hilo: la pone cada petición (y, a mano, cada hilo de fondo)
 def uid(): return getattr(_ctx, 'uid', None)   # en local siempre None
 DUENOS = tuple(e.strip().lower() for e in (os.environ.get('ARIA_DUENOS') or 'mix1994max@gmail.com').split(',') if e.strip())   # cuentas que pueden cambiar a Aria Cruz (en la web, la de Max)
@@ -899,7 +899,12 @@ def _lectura_apunta():   # una lectura de imagen con IA (≈0,002 $): al total d
             os.replace(fp + '.tmp', fp)
     except Exception: pass
 def _casa_base(): return bool(SERVIDOR and CASA_KEY and uid() and not getattr(_ctx, 'sin_casa', False))
-def casa_on(): return _casa_base() and not load_ws()   # esta cuenta va con el saldo regalo (no tiene clave propia conectada)
+def casa_on(): return _casa_base() and (not load_ws() or bool(getattr(_ctx, 'regalo_primero', False)))   # v357: con su clave, solo cuando se decide gastar primero el regalo
+def casa_info_aunque():   # v357: su monedero aunque tenga su propia clave (para enseñárselo)
+    if not _casa_base(): return None
+    v = getattr(_ctx, 'regalo_primero', False); _ctx.regalo_primero = True
+    try: return casa_info()
+    finally: _ctx.regalo_primero = v   # esta cuenta va con el saldo regalo (no tiene clave propia conectada)
 def _regalo_mes(p):   # 4 → 0,50 · 5 → 0,50 · 6 → 1 · 19 → 2 · 49 → 5 · 296 al año → 2,50
     try: p = float(p)
     except (TypeError, ValueError): p = 4.0
@@ -2722,7 +2727,7 @@ class H(SimpleHTTPRequestHandler):
             if u.path == '/api/catalogo': return self._json(200, _cat_load()[1])   # el catálogo que ve esta cuenta: el común + su capa
         if u.path == '/api/claves':   # estado de las APIs, sin enseñar nunca las claves
             A = _apis_estado(); w = A[0]
-            return self._json(200, {'ok': True, 'apis': A, 'ws': w['on'], 'ws_fin': w['fin'], 'saldo': w['saldo'], 'casa': casa_info()})
+            return self._json(200, {'ok': True, 'apis': A, 'ws': w['on'], 'ws_fin': w['fin'], 'saldo': w['saldo'], 'casa': casa_info() or casa_info_aunque()})   # v357: también con su clave (se gasta primero)
         if u.path == '/api/aria/estado':   # Aria de equipo: ¿puedo editarla, puedo publicarla, hay cambios sin publicar?
             if aria_fija(): return self._json(200, {'ok': True, 'editor': False})
             P = _aria_perfil()
@@ -4420,6 +4425,12 @@ class H(SimpleHTTPRequestHandler):
                 return self._json(200, {'request_id': rid, 'usd': 0, 'credits': None, 'model': M['ep'], 'model_key': mkey, 'image_urls': urls, 'payload': {k_: v_ for k_, v_ in payload.items() if k_ != 'reference_images'}})
             if M.get('prov') == 'ws':
                 usd = round(M['usd']['high' if body.get('quality') == 'high' else 'std'] + M.get('per', 0) * max(0, min(len(body.get('images', [])), M['refs']) - 1), 4)   # precio de tarifa con sus referencias
+                if not regalo and _casa_base() and load_ws() and mkey in CASA_MODELOS and not ((body.get('meta') or {}).get('nsfw') or body.get('nsfw') or _es_nsfw(body.get('prompt'))):   # v357: con su clave, el regalo se gasta PRIMERO (si entra y le llega)
+                    _ctx.regalo_primero = True
+                    try: c_ = casa_info(); regalo = bool(c_ and c_['saldo'] + 1e-6 >= usd and _casa_global() < CASA_TOPE)
+                    except Exception: regalo = False
+                    if not regalo: _ctx.regalo_primero = False
+                    else: _ctx.ws_modo = 'casa'   # se lanza con la clave de la casa
                 if regalo:   # 🎁 paga el saldo regalo: nunca NSFW (la clave es la de la casa) y solo si le llega
                     if (body.get('meta') or {}).get('nsfw') or body.get('nsfw') or _es_nsfw(body.get('prompt')): raise RuntimeError('El saldo regalo no vale para contenido NSFW. Para eso, conecta tu propia clave en «Mis APIs».')
                     if mkey not in CASA_MODELOS: raise RuntimeError('Ese modelo no entra en el saldo regalo: conecta tu propia clave en «Mis APIs».')   # v260: antes de subir nada
