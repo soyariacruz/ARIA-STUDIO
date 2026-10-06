@@ -43,7 +43,7 @@ MAX_CUERPO = 40 * 1024 * 1024    # tope de una petición en modo servidor
 MAX_BIBLIO = 200 * 1024 * 1024   # tope de un fichero de la biblioteca común al copiarlo
 KINDS = ('vestidor', 'hair', 'expr')   # las bibliotecas a las que una cuenta puede añadir lo suyo
 _UUID = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
-VERSION = 283
+VERSION = 284
 _ctx = threading.local()   # la cuenta del hilo: la pone cada petición (y, a mano, cada hilo de fondo)
 def uid(): return getattr(_ctx, 'uid', None)   # en local siempre None
 DUENOS = tuple(e.strip().lower() for e in (os.environ.get('ARIA_DUENOS') or 'mix1994max@gmail.com').split(',') if e.strip())   # cuentas que pueden cambiar a Aria Cruz (en la web, la de Max)
@@ -613,8 +613,8 @@ def _adm_cuenta(u):
                 if t and time.strftime('%Y-%m', time.gmtime(t)) == mes: gasto += float(m.get('usd') if m.get('usd') is not None else m.get('usd_est') or 0)
             except Exception: pass
     try: mo = json.load(open(os.path.join(b, 'monedero.json'), encoding='utf-8'))
-    except Exception: mo = {}
-    mo = mo if isinstance(mo, dict) else {}
+    except Exception: mo = None   # v284: sin monedero todavía (no ha usado el saldo regalo): no se enseña «le queda 0 $»
+    sin_mon = not isinstance(mo, dict); mo = {} if sin_mon else mo
     queda = (float(mo.get('resto') or 0) if mo.get('mes') == mes else 0.0) + float(mo.get('extra') or 0) + float(mo.get('bienvenida') or 0)
     regalo = sum(float(h.get('usd') or 0) for h in (mo.get('hist') or []) if isinstance(h, dict) and str(h.get('dia') or '').startswith(mes) and float(h.get('usd') or 0) > 0)
     try: pj = sum(1 for x in os.listdir(os.path.join(b, 'assets', 'personajes')) if not x.startswith(('.', '_')))
@@ -622,7 +622,7 @@ def _adm_cuenta(u):
     try: clave = os.path.getsize(os.path.join(b, 'claves.env')) > 10
     except OSError: clave = False
     with como(u, '', False): esp = espacio(True)
-    r = {'creaciones': n, 'ultima': int(ult), 'gasto_mes': round(gasto, 4), 'regalo_mes': round(regalo, 4), 'queda_regalo': round(queda, 4), 'personajes': pj, 'clave': clave, 'espacio': esp}
+    r = {'creaciones': n, 'ultima': int(ult), 'gasto_mes': round(gasto, 4), 'regalo_mes': round(regalo, 4), 'queda_regalo': None if sin_mon else round(queda, 4), 'personajes': pj, 'clave': clave, 'espacio': esp}
     _ADM_C[u] = (time.time(), r); return r
 _ADM_P = [0.0, None]
 def _adm_panel():
