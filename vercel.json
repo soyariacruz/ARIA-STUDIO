@@ -1,7 +1,7 @@
 {
   "rewrites": [
     {
-      "source": "/assets/:carpeta(live|video|videoteca|audio|personajes|refs|perfil|mio|papelera|prestamo|compartida|publica|liga)/:path*",
+      "source": "/assets/:carpeta(live|video|videoteca|audio|muestras|personajes|refs|perfil|mio|papelera|prestamo|compartida|publica|liga)/:path*",
       "destination": "https://aria-studio.onrender.com/assets/:carpeta/:path*"
     },
     {
@@ -11,7 +11,7 @@
   ],
   "redirects": [
     {
-      "source": "/assets/:carpeta((?!(?:live|video|videoteca|audio|personajes|refs|perfil|mio|papelera|prestamo|compartida|publica|liga)/)[^/]+)/:path+",
+      "source": "/assets/:carpeta((?!(?:live|video|videoteca|audio|muestras|personajes|refs|perfil|mio|papelera|prestamo|compartida|publica|liga)/)[^/]+)/:path+",
       "destination": "https://uhscbgidrloskdjbevkn.supabase.co/storage/v1/object/public/assets/:carpeta/:path+",
       "permanent": false
     }

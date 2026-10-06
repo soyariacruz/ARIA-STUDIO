@@ -36,14 +36,14 @@ DEV = SERVIDOR and os.environ.get('ARIA_DEV') == '1' and HOST == '127.0.0.1'   #
 SB_URL = (os.environ.get('SB_URL') or 'https://uhscbgidrloskdjbevkn.supabase.co').rstrip('/')
 SB_KEY = os.environ.get('SB_KEY') or 'sb_publishable_GSO5Vqhr7Dg93egtKk_I2w_E_uScoNG'   # pública por diseño (es la del navegador); lo que protege los datos son las reglas de Supabase
 BIBLIO_URL = (os.environ.get('ARIA_BIBLIOTECA') or 'https://uhscbgidrloskdjbevkn.supabase.co/storage/v1/object/public/assets/').rstrip('/') + '/'   # almacén público de la biblioteca común
-BIBLIO_OK = tuple('assets/' + x for x in ('biblio/', 'vestidor/', 'hair/', 'expr/', 'movie/', 'cartoon/', 'photo/', 'crear/', 'conv/', 'videoteca/', 'perfil/', 'refs/', 'video/', 'personajes/_opciones/'))   # lo que puede venir de la biblioteca común (+ personajes/_lienzo.jpg y lo de assets/live que usa el perfil común)
+BIBLIO_OK = tuple('assets/' + x for x in ('biblio/', 'vestidor/', 'hair/', 'expr/', 'movie/', 'cartoon/', 'photo/', 'crear/', 'conv/', 'videoteca/', 'perfil/', 'refs/', 'video/', 'personajes/_opciones/', 'muestras/'))   # lo que puede venir de la biblioteca común (+ personajes/_lienzo.jpg y lo de assets/live que usa el perfil común)
 ORIGENES = tuple(o.strip().lower().rstrip('/') for o in (os.environ.get('ARIA_ORIGENES') or 'https://aria-studio-eta.vercel.app,https://studio.ariacruz.com,https://ariacruz.com,http://localhost:3000').split(',') if o.strip())
 FETCH_HOSTS = tuple(h.strip().lower() for h in (os.environ.get('ARIA_FETCH_HOSTS') or ','.join([urllib.parse.urlsplit(SB_URL).hostname or '', '.wavespeed.ai', '.higgsfield.ai', '.cloudfront.net', '.bytepluses.com', '.volces.com'])).split(',') if h.strip())   # /api/fetch en servidor: host exacto o «.sufijo»; «*» = cualquier sitio público
 MAX_CUERPO = 40 * 1024 * 1024    # tope de una petición en modo servidor
 MAX_BIBLIO = 200 * 1024 * 1024   # tope de un fichero de la biblioteca común al copiarlo
 KINDS = ('vestidor', 'hair', 'expr')   # las bibliotecas a las que una cuenta puede añadir lo suyo
 _UUID = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
-VERSION = 292
+VERSION = 293
 _ctx = threading.local()   # la cuenta del hilo: la pone cada petición (y, a mano, cada hilo de fondo)
 def uid(): return getattr(_ctx, 'uid', None)   # en local siempre None
 DUENOS = tuple(e.strip().lower() for e in (os.environ.get('ARIA_DUENOS') or 'mix1994max@gmail.com').split(',') if e.strip())   # cuentas que pueden cambiar a Aria Cruz (en la web, la de Max)
@@ -2122,6 +2122,38 @@ def _voces():
     except Exception: d = {}
     d = d if isinstance(d, dict) else {}
     d['aria'] = dict(VOZ_ARIA, **(d.get('aria') or {})); return d
+def _audio_usd(k, texto='', seg=0):   # v293: lo que cuesta de verdad (tarifas de WaveSpeed, 6 oct 2026)
+    n = len(texto or '')
+    if k == 'el4': return round(0.08 * n / 1000, 4)
+    if k == 'el3': return round(0.20 * n / 1000, 4)
+    if k == 'seedtts': return 0.03 * max(1, math.ceil(n / 1000))
+    if k == 'vchange': return round(0.004 * min(300, max(1, math.ceil(seg or 1))), 4)
+    return AUDIO_M.get(k, ('', '', 0.0, ''))[2]
+MUESTRA_TXT = 'Hola, así suena mi voz. ¿Te gusta cómo hablo? Si quieres, la usamos en tu próximo vídeo.'
+_MU = {'en_marcha': False, 'hechas': 0, 'faltan': 0, 'error': ''}
+def _mu_dir(modelo): d = os.path.join(DATOS or ROOT, 'biblioteca', 'assets', 'muestras', modelo) if SERVIDOR else os.path.join(ROOT, 'assets', 'muestras', modelo); os.makedirs(d, exist_ok=True); return d
+def _muestras():   # {'el': {voz: ruta}, 'seed': {...}}
+    out = {}
+    for m in ('el', 'seed'):
+        try: out[m] = {os.path.splitext(n)[0]: f'assets/muestras/{m}/{n}' for n in os.listdir(_mu_dir(m)) if n.endswith('.mp3')}
+        except OSError: out[m] = {}
+    return out
+def _mu_genera(ctx_n, modelo, voces):   # en segundo plano, una a una, con la clave de quien lo pidió
+    with como(*ctx_n):
+        _ctx.ws_modo = 'propia'
+        for v in voces:
+            try:
+                ep, payload = ('elevenlabs/eleven-v4', {'text': MUESTRA_TXT, 'voice_id': v, 'stability': .5, 'similarity': .75}) if modelo == 'el' else ('bytedance/seed-speech-tts-2.0', {'text': MUESTRA_TXT, 'voice': v})
+                rid = (ws('POST', '/api/v3/' + ep, payload).get('data') or {}).get('id')
+                for _ in range(60):
+                    time.sleep(2); w = ws('GET', f'/api/v3/predictions/{rid}/result').get('data') or {}
+                    if w.get('status') == 'completed' and w.get('outputs'):
+                        data = urllib.request.urlopen(urllib.request.Request(w['outputs'][0], headers={'User-Agent': UA}), timeout=120).read()
+                        fp = os.path.join(_mu_dir(modelo), re.sub(r'[^A-Za-z0-9_-]', '_', v) + '.mp3'); open(fp + '.tmp', 'wb').write(data); os.replace(fp + '.tmp', fp); _MU['hechas'] += 1; break
+                    if w.get('status') == 'failed': _MU['error'] = str(w.get('error'))[:160]; break
+            except Exception as e: _MU['error'] = str(e)[:160]
+            _MU['faltan'] = max(0, _MU['faltan'] - 1)
+    _MU['en_marcha'] = False; plog(f'🎙 muestras de voz {modelo}: {_MU["hechas"]} hechas' + (f' · último error: {_MU["error"]}' if _MU['error'] else ''))
 def _audios():   # mis audios, lo último primero
     d = audio_dir(); out = []
     for n in os.listdir(d):
@@ -2542,7 +2574,7 @@ class H(SimpleHTTPRequestHandler):
             except Exception: return self._json(200, {'ok': True, 'items': []})
         if u.path == '/api/audio':   # v291: 🎙️ modelos y voces + mis audios
             if SERVIDOR and aria_fija(): return self._json(403, {'error': 'Crear audio: próximamente'})
-            try: return self._json(200, dict({'ok': True, 'audios': _audios()}, **_audio_info()))
+            try: return self._json(200, dict({'ok': True, 'audios': _audios(), 'muestras': _muestras(), 'mu': _MU}, **_audio_info()))
             except Exception as e: plog('audio ✕ ' + str(e)[:160]); return self._json(200, {'ok': False, 'error': 'No se ha podido abrir Crear audio.'})
         if u.path == '/api/voz':   # v292: la voz de cada personaje (de momento, solo el equipo)
             if SERVIDOR and aria_fija(): return self._json(403, {'error': 'próximamente'})
@@ -3127,6 +3159,17 @@ class H(SimpleHTTPRequestHandler):
             d0[pid] = {k: str(body.get(k) or '').strip()[:600] for k in ('eleven', 'eleven_nombre', 'preset', 'seed', 'desc')}
             fp = _voces_fp(); open(fp + '.tmp', 'w', encoding='utf-8').write(json.dumps(d0, ensure_ascii=False)); os.replace(fp + '.tmp', fp)
             return self._json(200, {'ok': True, 'voces': _voces()})
+        if self.path == '/api/audio/muestras':   # v293: {modelo:'el'|'seed'} → genera una muestra de cada voz que falte (una vez; el precio lo ve antes el equipo)
+            n = int(self.headers.get('Content-Length') or 0); body = json.loads(self.rfile.read(min(n, 5000)) or b'{}')
+            if SERVIDOR and aria_fija(): return self._json(403, {'error': 'solo el equipo'})
+            if casa_on(): return self._json(400, {'error': 'Hace falta tu propia clave de WaveSpeed.'})
+            if _MU['en_marcha']: return self._json(200, {'ok': True, 'mu': _MU})
+            modelo = 'seed' if body.get('modelo') == 'seed' else 'el'; I = _audio_info(); todas = I['voces_seed'] if modelo == 'seed' else I['voces_el'] + [ARIA_VOZ] + [x.get('eleven') for x in _voces().values() if isinstance(x, dict) and x.get('eleven')]; todas = list(dict.fromkeys(todas))   # + la de Aria y las de tus personajes
+            ya = _muestras().get(modelo) or {}; faltan = [v for v in todas if re.sub(r'[^A-Za-z0-9_-]', '_', v) not in ya]
+            if not faltan: return self._json(200, {'ok': True, 'mu': _MU, 'nada': True})
+            _MU.update({'en_marcha': True, 'hechas': 0, 'faltan': len(faltan), 'error': ''})
+            threading.Thread(target=_mu_genera, args=((uid(), getattr(_ctx, 'email', ''), getattr(_ctx, 'interno', False)), modelo, faltan), daemon=True).start()
+            plog(f'🎙 muestras de voz {modelo}: {len(faltan)} en marcha'); return self._json(200, {'ok': True, 'mu': _MU})
         if self.path == '/api/audio':   # v291: 🎙️ generar un audio {modelo, texto, voz, direccion, estabilidad, similitud, velocidad, duracion, audio:{data|path}}
             n = int(self.headers.get('Content-Length') or 0); body = json.loads(self.rfile.read(min(n, 30_000_000)) or b'{}')
             try:
@@ -3164,6 +3207,7 @@ class H(SimpleHTTPRequestHandler):
                 if not rid: raise RuntimeError('WaveSpeed no devolvió id: ' + json.dumps(r)[:200])
                 corto = re.sub(r'[^a-z0-9]+', '-', (texto or dire or nom).lower())[:40].strip('-') or 'audio'
                 meta = {'name': (texto or dire or nom)[:80], 'tab': 'audio', 'model': nom, 'modo': modo, 'texto': texto, 'direccion': dire, 'voz': voz or (ARIA_VOZ if k in ('el4', 'el3') else '')}
+                usd0 = _audio_usd(k, payload.get('text') or payload.get('prompt') or '', float(body.get('segundos') or 0))   # v293
                 jobs[rid] = {'t0': time.time(), 'item': 'audio_' + corto, 'kind': 'audio', 'model': k, 'prov': 'ws', 'usd': usd0, 'bal0': bal0, 'casa': False, 'credits': None, 'meta': meta}
                 return self._json(200, {'request_id': rid, 'usd': usd0})
             except Exception as e:
