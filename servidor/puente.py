@@ -43,7 +43,7 @@ MAX_CUERPO = 40 * 1024 * 1024    # tope de una petición en modo servidor
 MAX_BIBLIO = 200 * 1024 * 1024   # tope de un fichero de la biblioteca común al copiarlo
 KINDS = ('vestidor', 'hair', 'expr')   # las bibliotecas a las que una cuenta puede añadir lo suyo
 _UUID = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
-VERSION = 316
+VERSION = 317
 _ctx = threading.local()   # la cuenta del hilo: la pone cada petición (y, a mano, cada hilo de fondo)
 def uid(): return getattr(_ctx, 'uid', None)   # en local siempre None
 DUENOS = tuple(e.strip().lower() for e in (os.environ.get('ARIA_DUENOS') or 'mix1994max@gmail.com').split(',') if e.strip())   # cuentas que pueden cambiar a Aria Cruz (en la web, la de Max)
@@ -592,6 +592,8 @@ def _visto_pon(u, email, ua):
     with _visto_l:
         _visto_carga(); v = _VISTO.setdefault(u, {'primera': int(ahora)})
         v.update({'t': int(ahora), 'email': email, 'movil': bool(re.search(r'iPhone|iPad|Android|Mobile', ua or ''))})
+        hoy = time.strftime('%Y-%m-%d', time.localtime(ahora))
+        if v.get('dia') != hoy: v['dia'] = hoy; v['dias'] = int(v.get('dias') or 0) + 1   # v317: días distintos que ha entrado
         if ahora - _visto_g[0] < 60: return
         _visto_g[0] = ahora; d = json.loads(json.dumps(_VISTO))
     try:
@@ -652,7 +654,7 @@ def _adm_panel():
         filas.append(dict({'email': e, 'acceso': e in por_mail, 'ignorado': e in ig and e not in por_mail, 'interno': bool(m.get('interno')), 'dueno': e in DUENOS, 'precio': m.get('precio'), 'alta': m.get('alta') or '',
                            'cid': _cid(u) if tiene else '', 'alias': str(d['alias'].get(_cid(u)) or '')[:40] if tiene else '',
                            'registro': str(a.get('created_at') or '')[:19], 'login': str(a.get('last_sign_in_at') or '')[:19],
-                           'visto': int(v.get('t') or 0), 'online': bool(v.get('t') and ahora - v['t'] < 180), 'movil': bool(v.get('movil'))}, **x))
+                           'visto': int(v.get('t') or 0), 'dias': int(v.get('dias') or 0), 'primera': int(v.get('primera') or 0), 'online': bool(v.get('t') and ahora - v['t'] < 180), 'movil': bool(v.get('movil'))}, **x))
     try: du = shutil.disk_usage(DATOS); disco = {'usado': du.used, 'total': du.total}
     except Exception: disco = None
     res = {'filas': filas, 'disco': disco, 'cuota': CUOTA, 'bolsa': _bolsa_saldo(), 'casa_mes': round(_casa_global(), 4), 't': int(ahora),
@@ -1726,12 +1728,16 @@ def _pub_lista():   # todo lo publicado por todas las cuentas, lo más nuevo pri
         if time.time() - _PUB['t'] < 20: return _PUB['L']
     d = _com_lee(); den = d.get('den') if isinstance(d.get('den'), dict) else {}; out = []
     for cid, u in _com_cuentas().items():
+        pjs_ = None
         for r, m in _pub_cuenta(u).items():
             P = r.split('/'); k = f'{cid}/{P[1]}/{P[2]}'
             if k in den and _den_oculta(den[k]): continue
             e = m.get('escena') if isinstance(m.get('escena'), dict) else {}
-            ch_ = m.get('chars') if isinstance(m.get('chars'), list) else []; pid_ = str(ch_[0] if ch_ else (m.get('char') or ''))[:80]   # v303: el influencer que sale (para su circulito)
-            out.append({'f': 'assets/publica/' + k, 'kind': 'video' if P[1] == 'video' else 'image', 'cid': cid, 'pid': pid_, 'subida': bool(m.get('subida')), 'alias': str(d['alias'].get(cid) or '')[:40], 'prompt': m['prompt'][:8000] if isinstance(m.get('prompt'), str) else '',
+            ch_ = [str(x) for x in (m.get('chars') if isinstance(m.get('chars'), list) else ([m['char']] if m.get('char') else []))]   # v303 · v317: los influencers que salen (para sus circulitos)
+            if pjs_ is None: pjs_ = {p['pid']: p['nombre'] for p in _com_personajes(u)}
+            pids_ = [x for x in ch_ if x == 'aria' or x in pjs_] or [k_ for k_, n_ in pjs_.items() if n_ and n_ in str(m.get('charName') or '')][:2]
+            pid_ = pids_[0] if pids_ else ''
+            out.append({'f': 'assets/publica/' + k, 'kind': 'video' if P[1] == 'video' else 'image', 'cid': cid, 'pid': pid_, 'pids': pids_[:2], 'subida': bool(m.get('subida')), 'alias': str(d['alias'].get(cid) or '')[:40], 'prompt': m['prompt'][:8000] if isinstance(m.get('prompt'), str) else '',
                         'escena': {q: e[q][:4000] for q in ('d', 'r', 'f') if isinstance(e.get(q), str)}, 'modelo': str(m.get('model') or '')[:60], 'personaje': str(m.get('charName') or '')[:80], 't': m.get('t') or 0, 'ancho': m.get('width'), 'alto': m.get('height')})
     out.sort(key=lambda x: -(x['t'] or 0))
     with _PUB_L: _PUB['t'] = time.time(); _PUB['L'] = out
@@ -2058,7 +2064,8 @@ COM_DEMO = [   # creadores de DEMO para ver cómo queda la Comunidad con gente: 
 COM_DEMO = []   # v304: fuera la demo (Max, 6 oct): ni creadores ni mensajes de ejemplo
 ARIA_CID = 'caria'   # Aria en la comunidad: no es una cuenta, es el personaje de muestra. Le manda a cada cuenta una solicitud de ejemplo y contesta con un mensaje fijo
 ARIA_HOLA = '¡Hola! Soy Aria 💕 Ya puedes crear conmigo cuando quieras: elígeme en Crear imagen junto a tu personaje y salimos juntas.'
-ARIA_RESP = '¡Genial! Conmigo puedes crear cuando quieras: elígeme en Crear imagen junto a tu personaje. (Soy el personaje de muestra: este chat es un ejemplo de cómo hablarás con otros creadores.)'
+ARIA_RESP = '¡Genial! Conmigo puedes crear cuando quieras: elígeme en Crear imagen junto a tu personaje. 💕'
+ARIA_RESP_V = '¡Genial! Conmigo puedes crear cuando quieras: elígeme en Crear imagen junto a tu personaje. (Soy el personaje de muestra: este chat es un ejemplo de cómo hablarás con otros creadores.)'
 def _com_aria(d, yo):   # v304: Aria da permiso a cada cuenta para crear con ella (sin aceptar nada) y sigue a sus personajes; lo nuevo, con aviso en Mensajes → True si ha cambiado algo
     t = time.time(); cambio = False; M = d['msgs'].setdefault(_com_par(yo, ARIA_CID), [])
     s_ = next((x for x in d['sol'] if x.get('de') == ARIA_CID and x.get('para') == yo), None)
@@ -2698,7 +2705,7 @@ class H(SimpleHTTPRequestHandler):
                 if not M: continue
                 chats.append({'con': otra, 'ultimo': M[-1], 'sin_leer': sum(1 for m in M if m.get('de') != yo and m.get('t', 0) > visto)})
             chats.sort(key=lambda c: -c['ultimo'].get('t', 0))
-            return self._json(200, {'ok': True, 'yo': yo, 'alias': str(d['alias'].get(yo) or ''), 'cuentas': cuentas, 'solicitudes': [x for x in d['sol'] if yo in (x.get('de'), x.get('para'))][-200:], 'chats': chats, 'borrados': (d['borr'].get(yo) or {}), 'avisos': _com_avisos(d, yo), 'denuncias': (0 if aria_fija() else sum(1 for v in (d.get('den') or {}).values() if not (isinstance(v, dict) and v.get('vista')))), 'siguiendo': [x for x in d['sig'].get(yo) or [] if isinstance(x, str)], 'carpetas': _comp_lista(d, yo), 'prestados': _prest_lista(d, yo)})
+            return self._json(200, {'ok': True, 'yo': yo, 'alias': str(d['alias'].get(yo) or ''), 'cuentas': cuentas, 'solicitudes': [x for x in d['sol'] if yo in (x.get('de'), x.get('para'))][-200:], 'soy_aria': uid() == ARIA_UID, 'chats': chats, 'borrados': (d['borr'].get(yo) or {}), 'avisos': _com_avisos(d, yo), 'denuncias': (0 if aria_fija() else sum(1 for v in (d.get('den') or {}).values() if not (isinstance(v, dict) and v.get('vista')))), 'siguiendo': [x for x in d['sig'].get(yo) or [] if isinstance(x, str)], 'carpetas': _comp_lista(d, yo), 'prestados': _prest_lista(d, yo)})
         if u.path == '/api/comunidad/avisos':   # (la solicitud de ejemplo de Aria nace aquí también: así el aviso sale sin haber abierto la comunidad)
             yo = _cid()
             with _com_l:
@@ -3058,7 +3065,7 @@ class H(SimpleHTTPRequestHandler):
                     if con != ARIA_CID and not _demo_cid(con) and not _com_personajes(CU[con]) and not any(x for x in d['sol'] if {x.get('de'), x.get('para')} == {yo, con} and x.get('estado') in ('pendiente', 'aceptada')): return self._json(403, {'error': 'para escribirle, primero pídele una colaboración'})
                     if not _com_tope('msg', 120): return self._json(429, {'error': 'demasiados mensajes seguidos: prueba dentro de un rato'})
                     M = d['msgs'].setdefault(_com_par(yo, con), []); M.append({'de': yo, 'x': txt, 't': time.time()})
-                    if con == ARIA_CID and not any(m.get('x') == ARIA_RESP for m in M): M.append({'de': ARIA_CID, 'x': ARIA_RESP, 't': time.time() + 1})
+                    if con == ARIA_CID and not any(m.get('x') in (ARIA_RESP, ARIA_RESP_V) for m in M): M.append({'de': ARIA_CID, 'x': ARIA_RESP, 't': time.time() + 1})
                     del M[:-500]; _com_guarda(d); return self._json(200, {'ok': True})
             return self._json(400, {'error': 'acción desconocida'})
         if self.path == '/api/video/precio':   # v314: el precio EXACTO de WaveSpeed para ese modelo, modo, duración, resolución, formato y audio (no genera ni cobra; con la clave de la cuenta)
