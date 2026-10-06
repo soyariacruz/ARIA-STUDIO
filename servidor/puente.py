@@ -43,7 +43,7 @@ MAX_CUERPO = 40 * 1024 * 1024    # tope de una petición en modo servidor
 MAX_BIBLIO = 200 * 1024 * 1024   # tope de un fichero de la biblioteca común al copiarlo
 KINDS = ('vestidor', 'hair', 'expr')   # las bibliotecas a las que una cuenta puede añadir lo suyo
 _UUID = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
-VERSION = 319
+VERSION = 320
 _ctx = threading.local()   # la cuenta del hilo: la pone cada petición (y, a mano, cada hilo de fondo)
 def uid(): return getattr(_ctx, 'uid', None)   # en local siempre None
 DUENOS = tuple(e.strip().lower() for e in (os.environ.get('ARIA_DUENOS') or 'mix1994max@gmail.com').split(',') if e.strip())   # cuentas que pueden cambiar a Aria Cruz (en la web, la de Max)
@@ -1686,9 +1686,31 @@ def _vistos():
     try: L = json.load(open(_vistos_fp(), encoding='utf-8'))
     except Exception: L = []
     return [x for x in L if isinstance(x, str)][:300] if isinstance(L, list) else []
+def _clave_claude_casa():   # v320: la clave de Claude que paga la casa (la misma del montador)
+    k = os.environ.get('ARIA_CLAUDE_CASA') or ''
+    if not k and SERVIDOR and re.fullmatch(r'[0-9a-f-]{36}', ARIA_UID or ''):
+        with como(ARIA_UID): k = _env('ANTHROPIC_API_KEY', 'anthropic.env')
+    return k
+def _encuadre_ia(src):   # v320 → (panel, cara) en fracciones (x0, y0, x1, y1) de la imagen, o None. Claude Haiku mira la ficha y dice dónde está la vista de frente
+    k = _clave_claude_casa()
+    if not k: return None
+    try:
+        from PIL import Image
+        import io
+        im = Image.open(src).convert('RGB'); im.thumbnail((1024, 1024)); bb = io.BytesIO(); im.save(bb, 'JPEG', quality=85)
+        body = {'model': MONTAR_LLM, 'max_tokens': 300, 'messages': [{'role': 'user', 'content': [
+            {'type': 'image', 'source': {'type': 'base64', 'media_type': 'image/jpeg', 'data': base64.b64encode(bb.getvalue()).decode()}},
+            {'type': 'text', 'text': 'This image is a character reference sheet (several panels of the same person) or a single photo. Find the panel where the person faces the camera (front view, head and shoulders if possible). Answer ONLY with JSON: {"panel":[x0,y0,x1,y1],"face":[x0,y0,x1,y1]} where panel is that whole panel and face is her face from the top of the hair to the chin, as fractions 0-1 of the full image width and height.'}]}]}
+        rq = urllib.request.Request('https://api.anthropic.com/v1/messages', data=json.dumps(body).encode(), method='POST', headers={'x-api-key': k, 'anthropic-version': '2023-06-01', 'content-type': 'application/json', 'User-Agent': UA})
+        r = json.loads(urllib.request.urlopen(rq, timeout=60).read()); t = ''.join(b.get('text', '') for b in r.get('content') or [] if b.get('type') == 'text')
+        j = json.loads(t[t.index('{'):t.rindex('}') + 1]); P = [float(x) for x in j['panel']]; C_ = [float(x) for x in j['face']]
+        u = r.get('usage') or {}; _montar_gasto((u.get('input_tokens', 0) * 1 + u.get('output_tokens', 0) * 5) / 1e6, 'encuadre')
+        ok = lambda B: len(B) == 4 and 0 <= B[0] < B[2] <= 1.001 and 0 <= B[1] < B[3] <= 1.001
+        return (P, C_) if ok(P) and ok(C_) else None
+    except Exception as e: plog(f'encuadre IA ✕ {type(e).__name__}: {str(e)[:120]}'); return None
 def _avatar_centrado(base, fp, grande=False):   # v312: la foto del influencer en la Comunidad, con la cara centrada. Se hace UNA vez; si su dueña cambia la foto después, se queda la suya
     if not SERVIDOR: return None
-    mk = os.path.join(base, '.foto_auto.json' if grande else '.avatar_auto.json'); out = os.path.join(base, '.foto_centrada.jpg' if grande else '.avatar_centrado.jpg')   # v313: también la grande (3:4)
+    mk = os.path.join(base, '.foto_ia.json' if grande else '.avatar_ia.json'); out = os.path.join(base, '.foto_ia.jpg' if grande else '.avatar_ia.jpg')   # v313: también la grande (3:4) · v320: encuadradas con IA (ficheros nuevos: se rehacen todas)
     try: mt = os.path.getmtime(fp)
     except OSError: return None
     try: j = json.load(open(mk, encoding='utf-8'))
@@ -1706,17 +1728,22 @@ def _avatar_centrado(base, fp, grande=False):   # v312: la foto del influencer e
             if not os.path.isfile(src): continue
             img = cv2.imread(src)
             if img is None: continue
-            g = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY); H, W = g.shape
-            fs = cc.detectMultiScale(g, scaleFactor=1.1, minNeighbors=6, minSize=(max(40, W // 30), max(40, W // 30)))
-            if not len(fs): continue
-            x, y, w, h = max(fs, key=lambda f_: int(f_[2]) * int(f_[3]) * 1000 - (int(f_[0]) + int(f_[1])))   # la cara más grande (a igualdad, la de arriba a la izquierda: la de frente)
+            g = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY); H0, W0 = g.shape; px0, py0 = 0, 0
+            ia = _encuadre_ia(src) if n != 'vista_frente.jpg' else None   # v320: la IA dice cuál es el panel de frente; todo se recorta DENTRO de ese panel
+            if ia:
+                (a0, b0, a1, b1), (c0, d0, c1, d1) = ia; px0, py0 = int(a0 * W0), int(b0 * H0); g = g[py0:int(b1 * H0), px0:int(a1 * W0)]; img = img[py0:int(b1 * H0), px0:int(a1 * W0)]
+            H, W = g.shape
+            fs = cc.detectMultiScale(g, scaleFactor=1.1, minNeighbors=5, minSize=(max(30, W // 12), max(30, W // 12)))
+            if len(fs): x, y, w, h = max(fs, key=lambda f_: int(f_[2]) * int(f_[3]) * 1000 - (int(f_[0]) + int(f_[1])))   # la cara más grande (a igualdad, la de arriba a la izquierda: la de frente)
+            elif ia: x, y, w, h = int(c0 * W0) - px0, int(d0 * H0) - py0, int((c1 - c0) * W0), int((d1 - d0) * H0)   # sin cara detectada: la que dice la IA
+            else: continue
             if grande:   # de la cabeza a los hombros, en vertical 3:4, con la cara en el tercio de arriba
                 y0 = int(max(0, y - h * 0.45)); al = int(min(max(w, h) * 2.6 * 4 / 3, H - y0)); an = int(min(al * 3 / 4, W)); al = int(an * 4 / 3); cx = x + w / 2   # si no cabe por abajo, se encoge (no sube: no coge el panel de arriba)
                 x0 = int(min(max(0, cx - an / 2), W - an))
-                im = Image.open(src).convert('RGB').crop((x0, y0, x0 + an, y0 + al)); im.thumbnail((640, 860)); im.save(out, quality=88); ok = True; break
+                im = Image.open(src).convert('RGB').crop((px0 + x0, py0 + y0, px0 + x0 + an, py0 + y0 + al)); im.thumbnail((640, 860)); im.save(out, quality=88); ok = True; break
             lado = int(min(max(w, h) * 1.7, W, H)); cx = x + w / 2; cy = y + h * 0.55
             x0 = int(min(max(0, cx - lado / 2), W - lado)); y0 = int(min(max(0, cy - lado / 2), H - lado))
-            im = Image.open(src).convert('RGB').crop((x0, y0, x0 + lado, y0 + lado)); im.thumbnail((400, 400)); im.save(out, quality=88); ok = True; break
+            im = Image.open(src).convert('RGB').crop((px0 + x0, py0 + y0, px0 + x0 + lado, py0 + y0 + lado)); im.thumbnail((400, 400)); im.save(out, quality=88); ok = True; break
     except Exception as e: plog(f'avatar centrado ✕ {type(e).__name__}: {str(e)[:120]}')
     try:
         with open(mk, 'w', encoding='utf-8') as o: json.dump({'mt': mt, 'ok': ok}, o)
@@ -2071,9 +2098,15 @@ def _com_aria(d, yo):   # v304: Aria da permiso a cada cuenta para crear con ell
     s_ = next((x for x in d['sol'] if x.get('de') == ARIA_CID and x.get('para') == yo), None)
     if not s_: d['sol'].append({'id': 's' + hashlib.sha1(os.urandom(12)).hexdigest()[:12], 'de': ARIA_CID, 'para': yo, 'pid': 'aria', 'msg': ARIA_HOLA, 'estado': 'aceptada', 't': t, 't2': t, 'demo': True}); M.append({'de': ARIA_CID, 'x': ARIA_HOLA, 't': t}); cambio = True
     elif s_.get('estado') == 'pendiente': s_['estado'] = 'aceptada'; s_['t2'] = t; M.append({'de': ARIA_CID, 'x': ARIA_HOLA, 't': t}); cambio = True
+    CU = {}
     try: CU = _com_cuentas(); pjs = _com_personajes(CU[yo]) if yo in CU else []
     except Exception: pjs = []
-    L = d['sig'].setdefault(ARIA_CID, [])
+    L = d['sig'].setdefault(ARIA_CID, []); ac_ = next((c_ for c_, uu_ in (CU or {}).items() if uu_ == ARIA_UID), None) if 'CU' in dir() else None   # v320: y la cuenta de Aria (la de Max) también
+    if ac_ and ac_ != yo:
+        L2 = d['sig'].setdefault(ac_, [])
+        for p in pjs:
+            k2 = f"{yo}:{p.get('pid')}"
+            if p.get('pid') and k2 not in L2: L2.append(k2); cambio = True
     for p in pjs:
         k = f"{yo}:{p.get('pid')}"
         if not p.get('pid') or k in L: continue
@@ -2711,7 +2744,14 @@ class H(SimpleHTTPRequestHandler):
             with _com_l:
                 d = _com_lee()
                 if _com_aria(d, yo): _com_guarda(d)
-            return self._json(200, {'ok': True, 'n': _com_avisos(d, yo)})
+            nuevos = 0   # v320: influencers nuevos de otros desde la última vez que entraste en la Comunidad
+            try:
+                desde = float((urllib.parse.parse_qs(u.query).get('desde') or ['0'])[0] or 0)
+                if desde > 0:
+                    for c_, uu_ in _com_cuentas().items():
+                        if c_ != yo: nuevos += sum(1 for p in _com_personajes(uu_) if (p.get('t') or 0) > desde)
+            except Exception: pass
+            return self._json(200, {'ok': True, 'n': _com_avisos(d, yo), 'nuevos': nuevos})
         if u.path == '/api/comunidad/busca':   # v244: en cuáles de MIS conversaciones se ha dicho eso (el último mensaje que lo contiene)
             yo = _cid(); t = ' '.join(((urllib.parse.parse_qs(u.query).get('q') or [''])[0]).lower().split())[:80]; out = []
             if len(t) >= 2:
