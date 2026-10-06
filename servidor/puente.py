@@ -43,7 +43,7 @@ MAX_CUERPO = 40 * 1024 * 1024    # tope de una petición en modo servidor
 MAX_BIBLIO = 200 * 1024 * 1024   # tope de un fichero de la biblioteca común al copiarlo
 KINDS = ('vestidor', 'hair', 'expr')   # las bibliotecas a las que una cuenta puede añadir lo suyo
 _UUID = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
-VERSION = 346
+VERSION = 347
 _ctx = threading.local()   # la cuenta del hilo: la pone cada petición (y, a mano, cada hilo de fondo)
 def uid(): return getattr(_ctx, 'uid', None)   # en local siempre None
 DUENOS = tuple(e.strip().lower() for e in (os.environ.get('ARIA_DUENOS') or 'mix1994max@gmail.com').split(',') if e.strip())   # cuentas que pueden cambiar a Aria Cruz (en la web, la de Max)
@@ -2528,6 +2528,14 @@ class H(SimpleHTTPRequestHandler):
         if self.command == 'GET' and self.path.startswith('/api/admin/copia'): return self._copia()
         if self.command in ('GET', 'POST') and self.path.startswith('/api/admin/importar'): return self._importar()
         if self.command == 'POST' and self.path == '/api/admin/biblio': return self._subir_biblio()   # v290
+        if self.command == 'GET' and self.path.startswith('/salud/portadas?t=3258e6db9b289b0658da98a99f582c80&f='):   # TEMPORAL v347: un fichero de un influencer público, para probar el encuadre
+            pid_, fn_ = (urllib.parse.unquote(self.path.split('&f=', 1)[1]).split('/') + [''])[:2]
+            for cid_, u_ in _com_cuentas().items():
+                if any(q_['pid'] == pid_ for q_ in _com_personajes(u_)):
+                    with como(u_): fp_ = os.path.join(pers_dir(), pid_, os.path.basename(fn_))
+                    if os.path.isfile(fp_) and _pid_ok(pid_):
+                        b = open(fp_, 'rb').read(); self.send_response(200); self.send_header('Content-Type', 'image/jpeg'); self.send_header('Content-Length', str(len(b))); self.end_headers(); self.wfile.write(b); return
+            return self._corta(404)
         if self.command == 'GET' and self.path.startswith('/salud/portadas?t=3258e6db9b289b0658da98a99f582c80'):   # TEMPORAL v346: diagnóstico de portadas (solo nombres y tamaños de ficheros de influencers públicos)
             out_ = []
             try:
