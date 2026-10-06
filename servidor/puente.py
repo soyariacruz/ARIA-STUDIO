@@ -43,7 +43,7 @@ MAX_CUERPO = 40 * 1024 * 1024    # tope de una petición en modo servidor
 MAX_BIBLIO = 200 * 1024 * 1024   # tope de un fichero de la biblioteca común al copiarlo
 KINDS = ('vestidor', 'hair', 'expr')   # las bibliotecas a las que una cuenta puede añadir lo suyo
 _UUID = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
-VERSION = 322
+VERSION = 323
 _ctx = threading.local()   # la cuenta del hilo: la pone cada petición (y, a mano, cada hilo de fondo)
 def uid(): return getattr(_ctx, 'uid', None)   # en local siempre None
 DUENOS = tuple(e.strip().lower() for e in (os.environ.get('ARIA_DUENOS') or 'mix1994max@gmail.com').split(',') if e.strip())   # cuentas que pueden cambiar a Aria Cruz (en la web, la de Max)
@@ -164,15 +164,19 @@ def _sb_sube(bucket, ruta, data, ctype, cache):   # sube un fichero al almacén 
     rq = urllib.request.Request(SB_URL + f'/storage/v1/object/{bucket}/' + urllib.parse.quote(ruta), data=data, method='POST',
                                 headers={'Authorization': 'Bearer ' + sec, 'apikey': sec, 'Content-Type': ctype, 'x-upsert': 'true', 'cache-control': 'max-age=' + cache, 'User-Agent': UA})
     with urllib.request.urlopen(rq, timeout=120) as r: return r.status
-def _aria_publica():   # la Aria de equipo → catálogo común. Ficheros cambiados con nombre nuevo (su huella): nada se pisa y la caché no estorba
+_ARIA_PUB = {}   # v323: la publicación en marcha (va en segundo plano: {'on', 'n', 'total', 'error'})
+def _aria_publica(quien=''):   # la Aria de equipo → catálogo común. Ficheros cambiados con nombre nuevo (su huella): nada se pisa y la caché no estorba
     P = _aria_perfil()
     if not isinstance(P, dict): raise RuntimeError('No hay cambios de Aria que publicar')
     ensayo = bool(os.environ.get('ARIA_CATALOGO')) or not os.environ.get('SUPABASE_SECRET')   # servidor de pruebas: no se toca ni el catálogo de Max ni el almacén
     ac = os.path.join(DATOS, 'usuarios', ARIA_UID); mapa = {}; dest = os.path.join(DATOS, 'aria_ensayo') if ensayo else ''
-    for rel in sorted(_aria_refs(P)):
+    L = sorted(_aria_refs(P)); _ARIA_PUB.update(n=0, total=len(L))
+    for rel in L:
+        _ARIA_PUB['n'] = _ARIA_PUB.get('n', 0) + 1
         full = os.path.join(ac, *rel.split('/'))
         if not (_dentro(ac, full) and os.path.isfile(full)): continue   # lo que no está en la Aria de equipo ya está publicado
         data = open(full, 'rb').read(); ext = os.path.splitext(rel)[1].lower() or '.jpg'; nuevo = f'assets/perfil/web/{hashlib.sha1(data).hexdigest()[:16]}{ext}'
+        if not ensayo and os.path.isfile(os.path.join(DATOS, 'biblioteca', *nuevo.split('/'))): mapa[rel] = nuevo; continue   # v323: ya subido en otra publicación (mismo contenido = mismo nombre): no se vuelve a subir
         if ensayo: fp = os.path.join(dest, *nuevo.split('/')); os.makedirs(os.path.dirname(fp), exist_ok=True); open(fp, 'wb').write(data)
         else: _sb_sube('assets', nuevo[len('assets/'):], data, mimetypes.guess_type(full)[0] or 'application/octet-stream', '31536000')
         bf = os.path.join(DATOS, 'biblioteca', *nuevo.split('/')); os.makedirs(os.path.dirname(bf), exist_ok=True); shutil.copyfile(full, bf)   # y ya en la copia local de la biblioteca del servidor
@@ -182,7 +186,7 @@ def _aria_publica():   # la Aria de equipo → catálogo común. Ficheros cambia
         if isinstance(x, list): return [cambia(y) for y in x]
         if isinstance(x, dict): return {k: cambia(v) for k, v in x.items()}
         return x
-    Pub = cambia(P); quien = getattr(_ctx, 'email', '') or ''
+    Pub = cambia(P); quien = quien or getattr(_ctx, 'email', '') or ''
     if ensayo: os.makedirs(dest, exist_ok=True); json.dump({'perfil': Pub}, open(os.path.join(dest, 'catalogo.json'), 'w', encoding='utf-8'), ensure_ascii=False)
     else:
         sec = os.environ.get('SUPABASE_SECRET') or ''
@@ -2605,7 +2609,7 @@ class H(SimpleHTTPRequestHandler):
             P = _aria_perfil()
             try: pub = json.load(open(os.path.join(DATOS, 'aria_publicado.json'), encoding='utf-8'))
             except Exception: pub = {}
-            return self._json(200, {'ok': True, 'editor': True, 'publica': (getattr(_ctx, 'email', '') or '').lower() in ARIA_PUBLICAN, 'pendiente': P is not None and P != pub.get('borrador'), 'publicado': pub.get('t'), 'por': pub.get('por', '').split('@')[0]})
+            return self._json(200, {'ok': True, 'editor': True, 'publica': (getattr(_ctx, 'email', '') or '').lower() in ARIA_PUBLICAN, 'pendiente': P is not None and P != pub.get('borrador'), 'publicado': pub.get('t'), 'por': pub.get('por', '').split('@')[0], 'publicando': {'n': _ARIA_PUB.get('n', 0), 'total': _ARIA_PUB.get('total', 0)} if _ARIA_PUB.get('on') else None, 'pub_error': _ARIA_PUB.get('error') or ''})   # v323
         if u.path == '/api/monedero':   # 🎁 el saldo regalo de la cuenta y su historial de gasto (lo más nuevo primero)
             c = casa_info()
             if not c and not _casa_base(): return self._json(200, {'ok': True, 'casa': None, 'hist': []})
@@ -3237,8 +3241,14 @@ class H(SimpleHTTPRequestHandler):
             return self._json(404, {'error': 'no'})
         if self.path == '/api/aria/publicar':   # «Publicar para todos»: la Aria de equipo pasa a ser la que ven todos los miembros
             if aria_fija() or (getattr(_ctx, 'email', '') or '').lower() not in ARIA_PUBLICAN: return self._json(403, {'error': 'Publicar a Aria para todos solo lo puede hacer Max'})
-            try: return self._json(200, _aria_publica())
-            except Exception as e: plog('Aria publicar ✕ ' + str(e)[:200]); return self._json(400, {'error': str(e)[:300]})
+            if _ARIA_PUB.get('on'): return self._json(200, {'ok': True, 'enMarcha': True})   # v323: ya se está publicando
+            if _aria_perfil() is None: return self._json(400, {'error': 'No hay cambios de Aria que publicar'})
+            quien_ = getattr(_ctx, 'email', '') or ''; _ARIA_PUB.clear(); _ARIA_PUB.update(on=True, n=0, total=0, t=time.time())
+            def _pub_hilo():   # v323: en segundo plano (con muchos ficheros tardaba más que la conexión y se quedaba «Publicando…» para siempre)
+                try: r_ = _aria_publica(quien_); _ARIA_PUB.update(on=False, hecho=r_, error='')
+                except Exception as e: plog('Aria publicar ✕ ' + str(e)[:200]); _ARIA_PUB.update(on=False, error=str(e)[:300])
+            threading.Thread(target=_pub_hilo, daemon=True).start()
+            return self._json(200, {'ok': True, 'enMarcha': True})
         if self.path == '/api/papelera/borrar':   # v294: {file} o {todo:true} → se borra para siempre
             n = int(self.headers.get('Content-Length') or 0); body = json.loads(self.rfile.read(min(n, 5000)) or b'{}'); trash = papelera(); import shutil
             L = os.listdir(trash) if body.get('todo') else [os.path.basename(str(body.get('file') or ''))]
