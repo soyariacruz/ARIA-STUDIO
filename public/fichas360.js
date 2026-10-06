@@ -236,7 +236,7 @@
   window.f3Render = function (host) {
     if (!F3.open) return false; host.innerHTML = ''; const w = el('div', 'nfwrap');
     const bk0 = el('button', 'btn fxback', F3.owner ? '← Volver al creador de fichas' : '← Volver a Fichas 360'); bk0.onclick = () => { F3.open = false; if (window.PJ) PJ.sel = OW(); window.pjScrollTop = true; rpinta(); }; if (!enPagina()) w.appendChild(bk0);
-    w.appendChild(el('div', 'pjwhd', `<div><h3>Nueva ficha</h3><p>Su ficha principal con otra ropa y otros objetos: las cuatro vistas y el cuerpo entero salen en una sola imagen, de una vez.</p></div>`));
+    if (!enPagina()) w.appendChild(el('div', 'pjwhd', `<div><h3>Nueva ficha</h3><p>Su ficha principal con otra ropa y otros objetos: las cuatro vistas y el cuerpo entero salen en una sola imagen, de una vez.</p></div>`));   // v333: en la página de Fichas sobra
     // 1 · personaje
     const s1 = step(1, 'Personaje', 'la ficha se hace con ella'); const pc = el('div', 'nfchar', `<img class="av" src="${P().avatar || C.base.thumb}" alt=""><div><b>${P().name}</b><small>Se parte de: ${baseNombre().toLowerCase()}</small></div><img class="base" src="${baseThumb()}" alt="">`); pc.querySelector('.base').onclick = () => lightbox(baseSrc(), baseNombre()); s1.appendChild(pc); if (enPagina()) s1.appendChild(baseSel()); w.appendChild(s1);
     // 2 · ropa (del Vestidor)
@@ -298,7 +298,7 @@
     const pg = document.querySelector('#fichpage'); if (!pg) return; F3.open = true; if (F3._medido !== baseSrc()) medir();
     const y1 = (pg.querySelector('.fichizq') || {}).scrollTop || 0, y2 = (pg.querySelector('.fichder') || {}).scrollTop || 0;
     pg.innerHTML = ''; const w = el('div', 'fich'); pg.appendChild(w); const izq = el('div', 'fichizq'), der = el('div', 'fichder'); w.appendChild(izq); w.appendChild(der);
-    const hd = el('div', 'fichhd', '<h2>🧍 Creador de fichas</h2><small>solo el equipo</small>'); const x = el('button', 'btn fichx', '✕'); x.title = 'Cerrar'; x.onclick = () => window.fichCierra && fichCierra(); hd.appendChild(x); izq.appendChild(hd);
+    const hd = el('div', 'fichhd', '<h2>🧍 Creador de fichas</h2><small>solo el equipo</small>'); izq.appendChild(hd);   /* v333: sin ✕ (se sale con el menú) */
     const host = el('div', ''); izq.appendChild(host); window.f3Render(host);
     ensureCombo(); const same = (a, b) => (a || '').split('?')[0] === (b || '').split('?')[0];
     const V = []; const g = el('div', 'fichgrid');

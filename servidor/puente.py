@@ -43,7 +43,7 @@ MAX_CUERPO = 40 * 1024 * 1024    # tope de una petición en modo servidor
 MAX_BIBLIO = 200 * 1024 * 1024   # tope de un fichero de la biblioteca común al copiarlo
 KINDS = ('vestidor', 'hair', 'expr')   # las bibliotecas a las que una cuenta puede añadir lo suyo
 _UUID = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
-VERSION = 332
+VERSION = 333
 _ctx = threading.local()   # la cuenta del hilo: la pone cada petición (y, a mano, cada hilo de fondo)
 def uid(): return getattr(_ctx, 'uid', None)   # en local siempre None
 DUENOS = tuple(e.strip().lower() for e in (os.environ.get('ARIA_DUENOS') or 'mix1994max@gmail.com').split(',') if e.strip())   # cuentas que pueden cambiar a Aria Cruz (en la web, la de Max)
@@ -2849,11 +2849,11 @@ class H(SimpleHTTPRequestHandler):
                 if uu == '__no__': return self._corta(404)
                 with como(uu): fp = os.path.join(casa(), 'assets', 'comunidad', 'creador.jpg')
                 if not os.path.isfile(fp): return self._corta(404)
-                b = open(fp, 'rb').read(); self.send_response(200); self.send_header('Content-Type', 'image/jpeg'); self.send_header('Content-Length', str(len(b))); self.send_header('Cache-Control', 'private, max-age=3600'); self.end_headers(); self.wfile.write(b); return
+                b = open(fp, 'rb').read(); self.send_response(200); self.send_header('Content-Type', 'image/jpeg'); self.send_header('Content-Length', str(len(b))); self.send_header('Cache-Control', 'private, max-age=60'); self.end_headers(); self.wfile.write(b); return
             if cid.startswith('demo-'):   # las caras de la demo (solo el equipo)
                 fp = os.path.join(COM_DEMO_DIR, pid + '.jpg')
                 if aria_fija() or not re.fullmatch(r'[a-z0-9-]+', pid) or not os.path.isfile(fp): return self._corta(404)
-                b = open(fp, 'rb').read(); self.send_response(200); self.send_header('Content-Type', 'image/jpeg'); self.send_header('Content-Length', str(len(b))); self.send_header('Cache-Control', 'private, max-age=3600'); self.end_headers(); self.wfile.write(b); return
+                b = open(fp, 'rb').read(); self.send_response(200); self.send_header('Content-Type', 'image/jpeg'); self.send_header('Content-Length', str(len(b))); self.send_header('Cache-Control', 'private, max-age=60'); self.end_headers(); self.wfile.write(b); return
             uu = _com_cuentas().get(cid, '__no__')
             if uu == '__no__' or not _pid_ok(pid) or not any(x['pid'] == pid for x in _com_personajes(uu, cid == _cid())): return self._corta(404)
             with como(uu): base = os.path.join(pers_dir(), pid)
@@ -2871,7 +2871,7 @@ class H(SimpleHTTPRequestHandler):
             if not grande: fp = _avatar_centrado(base, fp) or fp   # v312: con la cara centrada
             elif os.path.basename(fp) != 'vista_frente.jpg':   # v313: sin vista de frente, la grande también centrada (sacada de su ficha entera)
                 c_ = _avatar_centrado(base, fp, True)
-                if c_: b = open(c_, 'rb').read(); self.send_response(200); self.send_header('Content-Type', 'image/jpeg'); self.send_header('Content-Length', str(len(b))); self.send_header('Cache-Control', 'private, max-age=600'); self.end_headers(); self.wfile.write(b); return
+                if c_: b = open(c_, 'rb').read(); self.send_response(200); self.send_header('Content-Type', 'image/jpeg'); self.send_header('Content-Length', str(len(b))); self.send_header('Cache-Control', 'private, max-age=60'); self.end_headers(); self.wfile.write(b); return
             if grande:   # la foto de la ficha, en grande para la galería (copia de 640 px, hecha una vez)
                 fg = os.path.join(base, '.galeria_640_' + os.path.basename(fp))
                 if not os.path.isfile(fg) or os.path.getmtime(fg) < os.path.getmtime(fp):
@@ -2880,7 +2880,7 @@ class H(SimpleHTTPRequestHandler):
                         im = Image.open(fp).convert('RGB'); im.thumbnail((640, 1000)); im.save(fg, quality=86)
                     except Exception: fg = fp
                 fp = fg
-            b = open(fp, 'rb').read(); self.send_response(200); self.send_header('Content-Type', 'image/jpeg'); self.send_header('Content-Length', str(len(b))); self.send_header('Cache-Control', 'private, max-age=600'); self.end_headers(); self.wfile.write(b); return
+            b = open(fp, 'rb').read(); self.send_response(200); self.send_header('Content-Type', 'image/jpeg'); self.send_header('Content-Length', str(len(b))); self.send_header('Cache-Control', 'private, max-age=60'); self.end_headers(); self.wfile.write(b); return
         if u.path == '/api/carpetas': return self._json(200, {'carpetas': _carp_lee(), 'compartidas': _comp_lista(_com_lee(), _cid()) if SERVIDOR else [], 'favs': _favs_lee()})   # las mías · y las que me comparten (para la Fototeca)
         if u.path == '/api/video/modelos':   # v255: los modelos de vídeo de WaveSpeed que se ofrecen, con sus opciones
             try: return self._json(200, {'ok': True, 'modelos': _vinfo() if (load_ws() or _casa_base()) else []})
