@@ -43,7 +43,7 @@ MAX_CUERPO = 40 * 1024 * 1024    # tope de una petición en modo servidor
 MAX_BIBLIO = 200 * 1024 * 1024   # tope de un fichero de la biblioteca común al copiarlo
 KINDS = ('vestidor', 'hair', 'expr')   # las bibliotecas a las que una cuenta puede añadir lo suyo
 _UUID = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
-VERSION = 347
+VERSION = 348
 _ctx = threading.local()   # la cuenta del hilo: la pone cada petición (y, a mano, cada hilo de fondo)
 def uid(): return getattr(_ctx, 'uid', None)   # en local siempre None
 DUENOS = tuple(e.strip().lower() for e in (os.environ.get('ARIA_DUENOS') or 'mix1994max@gmail.com').split(',') if e.strip())   # cuentas que pueden cambiar a Aria Cruz (en la web, la de Max)
@@ -1764,6 +1764,7 @@ _CARA_FICHAS = ('ficha360.jpg', 'ficha.jpg', 'importada.jpg')
 def _avatar_centrado(base, fp, grande=False):   # v345: la portada del influencer = UNA cara, centrada y de cerca, de la mejor foto que tenga (su original elegida, su vista de frente, su foto, su ficha…). Se rehace sola si cambia cualquiera de esas fotos
     if not SERVIDOR: return None
     out = os.path.join(base, '.foto_cara.jpg' if grande else '.avatar_cara.jpg'); mk = out[:-4] + '.json'
+    out = out.replace('_cara.', '_cara2.'); mk = out[:-4] + '.json'   # v348: rehechas
     try:
         from PIL import Image
         elegida = os.path.isfile(os.path.join(base, 'avatar.jpg')) and min(Image.open(os.path.join(base, 'avatar.jpg')).size) >= 400   # la eligió su dueño (la automática es de 256 px)
@@ -1782,7 +1783,13 @@ def _avatar_centrado(base, fp, grande=False):   # v345: la portada del influence
         cc = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml'); ec = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_eye.xml')
         def caras(g, W):   # las caras de frente: con dos ojos; si ninguna los tiene, ninguna
             fs = cc.detectMultiScale(g, scaleFactor=1.1, minNeighbors=5, minSize=(max(28, W // 18), max(28, W // 18)))
-            return [f for f in fs if len(ec.detectMultiScale(g[int(f[1]):int(f[1] + f[3] * 0.6), int(f[0]):int(f[0] + f[2])], scaleFactor=1.1, minNeighbors=4)) >= 2]
+            out_ = []
+            for f in fs:
+                x_, y_, w_, h_ = [int(v) for v in f]; E = ec.detectMultiScale(g[y_:int(y_ + h_ * 0.6), x_:x_ + w_], scaleFactor=1.1, minNeighbors=4)
+                if len(E) < 2: continue
+                E = sorted(E, key=lambda e: -int(e[2]) * int(e[3]))[:2]; mid = sum(int(e[0]) + int(e[2]) / 2 for e in E) / 2   # v348: ojos simétricos = de frente
+                out_.append((x_, y_, w_, h_, abs(mid - w_ / 2) / w_))
+            return out_
         for n in hay:
             src = os.path.join(base, n); img = cv2.imread(src)
             if img is None: continue
@@ -1791,15 +1798,16 @@ def _avatar_centrado(base, fp, grande=False):   # v345: la portada del influence
                 ia = _encuadre_ia(src)
                 if ia:
                     (a0, b0, a1, b1), (c0, d0, c1, d1) = ia; px, py = int(a0 * W), int(b0 * H); sub = g[py:int(b1 * H), px:int(a1 * W)]; f2 = caras(sub, sub.shape[1]) if sub.size else []
-                    fs = [(f[0] + px, f[1] + py, f[2], f[3]) for f in f2] or [(int(c0 * W), int(d0 * H), int((c1 - c0) * W), int((d1 - d0) * H))]
+                    fs = [(f[0] + px, f[1] + py, f[2], f[3], f[4]) for f in f2] or [(int(c0 * W), int(d0 * H), int((c1 - c0) * W), int((d1 - d0) * H), 0.0)]
             if not fs: continue
-            x, y, w, h = [int(v) for v in max(fs, key=lambda f_: int(f_[2]) * int(f_[3]) * 1000 - (int(f_[0]) + int(f_[1])))]   # una sola: la más grande (a igualdad, la de arriba a la izquierda)
+            fr_ = [f_ for f_ in fs if f_[4] < 0.07] or sorted(fs, key=lambda f_: f_[4])[:1]   # v348: las más de frente; de ellas, la más grande
+            x, y, w, h = [int(v) for v in max(fr_, key=lambda f_: int(f_[2]) * int(f_[3]) * 1000 - (int(f_[0]) + int(f_[1])))[:4]]
             cx = x + w / 2
             if grande:   # de la cabeza a los hombros, 3:4, la cara en el tercio de arriba
-                y0 = int(max(0, y - h * 0.32)); an = int(min(w * 2.6, W)); al = int(min(an * 4 / 3, H - y0)); an = int(min(al * 3 / 4, W)); al = int(an * 4 / 3); x0 = int(min(max(0, cx - an / 2), W - an))   # si la cara está abajo, se encoge (no sube a otro panel)
+                y0 = int(max(0, y - h * 0.32)); an = int(min(w * 1.5, W)); al = int(min(an * 4 / 3, H - y0)); an = int(min(al * 3 / 4, W)); al = int(an * 4 / 3); x0 = int(min(max(0, cx - an / 2), W - an))   # si la cara está abajo, se encoge (no sube a otro panel)
                 im = Image.open(src).convert('RGB').crop((x0, y0, x0 + an, y0 + al)); im.thumbnail((900, 1200))
             else:   # el circulito: la cara de cerca
-                lado = int(min(max(w, h) * 1.6, W, H)); cy = y + h * 0.5; x0 = int(min(max(0, cx - lado / 2), W - lado)); y0 = int(min(max(0, cy - lado / 2), H - lado))
+                lado = int(min(max(w, h) * 1.35, W, H)); cy = y + h * 0.5; x0 = int(min(max(0, cx - lado / 2), W - lado)); y0 = int(min(max(0, cy - lado / 2), H - lado))
                 im = Image.open(src).convert('RGB').crop((x0, y0, x0 + lado, y0 + lado)); im.thumbnail((480, 480))
             im.save(out, quality=92); ok = True; break
     except Exception as e: plog(f'portada ✕ {type(e).__name__}: {str(e)[:120]}')
