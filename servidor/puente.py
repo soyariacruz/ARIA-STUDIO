@@ -43,7 +43,7 @@ MAX_CUERPO = 40 * 1024 * 1024    # tope de una petición en modo servidor
 MAX_BIBLIO = 200 * 1024 * 1024   # tope de un fichero de la biblioteca común al copiarlo
 KINDS = ('vestidor', 'hair', 'expr')   # las bibliotecas a las que una cuenta puede añadir lo suyo
 _UUID = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
-VERSION = 315
+VERSION = 316
 _ctx = threading.local()   # la cuenta del hilo: la pone cada petición (y, a mano, cada hilo de fondo)
 def uid(): return getattr(_ctx, 'uid', None)   # en local siempre None
 DUENOS = tuple(e.strip().lower() for e in (os.environ.get('ARIA_DUENOS') or 'mix1994max@gmail.com').split(',') if e.strip())   # cuentas que pueden cambiar a Aria Cruz (en la web, la de Max)
@@ -2295,6 +2295,7 @@ def _montar_gasto(usd=0.0, quien=None):   # lo que lleva hoy la clave de la casa
             tmp = fp + '.tmp'; open(tmp, 'w', encoding='utf-8').write(json.dumps(g)); os.replace(tmp, fp)
         return g
 def _montar(idea, auto, tipo='imagen'):   # v307 → {'prompt', 'usd', 'casa'}: paga la casa (ARIA_CLAUDE_CASA o la clave de Claude de la cuenta de Aria) hasta el tope del día; si no, la clave de la cuenta
+    idea = re.sub(r'@IMG(\d+)', r'@Image\1', idea or '', flags=re.I); auto = re.sub(r'@IMG(\d+)', r'@Image\1', auto or '', flags=re.I)   # v316: en la web se ven como @IMG1
     yo = uid() or 'local'; k = ''; casa_ = False; g = _montar_gasto()
     if float(g.get('usd') or 0) < MONTAR_TOPE and int(g['por'].get(yo, 0)) < 300:
         k = os.environ.get('ARIA_CLAUDE_CASA') or ''
@@ -2325,6 +2326,7 @@ def _montar(idea, auto, tipo='imagen'):   # v307 → {'prompt', 'usd', 'casa'}: 
         fr = [next((x.strip() for x in re.split(r'(?<=[.!?])\s+|\n', auto) if g_ in x), f'Usa {g_} como referencia.') for g_ in falta]
         t += '\n⟦' + ' '.join(dict.fromkeys(fr)) + '⟧'; aviso = 'faltaba ' + ', '.join(falta)
     if aviso: plog(f'montar · {tipo} · {aviso}')
+    t = re.sub(r'@Image(\d+)', r'@IMG\1', t)   # v316
     return {'prompt': t[:6000], 'usd': usd, 'casa': casa_, 'aviso': aviso}
 def _audios():   # mis audios, lo último primero
     d = audio_dir(); out = []

@@ -33,8 +33,6 @@ LOCAL_A_WEB = [
     ("'sin respuesta del puente'", "'sin respuesta del servidor'"),
     ('el puente no encuentra esta petición', 'el servidor no encuentra esta petición'),
     ('Pégala en el puente y recarga. En la web pública será lo primero que se hace al entrar.', 'Conéctala arriba, en «Conecta tu API».'),
-    ('falta la clave en ~/.claude/wavespeed.env', 'conecta tu clave en «Tus APIs»'),
-    ('falta la clave en ~/.claude/byteplus.env', 'conecta tu clave en «Tus APIs»'),
     ('Se mueve a assets/papelera.', 'Va a la Papelera: se puede recuperar durante 30 días.'),
     ('Se mueve a la papelera de la app y su ficha de Notion se archiva (se puede restaurar desde la papelera de Notion).', 'Deja de verse en tu Vestidor.'),
     ('Va a la papelera de la app.', 'Deja de verse y se borra del todo a los 30 días.'),
