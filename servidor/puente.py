@@ -43,7 +43,7 @@ MAX_CUERPO = 40 * 1024 * 1024    # tope de una petición en modo servidor
 MAX_BIBLIO = 200 * 1024 * 1024   # tope de un fichero de la biblioteca común al copiarlo
 KINDS = ('vestidor', 'hair', 'expr')   # las bibliotecas a las que una cuenta puede añadir lo suyo
 _UUID = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
-VERSION = 297
+VERSION = 298
 _ctx = threading.local()   # la cuenta del hilo: la pone cada petición (y, a mano, cada hilo de fondo)
 def uid(): return getattr(_ctx, 'uid', None)   # en local siempre None
 DUENOS = tuple(e.strip().lower() for e in (os.environ.get('ARIA_DUENOS') or 'mix1994max@gmail.com').split(',') if e.strip())   # cuentas que pueden cambiar a Aria Cruz (en la web, la de Max)
@@ -2369,6 +2369,11 @@ class H(SimpleHTTPRequestHandler):
         if _dentro(base, full) and os.path.isfile(full):
             self._cc = 'private, no-cache'; self._fijo = full
             return super().do_HEAD() if cabeza else super().do_GET()
+        if _biblio_ok(rel) and DATOS:   # v298: si la biblioteca común está en el disco del servidor (Filmoteca ligera, muestras de voz), se sirve de ahí; antes se mandaba al almacén público, donde no están
+            bb = os.path.join(DATOS, 'biblioteca'); bf = os.path.join(bb, *rel.split('/'))
+            if _dentro(bb, bf) and os.path.isfile(bf):
+                self._cc = 'private, max-age=86400'; self._fijo = bf
+                return super().do_HEAD() if cabeza else super().do_GET()
         if _biblio_ok(rel):
             self._cc = 'private, max-age=3600'; self.send_response(302); self.send_header('Location', _biblio_url(rel)); self.send_header('Content-Length', '0'); self.end_headers(); return
         return self._corta(404)
