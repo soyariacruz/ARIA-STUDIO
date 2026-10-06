@@ -24,7 +24,6 @@ app = s[i + len(a):j]
 # textos que solo son verdad en local (el puente, la carpeta, Notion): en la web dicen lo que pasa en la web.
 # Cada uno tiene que seguir existiendo en la app local: si desaparece, el assert avisa para revisar la lista.
 LOCAL_A_WEB = [
-    ('Las claves se guardan en tu ordenador y no salen de él.', 'Las claves se guardan cifradas en tu cuenta de ARIA STUDIO y solo se usan para tus generaciones.'),
     ("'Hace falta el puente (python3 \"Aria Mirror/puente.py\")'", "'Conecta primero tu API'"),
     ("toast('Hace falta el puente')", "toast('Conecta primero tu API (arriba, «Conecta tu API»)')"),
     ('Puente apagado · abre «ARIA MIRROR.command»', 'Sin conexión con el servidor · recarga la página'),

@@ -43,7 +43,7 @@ MAX_CUERPO = 40 * 1024 * 1024    # tope de una petición en modo servidor
 MAX_BIBLIO = 200 * 1024 * 1024   # tope de un fichero de la biblioteca común al copiarlo
 KINDS = ('vestidor', 'hair', 'expr')   # las bibliotecas a las que una cuenta puede añadir lo suyo
 _UUID = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
-VERSION = 323
+VERSION = 324
 _ctx = threading.local()   # la cuenta del hilo: la pone cada petición (y, a mano, cada hilo de fondo)
 def uid(): return getattr(_ctx, 'uid', None)   # en local siempre None
 DUENOS = tuple(e.strip().lower() for e in (os.environ.get('ARIA_DUENOS') or 'mix1994max@gmail.com').split(',') if e.strip())   # cuentas que pueden cambiar a Aria Cruz (en la web, la de Max)
@@ -1554,7 +1554,16 @@ def _add_estilo(j, live_path):   # peinado o expresión creados soltando una fot
 APIS = (('ws', 'WaveSpeed', 'WS_API_KEY', 'wavespeed.env', 'Nano Banana Pro, GPT Image, Seedream y Qwen'),
         ('hf', 'Higgsfield', 'HF_API_KEY', 'higgsfield.env', 'Marketing Studio, Grok y Qwen'),
         ('ark', 'BytePlus', 'ARK_API_KEY', 'byteplus.env', 'vídeo con Seedance'),
-        ('claude', 'Claude (Anthropic)', 'ANTHROPIC_API_KEY', 'anthropic.env', 'escribir mundos, historias y prompts de los Workflows'))
+        ('claude', 'Claude (Anthropic)', 'ANTHROPIC_API_KEY', 'anthropic.env', 'escribir mundos, historias y prompts de los Workflows'),
+        ('mg', 'Magnific', 'FREEPIK_API_KEY', 'freepik.env', 'mejorar y escalar imágenes (API de Freepik)'),   # v324
+        ('el', 'ElevenLabs', 'ELEVENLABS_API_KEY', 'elevenlabs.env', 'voces y audio'),
+        ('oai', 'ChatGPT (OpenAI)', 'OPENAI_API_KEY', 'openai.env', 'prompts e imágenes GPT'))
+def _oai_ok(k):   # v324: comprueba una clave de OpenAI listando modelos (no gasta)
+    rq = urllib.request.Request('https://api.openai.com/v1/models', headers={'Authorization': 'Bearer ' + k, 'User-Agent': UA}); urllib.request.urlopen(rq, timeout=30).read(); return True
+def _el_ok(k):   # v324: ElevenLabs, listando sus modelos (no gasta)
+    rq = urllib.request.Request('https://api.elevenlabs.io/v1/models', headers={'xi-api-key': k, 'User-Agent': UA}); urllib.request.urlopen(rq, timeout=30).read(); return True
+def _mg_ok(k):   # v324: Magnific va por la API de Freepik; se comprueba con una búsqueda (no gasta)
+    rq = urllib.request.Request('https://api.freepik.com/v1/resources?limit=1', headers={'x-freepik-api-key': k, 'Accept': 'application/json', 'User-Agent': UA}); urllib.request.urlopen(rq, timeout=30).read(); return True
 def _claude_ok(k):   # comprueba una clave de Anthropic listando sus modelos (no genera ni cobra nada)
     rq = urllib.request.Request('https://api.anthropic.com/v1/models?limit=1', headers={'x-api-key': k, 'anthropic-version': '2023-06-01', 'User-Agent': UA})
     urllib.request.urlopen(rq, timeout=30).read(); return True
@@ -1567,7 +1576,7 @@ def _ark_ok(k):   # comprueba una clave de BytePlus pidiendo su lista de trabajo
 def _de_quien(k):   # ¿de qué proveedor es esta clave? Se prueba con cada uno; None si ninguno la acepta
     if not re.fullmatch(r'[\x21-\x7e]{16,400}', k): return None
     duda = False
-    for aid, prueba in ((('claude', _claude_ok),) if k.startswith('sk-ant-') else (('hf', _hf_ok),) if ':' in k else (('ws', _ws_saldo), ('ark', _ark_ok))):
+    for aid, prueba in ((('claude', _claude_ok),) if k.startswith('sk-ant-') else (('el', _el_ok),) if k.startswith('sk_') else (('oai', _oai_ok),) if k.startswith('sk-') else (('mg', _mg_ok),) if k.startswith('FPSX') else (('hf', _hf_ok),) if ':' in k else (('ws', _ws_saldo), ('ark', _ark_ok), ('el', _el_ok), ('mg', _mg_ok))):   # v324: + ElevenLabs, ChatGPT y Magnific
         for intento in (1, 2):   # «no la acepta» (401/403…) es un no; cualquier otro fallo (red, 5xx, tardanza) se reintenta una vez
             try: prueba(k); return aid
             except urllib.error.HTTPError as e:
@@ -2938,7 +2947,7 @@ class H(SimpleHTTPRequestHandler):
             if body.get('id') == 'auto':   # la pantalla ya no pregunta de quién es la clave
                 body['id'] = _de_quien(str(body.get('key') or '').strip())
                 if body['id'] == 'duda': return self._json(400, {'error': 'el proveedor no ha respondido al comprobar la clave. No es que esté mal: vuelve a pulsar Conectar'})
-                if not body['id']: return self._json(400, {'error': 'no reconozco esa clave. Hoy funcionan las de WaveSpeed, Higgsfield (con la forma ID:SECRET), BytePlus y Claude (empieza por sk-ant-): revisa que esté copiada entera'})
+                if not body['id']: return self._json(400, {'error': 'no reconozco esa clave. Funcionan las de WaveSpeed, Higgsfield (ID:SECRET), Magnific (Freepik), ElevenLabs, Claude y ChatGPT: revisa que esté copiada entera'})
             api_ = next((a for a in APIS if a[0] == body.get('id')), None)
             if not api_: return self._json(400, {'error': 'API desconocida'})
             aid, nombre, envn, homef, _para = api_
@@ -2949,6 +2958,9 @@ class H(SimpleHTTPRequestHandler):
             try:
                 if aid == 'ws': _ws_saldo(k)
                 elif aid == 'claude': _claude_ok(k)
+                elif aid == 'oai': _oai_ok(k)
+                elif aid == 'el': _el_ok(k)
+                elif aid == 'mg': _mg_ok(k)
                 elif aid == 'hf':
                     if ':' not in k: return self._json(400, {'error': 'la clave de Higgsfield tiene la forma ID:SECRET'})
                     _hf_ok(k)
