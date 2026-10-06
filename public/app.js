@@ -2675,8 +2675,12 @@ function admFila(z, r, acciones) {
   if (r.yo_dueno && !z.dueno) btn(z.interno ? 'Quitar del equipo' : 'Hacer del equipo', z.interno ? 'Deja de ver lo del equipo (Admin, Aria editable, NSFW…)' : 'Verá lo del equipo: Admin, Aria editable, Duelos…', async () => { if (!(await pregunta(z.interno ? `¿Quitar a ${z.email} del equipo?` : `¿Hacer a ${z.email} del equipo?\n\nVerá el panel Admin, podrá editar a Aria y regalar saldo.`))) return; const k = await admManda('/api/admin/acciones', { accion: 'equipo', email: z.email, on: !z.interno }); if (k) { ADM.r = k; admPinta(); toast('Hecho'); } });
   if (!z.interno) btn('Quitar acceso', 'Deja de poder entrar (su cuenta y sus creaciones no se borran)', async () => { if (!(await pregunta(`¿Quitar el acceso a ${z.email}?\n\nDeja de poder entrar al momento. Su cuenta y sus creaciones no se borran: si vuelve a tener acceso, lo recupera todo.`))) return; if (await admManda('/api/miembros', { accion: 'baja', email: z.email })) { toast('Acceso quitado'); admCarga(true); } }, 'rojo');
   return row; }
+function f3Aria() { // v301: el creador de fichas de Aria (paso a paso: personaje → ropa del Vestidor → objetos → generar), en Perfil › Aria
+  if (!window.nfOpen || !window.PJ) { toast('El creador de fichas todavía se está cargando: prueba en un momento'); return; }
+  PJ.sel = 'aria'; PJ.tabBy = Object.assign(PJ.tabBy || {}, { aria: 'fichas' }); setTab('perfil'); nfOpen('aria'); }
 function admHerr(w) {
   const g = el('div', 'admstats'); const it = (ic, t, sub, fn) => { const c = el('button', 'admstat', `<span>${ic}</span><b>${t}</b><i>${sub}</i>`); c.onclick = fn; g.appendChild(c); };
+  it('🧍', 'Fichas 360 con ropa', 'una ficha nueva de Aria con prendas del Vestidor, a partir de su ficha principal', () => { admCierra(); f3Aria(); });   // v301
   it('🎁', 'Bolsa del saldo regalo', 'cuánto queda, quién gasta más, regalar a todos', () => openBolsa());
   it('🚩', 'Denuncias', 'lo que ha denunciado la comunidad: restaurar o dejarlo retirado', () => denAbre());
   it('🥊', 'Duelos', 'la AI League: preparar y publicar duelos', () => { admCierra(); ligaAbre(); });
