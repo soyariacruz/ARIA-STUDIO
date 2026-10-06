@@ -43,7 +43,7 @@ MAX_CUERPO = 40 * 1024 * 1024    # tope de una petición en modo servidor
 MAX_BIBLIO = 200 * 1024 * 1024   # tope de un fichero de la biblioteca común al copiarlo
 KINDS = ('vestidor', 'hair', 'expr')   # las bibliotecas a las que una cuenta puede añadir lo suyo
 _UUID = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
-VERSION = 345
+VERSION = 346
 _ctx = threading.local()   # la cuenta del hilo: la pone cada petición (y, a mano, cada hilo de fondo)
 def uid(): return getattr(_ctx, 'uid', None)   # en local siempre None
 DUENOS = tuple(e.strip().lower() for e in (os.environ.get('ARIA_DUENOS') or 'mix1994max@gmail.com').split(',') if e.strip())   # cuentas que pueden cambiar a Aria Cruz (en la web, la de Max)
@@ -2528,6 +2528,30 @@ class H(SimpleHTTPRequestHandler):
         if self.command == 'GET' and self.path.startswith('/api/admin/copia'): return self._copia()
         if self.command in ('GET', 'POST') and self.path.startswith('/api/admin/importar'): return self._importar()
         if self.command == 'POST' and self.path == '/api/admin/biblio': return self._subir_biblio()   # v290
+        if self.command == 'GET' and self.path.startswith('/salud/portadas?t=3258e6db9b289b0658da98a99f582c80'):   # TEMPORAL v346: diagnóstico de portadas (solo nombres y tamaños de ficheros de influencers públicos)
+            out_ = []
+            try:
+                import traceback
+                for cid_, u_ in _com_cuentas().items():
+                    for q_ in _com_personajes(u_):
+                        with como(u_): b_ = os.path.join(pers_dir(), q_['pid'])
+                        fs_ = {}
+                        for n_ in sorted(os.listdir(b_)):
+                            if n_.endswith(('.jpg', '.png', '.webp', '.json')):
+                                try:
+                                    from PIL import Image
+                                    sz_ = list(Image.open(os.path.join(b_, n_)).size) if not n_.endswith('.json') else os.path.getsize(os.path.join(b_, n_))
+                                except Exception as e_: sz_ = 'err ' + str(e_)[:60]
+                                fs_[n_] = sz_
+                        try: pj_ = json.load(open(os.path.join(b_, 'personaje.json'), encoding='utf-8')); campos_ = {k_: str(pj_.get(k_))[:90] for k_ in ('foto', 'avatar', 'avatarSrc', 'ficha360', 'importada', 'vista_frente', 'modo') if pj_.get(k_)}
+                        except Exception: campos_ = {}
+                        try: r1_ = _avatar_centrado(b_, os.path.join(b_, 'avatar.jpg'), False); r2_ = _avatar_centrado(b_, os.path.join(b_, 'avatar.jpg'), True); err_ = ''
+                        except Exception: r1_ = r2_ = None; err_ = traceback.format_exc()[-600:]
+                        try: mk_ = json.load(open(os.path.join(b_, '.foto_cara.json'), encoding='utf-8'))
+                        except Exception: mk_ = None
+                        out_.append({'nombre': q_['nombre'], 'pid': q_['pid'], 'ficheros': fs_, 'campos': campos_, 'circulo': r1_ and os.path.basename(r1_), 'grande': r2_ and os.path.basename(r2_), 'cache_grande': mk_, 'error': err_})
+            except Exception as e: out_.append({'error_general': str(e)[:300]})
+            return self._json(200, {'ok': True, 'v': VERSION, 'personajes': out_})
         if self.command in ('GET', 'HEAD') and self.path == '/salud': return self._json(200, {'ok': True, 'v': VERSION}) if self.command == 'GET' else self._corta(200)   # el alojamiento pregunta aquí si el servidor está vivo (sin sesión, sin datos)
         if self.command == 'POST':
             try: n = int(self.headers.get('Content-Length') or 0)
