@@ -43,7 +43,7 @@ MAX_CUERPO = 40 * 1024 * 1024    # tope de una petición en modo servidor
 MAX_BIBLIO = 200 * 1024 * 1024   # tope de un fichero de la biblioteca común al copiarlo
 KINDS = ('vestidor', 'hair', 'expr')   # las bibliotecas a las que una cuenta puede añadir lo suyo
 _UUID = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
-VERSION = 311
+VERSION = 312
 _ctx = threading.local()   # la cuenta del hilo: la pone cada petición (y, a mano, cada hilo de fondo)
 def uid(): return getattr(_ctx, 'uid', None)   # en local siempre None
 DUENOS = tuple(e.strip().lower() for e in (os.environ.get('ARIA_DUENOS') or 'mix1994max@gmail.com').split(',') if e.strip())   # cuentas que pueden cambiar a Aria Cruz (en la web, la de Max)
@@ -1675,6 +1675,38 @@ def _vistos():
     try: L = json.load(open(_vistos_fp(), encoding='utf-8'))
     except Exception: L = []
     return [x for x in L if isinstance(x, str)][:300] if isinstance(L, list) else []
+def _avatar_centrado(base, fp):   # v312: la foto del influencer en la Comunidad, con la cara centrada. Se hace UNA vez; si su dueña cambia la foto después, se queda la suya
+    if not SERVIDOR: return None
+    mk = os.path.join(base, '.avatar_auto.json'); out = os.path.join(base, '.avatar_centrado.jpg')
+    try: mt = os.path.getmtime(fp)
+    except OSError: return None
+    try: j = json.load(open(mk, encoding='utf-8'))
+    except Exception: j = None
+    if isinstance(j, dict):
+        if abs(float(j.get('mt') or 0) - mt) > 1: return None   # la ha cambiado después: la suya
+        return out if j.get('ok') and os.path.isfile(out) else None
+    ok = False
+    try:
+        import cv2
+        from PIL import Image
+        cc = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
+        for n in ('vista_frente.jpg', 'ficha360.jpg', 'ficha.jpg', os.path.basename(fp)):   # primero su vista de frente; si no, la ficha; si no, la propia foto
+            src = os.path.join(base, n)
+            if not os.path.isfile(src): continue
+            img = cv2.imread(src)
+            if img is None: continue
+            g = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY); H, W = g.shape
+            fs = cc.detectMultiScale(g, scaleFactor=1.1, minNeighbors=6, minSize=(max(40, W // 30), max(40, W // 30)))
+            if not len(fs): continue
+            x, y, w, h = max(fs, key=lambda f_: int(f_[2]) * int(f_[3]) * 1000 - (int(f_[0]) + int(f_[1])))   # la cara más grande (a igualdad, la de arriba a la izquierda: la de frente)
+            lado = int(min(max(w, h) * 1.7, W, H)); cx = x + w / 2; cy = y + h * 0.55
+            x0 = int(min(max(0, cx - lado / 2), W - lado)); y0 = int(min(max(0, cy - lado / 2), H - lado))
+            im = Image.open(src).convert('RGB').crop((x0, y0, x0 + lado, y0 + lado)); im.thumbnail((400, 400)); im.save(out, quality=88); ok = True; break
+    except Exception as e: plog(f'avatar centrado ✕ {type(e).__name__}: {str(e)[:120]}')
+    try:
+        with open(mk, 'w', encoding='utf-8') as o: json.dump({'mt': mt, 'ok': ok}, o)
+    except Exception: pass
+    return out if ok else None
 def _pub_lista():   # todo lo publicado por todas las cuentas, lo más nuevo primero (caché de 20 s; se vacía con cada cambio)
     if not SERVIDOR or not DATOS: return []
     with _PUB_L:
@@ -2693,6 +2725,7 @@ class H(SimpleHTTPRequestHandler):
             with como(uu): base = os.path.join(pers_dir(), pid)
             fp = next((os.path.join(base, n) for n in (('vista_frente.jpg', 'avatar.jpg', 'foto.jpg') if grande else ('avatar.jpg', 'foto.jpg')) if os.path.isfile(os.path.join(base, n))), None)   # v230: en grande, su vista de frente o la foto de perfil que ha encuadrado su dueña (no la hoja entera)
             if not fp: return self._corta(404)
+            if not grande: fp = _avatar_centrado(base, fp) or fp   # v312: con la cara centrada
             if grande:   # la foto de la ficha, en grande para la galería (copia de 640 px, hecha una vez)
                 fg = os.path.join(base, '.galeria_640_' + os.path.basename(fp))
                 if not os.path.isfile(fg) or os.path.getmtime(fg) < os.path.getmtime(fp):
