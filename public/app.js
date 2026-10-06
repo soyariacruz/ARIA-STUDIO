@@ -121,7 +121,7 @@ function buildNav() {
     /* v253: Crear vídeo, abierto */
     if (LIBS.includes(k)) { const w = el('div', 'navlib'); w.appendChild(b); const mb = el('button', 'more', 'Más <span>▾</span>'); mb.title = 'Vestidor, Efectos, Movie looks, Cartoon, Expresiones y Peinados (Lugares y Poses, pronto)'; mb.onclick = () => navMore(w, LIBS_ORD.concat(LUGARES_ON ? ['lugar'] : []).map(q => q === '-' ? '-' : [TABS[q].icon, TABS[q].label, () => setTab(q), '', q === state.tab]).concat(['-']).concat(LUGARES_ON ? [] : [['📍', 'Lugares', () => toast('Lugares: próximamente'), 'pronto']]).concat([['🤸', 'Poses', () => toast('Poses: próximamente'), 'pronto']])); w.appendChild(mb); host.appendChild(w); }
     else host.appendChild(b); });
-  { const au = el('button', 'pronto audiobtn', '<span>🎙️</span>Crear audio<i class="nvpronto">pronto</i>'); au.title = 'Crear audio (la voz de tu personaje, ambiente, lip sync para vídeo): próximamente'; au.onclick = () => toast('🎙️ Crear audio: próximamente'); main.appendChild(au); }   // v289
+  { const eq = state.interno; const au = el('button', (eq ? '' : 'pronto ') + 'audiobtn' + ($('#audpage') ? ' on' : ''), '<span>🎙️</span>Crear audio' + (eq ? '' : '<i class="nvpronto">pronto</i>')); au.title = eq ? 'Crear audio (en pruebas, solo el equipo)' : 'Crear audio (la voz de tu personaje, ambiente, lip sync para vídeo): próximamente'; au.onclick = () => audioAbre(); main.appendChild(au); }   // v289 · v291: el equipo ya entra
   { nav.appendChild(el('div', 'nav-sep')); const cb = el('button', 'more combtn' + (COM && COM.on ? ' on' : ''), '<span>🤝</span>Comunidad');   /* v250: abierta */ cb.title = 'Comunidad: los creadores y sus personajes, colaboraciones y mensajes';
       cb.onclick = () => { if (COM.on) { comIr('dir').then(comPonAvisos); return; } COM.visto = true; comAbre('dir'); }; nav.appendChild(cb);
       const mb = el('button', 'more msgbtn', '<span>💬</span>Mensajes'); mb.title = 'Tus conversaciones con otros creadores: solicitudes, colaboraciones y carpetas compartidas'; mb.onclick = () => { if (COM.on) { comIr('msg').then(comPonAvisos); return; } COM.visto = true; comAbre('msg'); }; nav.appendChild(mb); }
@@ -136,6 +136,7 @@ function setTab(k) {
   try { document.body.dataset.tab = k; } catch (e) {}   // v262: para el móvil (qué se enseña en cada sección)
   if ($('#ligapage')) ligaCierra();   // cualquier sección del menú cierra los Workflows
   if ($('#admpage')) admCierra();   // y el panel ⚙️ Admin
+  if ($('#audpage')) audCierra();   // y 🎙️ Crear audio
   if (innerWidth < 768) { mvCierra(false); try { if ($('#gal').classList.contains('on')) closeGal(); } catch (e) {} requestAnimationFrame(() => scrollTo(0, 0)); }   // v281: en el móvil, cada sección empieza arriba
   if (k === 'lugar' && !LUGARES_ON) k = 'vestidor';   // Lugares, pronto
   if (COM && COM.on) comCierra();   // cualquier sección del menú cierra la página de la Comunidad
@@ -2333,13 +2334,83 @@ function ligaAbre() { // 🧰 Workflows › Duelos en la web: la página de Duel
   if (COM && COM.on) comCierra(); let pg = $('#ligapage'); if (pg) return; pg = el('div', ''); pg.id = 'ligapage'; document.body.appendChild(pg);
   const coloca = () => { const m = document.querySelector('main'), n = $('#nav'); const r = m ? m.getBoundingClientRect() : { top: 0, bottom: innerHeight }; pg.style.top = Math.round(r.top) + 'px'; pg.style.bottom = Math.max(0, Math.round(innerHeight - r.bottom)) + 'px'; pg.style.left = Math.round(n ? n.getBoundingClientRect().right : 0) + 'px'; };
   coloca(); window.addEventListener('resize', coloca); pg._coloca = coloca; const fr = document.createElement('iframe'); fr.src = 'liga.html?v=' + Date.now(); fr.title = 'Workflows · Duelos'; pg.appendChild(fr); }
+// ----------------------------------------------------------------- 🎙️ Crear audio (v291 · en pruebas, solo el equipo)
+var AUD = { modo: 'voz', mod: { voz: 'el4', ambiente: 'seedaudio', cambiar: 'vchange', efecto: 'sfx' }, voz: '', texto: '', dir: '', est: 0.5, sim: 0.75, vel: 1, dur: 5, limpiar: false, archivo: null, info: null, lista: [], jobs: [] };
+const AUD_MODOS = [['voz', '🗣️', 'Voz', 'Tu personaje dice el texto que escribas, con su voz.'], ['ambiente', '🎭', 'Voz con ambiente', 'La voz y el sonido del sitio a la vez (calle, gente, coches…): más natural, como grabado con el móvil.'], ['cambiar', '🔁', 'Cambiar voz', 'Sube un audio (por ejemplo, tú hablando) y lo dice otra voz, con tu entonación.'], ['efecto', '🔊', 'Efecto de sonido', 'Cualquier sonido descrito con palabras: lluvia, un portazo, aplausos…']];
+const AUD_TAGS = [['😂', 'risa', '[laughs]'], ['🤫', 'susurro', '[whispers]'], ['😮‍💨', 'suspiro', '[sighs]'], ['🤩', 'emoción', '[excited]'], ['⏸', 'pausa', '[pause]']];
+function audioAbre() {
+  if (!state.interno) { toast('🎙️ Crear audio: próximamente'); return; }
+  if (COM && COM.on) comCierra(); if ($('#ligapage')) ligaCierra(); if ($('#admpage')) admCierra();
+  let pg = $('#audpage'); if (!pg) { pg = el('div', ''); pg.id = 'audpage'; document.body.appendChild(pg);
+    const coloca = () => { if (innerWidth < 768) { ['top', 'bottom', 'left'].forEach(k => pg.style.removeProperty(k)); return; } const m = document.querySelector('main'), n = $('#nav'); const r = m ? m.getBoundingClientRect() : { top: 0, bottom: innerHeight }; pg.style.top = Math.round(r.top) + 'px'; pg.style.bottom = Math.max(0, Math.round(innerHeight - r.bottom)) + 'px'; pg.style.left = Math.round(n ? n.getBoundingClientRect().right : 0) + 'px'; };
+    coloca(); window.addEventListener('resize', coloca); pg._coloca = coloca; }
+  document.querySelectorAll('#nav button').forEach(b => b.classList.toggle('on', b.classList.contains('audiobtn')));
+  audPinta(); audCarga(); }
+window.audioAbre = audioAbre;
+function audCierra() { const pg = $('#audpage'); if (!pg) return; window.removeEventListener('resize', pg._coloca); pg.remove(); const b = document.querySelector('#nav .audiobtn'); if (b) b.classList.remove('on'); }
+window.audCierra = audCierra;
+async function audCarga() { let r = null; try { r = await fetch('/api/audio').then(x => x.json()); } catch (e) {} if (!r || !r.ok) { AUD.err = (r && r.error) || 'No se ha podido abrir Crear audio.'; } else { AUD.err = null; AUD.info = r; AUD.lista = r.audios || []; } if ($('#audpage')) audPinta(); }
+function audModelo() { const k = AUD.mod[AUD.modo]; return ((AUD.info && AUD.info.modelos) || []).find(m => m.k === k) || { k, nombre: k, usd: 0 }; }
+function audVoces() { const I = AUD.info || {}, k = AUD.mod[AUD.modo]; const c = CH(); const L = [];
+  if (k === 'seedtts') (I.voces_seed || []).forEach(v => L.push([v, v.split('_')[0].replace(/^./, x => x.toUpperCase()) + ' · ' + v.split('_').slice(1).join(' ')]));
+  else { if ((k === 'el4' || k === 'el3') && c && c.aria) L.push([I.aria_voz || '', 'Voz de Aria (ElevenLabs · Ivanna)']); (I.voces_el || []).forEach(v => L.push([v, v])); }
+  return L; }
+function audPinta() {
+  const pg = $('#audpage'); if (!pg) return; const sc = pg.querySelector('.audside'); const y = sc ? sc.scrollTop : 0; const foco = document.activeElement && pg.contains(document.activeElement) ? document.activeElement.dataset.k : null;
+  pg.innerHTML = ''; const w = el('div', 'audio'); pg.appendChild(w); const side = el('div', 'audside'), lst = el('div', 'audlist'); w.appendChild(side); w.appendChild(lst);
+  side.appendChild(el('div', 'audhd', '<h2>🎙️ Crear audio</h2><small>En pruebas · solo el equipo</small>'));
+  if (AUD.err) { side.appendChild(el('p', 'admvacio', esc(AUD.err))); return; }
+  if (!AUD.info) { side.appendChild(el('p', 'admvacio', 'Abriendo…')); return; }
+  const mods = el('div', 'audmodos'); AUD_MODOS.forEach(([k, ic, t]) => { const b = el('button', AUD.modo === k ? 'on' : '', `<span>${ic}</span>${t}`); b.type = 'button'; b.onclick = () => { AUD.modo = k; AUD.voz = ''; audPinta(); }; mods.appendChild(b); }); side.appendChild(mods);
+  side.appendChild(el('small', 'audexp', AUD_MODOS.find(m => m[0] === AUD.modo)[3]));
+  const M = (AUD.info.modelos || []).filter(m => m.modo === AUD.modo); const k = AUD.mod[AUD.modo];
+  if (M.length > 1) { side.appendChild(lab('Modelo')); side.appendChild(mkSel(M.map(m => [m.k, `${m.nombre} · desde ${fmtUsd(m.usd)}`]), k, v => { AUD.mod[AUD.modo] = v; AUD.voz = ''; audPinta(); })); }
+  else if (M[0]) side.appendChild(el('div', 'audmod1', `<span class="lbl">Modelo</span><b>${esc(M[0].nombre)}</b><small>desde ${fmtUsd(M[0].usd)}</small>`));
+  if (AUD.modo !== 'efecto' && AUD.modo !== 'ambiente') { const V = audVoces(); if (V.length) { if (!AUD.voz || !V.some(v => v[0] === AUD.voz)) AUD.voz = V[0][0]; side.appendChild(lab(AUD.modo === 'cambiar' ? 'Nueva voz' : 'Voz')); side.appendChild(mkSel(V, AUD.voz, v => { AUD.voz = v; })); } }
+  if (AUD.modo === 'cambiar') { side.appendChild(lab('Tu audio')); const fb = el('label', 'btn w audfile', AUD.archivo ? '🎵 ' + esc(AUD.archivo.name) + ' · cambiar' : '⬆ Subir audio (mp3, m4a, wav…)'); const inp = document.createElement('input'); inp.type = 'file'; inp.accept = 'audio/*,video/*'; inp.style.display = 'none'; inp.onchange = () => { const fl = inp.files[0]; if (!fl) return; if (fl.size > 20 * 1024 * 1024) { toast('Máximo 20 MB'); return; } const rd = new FileReader(); rd.onload = () => { AUD.archivo = { name: fl.name, data: rd.result }; audPinta(); }; rd.readAsDataURL(fl); }; fb.appendChild(inp); side.appendChild(fb);
+    const ck = el('label', 'chk', `<input type="checkbox" ${AUD.limpiar ? 'checked' : ''}> Quitar el ruido de fondo`); ck.querySelector('input').onchange = e => { AUD.limpiar = e.target.checked; }; side.appendChild(ck); }
+  else { const tl = { voz: 'Lo que dice', ambiente: 'Lo que dice (opcional)', efecto: 'El sonido' }[AUD.modo]; side.appendChild(lab(tl));
+    const ta = el('textarea', 'prompt'); ta.dataset.k = 'texto'; ta.rows = AUD.modo === 'efecto' ? 3 : 6; ta.maxLength = AUD.modo === 'efecto' ? 200 : 5000; ta.value = AUD.texto; ta.placeholder = { voz: 'Hola, soy Aria… Escribe aquí lo que quieres que diga.', ambiente: '¡No me lo puedo creer, mira esto!', efecto: 'Lluvia fuerte sobre un tejado de chapa, con truenos lejanos' }[AUD.modo];
+    const cnt = el('div', 'pcount'); const cuenta = () => { cnt.textContent = ta.value.length + ' / ' + ta.maxLength; }; ta.oninput = () => { AUD.texto = ta.value; cuenta(); }; cuenta(); side.appendChild(ta); side.appendChild(cnt);
+    if (AUD.modo === 'voz' && (k === 'el4' || k === 'el3')) { const tg = el('div', 'audtags'); AUD_TAGS.forEach(([ic, t, v]) => { const b = el('button', '', `${ic} ${t}`); b.type = 'button'; b.title = 'Añade ' + v + ' donde está el cursor'; b.onclick = () => { const a = ta.selectionStart ?? ta.value.length; ta.value = ta.value.slice(0, a) + v + ' ' + ta.value.slice(a); AUD.texto = ta.value; cuenta(); ta.focus(); }; tg.appendChild(b); }); side.appendChild(tg); } }
+  if (AUD.modo === 'ambiente' || k === 'seedtts') { side.appendChild(lab(AUD.modo === 'ambiente' ? 'Cómo suena la escena' : 'Cómo lo dice')); const td = el('textarea', 'prompt'); td.dataset.k = 'dir'; td.rows = 3; td.maxLength = 1500; td.value = AUD.dir; td.placeholder = AUD.modo === 'ambiente' ? 'Chica joven española, emocionada y riéndose, grabándose con el móvil en una calle con tráfico y gente hablando al fondo' : 'Alegre y cercana, un poco rápida, como contándoselo a una amiga'; td.oninput = () => { AUD.dir = td.value; }; side.appendChild(td); }
+  { const aj = el('details', 'audaj'); aj.appendChild(el('summary', '', 'Ajustes'));
+    const rng = (t, kk, lo, hi, st, fmt) => { const r_ = el('label', 'audrng', `<span>${t}</span>`); const i_ = el('input'); i_.type = 'range'; i_.min = lo; i_.max = hi; i_.step = st; i_.value = AUD[kk]; const v_ = el('b', '', fmt(AUD[kk])); i_.oninput = () => { AUD[kk] = +i_.value; v_.textContent = fmt(AUD[kk]); }; r_.appendChild(i_); r_.appendChild(v_); aj.appendChild(r_); };
+    if (k === 'el4' || k === 'el3') { rng('Estabilidad', 'est', 0, 1, 0.05, v => Math.round(v * 100) + ' %'); if (k === 'el4') rng('Parecido a la voz', 'sim', 0, 1, 0.05, v => Math.round(v * 100) + ' %'); aj.appendChild(el('small', 'audexp', 'Menos estabilidad = más expresiva; más = más uniforme.')); }
+    if (k === 'seedtts' || k === 'seedaudio') rng('Velocidad', 'vel', 0.5, 2, 0.05, v => v.toFixed(2) + '×');
+    if (k === 'sfx') rng('Duración', 'dur', 3, 10, 0.5, v => v + ' s');
+    if (aj.children.length > 1) side.appendChild(aj); }
+  const m = audModelo(); const gb = el('button', 'btn w acc audgo', `Generar · ≈${fmtUsd(m.usd)}`); gb.onclick = () => audGenera(gb); side.appendChild(gb);
+  side.appendChild(el('small', 'audexp', 'Con tu clave de WaveSpeed. El precio es orientativo: depende de la duración del texto.'));
+  // la lista
+  lst.appendChild(el('div', 'audlh', `<b>Mis audios</b><small>${AUD.lista.length}</small>`));
+  AUD.jobs.forEach(j => lst.appendChild(el('div', 'audrow pend', `<span class="audic">⏳</span><div><b>${esc(j.name)}</b><small>${esc(j.model)} · generándose…</small></div>`)));
+  if (!AUD.lista.length && !AUD.jobs.length) lst.appendChild(el('div', 'audvacio', '<span>🎙️</span><b>Aquí aparecerán tus audios</b><small>Escribe lo que tiene que decir tu personaje y pulsa Generar. Luego puedes usarlo en Crear vídeo para que lo diga moviendo la boca.</small>'));
+  AUD.lista.forEach(a => { const mm = a.meta || {}; const r = el('div', 'audrow'); const ic = { voz: '🗣️', ambiente: '🎭', cambiar: '🔁', efecto: '🔊' }[mm.modo] || '🎵';
+    r.appendChild(el('span', 'audic', ic)); const tx = el('div', 'audtx', `<b>${esc(mm.texto || mm.direccion || mm.name || 'Audio')}</b><small>${esc(mm.model || '')}${a.t ? ' · ' + new Date(a.t * 1000).toLocaleString('es-ES', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : ''}${mm.usd != null ? ' · ' + fmtUsd(mm.usd) : ''}</small>`); r.appendChild(tx);
+    const au = document.createElement('audio'); au.controls = true; au.preload = 'none'; au.src = a.f; r.appendChild(au);
+    const ac = el('div', 'audac'); const dl = el('a', 'btn', '⬇'); dl.href = a.f; dl.download = a.f.split('/').pop(); dl.title = 'Descargar'; ac.appendChild(dl);
+    const uv = el('button', 'btn', '🎬 Usar en vídeo'); uv.title = 'Añadirlo como referencia de audio en Crear vídeo (Seedance hace el lip sync con tu personaje)'; uv.onclick = () => { const ya = state.vpool.some(p => p.src === a.f); if (!ya) state.vpool.push({ id: 'aud-' + a.f.split('/').pop(), kind: 'audio', name: (mm.texto || mm.name || 'audio').slice(0, 40), src: a.f, thumb: null, mime: 'audio/mpeg' }); audCierra(); setTab('video'); toast(ya ? 'Ese audio ya está en Crear vídeo' : '🎙️ Audio añadido a Crear vídeo como referencia'); }; ac.appendChild(uv); r.appendChild(ac); lst.appendChild(r); });
+  const sc2 = pg.querySelector('.audside'); if (sc2) sc2.scrollTop = y; if (foco) { const e2 = pg.querySelector(`[data-k="${foco}"]`); if (e2) e2.focus(); } }
+async function audGenera(gb) {
+  const k = AUD.mod[AUD.modo]; const body = { modelo: k, texto: AUD.modo === 'cambiar' ? '' : AUD.texto, direccion: AUD.dir, voz: AUD.voz, estabilidad: AUD.est, similitud: AUD.sim, velocidad: AUD.vel, duracion: AUD.dur, limpiar: AUD.limpiar };
+  if (AUD.modo === 'cambiar') { if (!AUD.archivo) { toast('Sube primero el audio'); return; } body.audio = { data: AUD.archivo.data }; }
+  else if (AUD.modo !== 'ambiente' && !AUD.texto.trim()) { toast(AUD.modo === 'efecto' ? 'Describe el sonido' : 'Escribe lo que tiene que decir'); return; }
+  else if (AUD.modo === 'ambiente' && !(AUD.texto.trim() || AUD.dir.trim())) { toast('Escribe lo que dice o cómo suena la escena'); return; }
+  gb.disabled = true; gb.textContent = '⏳ Enviando…'; let r = null; try { r = await fetch('/api/audio', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).then(x => x.json()); } catch (e) {}
+  if (!r || !r.request_id) { gb.disabled = false; gb.textContent = 'Generar'; toast((r && r.error) || 'No se ha podido generar'); audPinta(); return; }
+  const j = { rid: r.request_id, name: (body.texto || body.direccion || 'Audio').slice(0, 60), model: audModelo().nombre }; AUD.jobs.unshift(j); audPinta();
+  for (let i = 0; i < 90; i++) { await new Promise(z => setTimeout(z, 3000)); let st = null; try { st = await fetch('/api/estado?id=' + encodeURIComponent(j.rid)).then(x => x.json()); } catch (e) { continue; }
+    if (st && (st.status === 'completed' && (st.file || i > 2))) { if (st.file || i > 4) break; }
+    if (st && (st.status === 'failed' || st.status === 'nsfw' || st.status === 'lost')) { toast('No se ha podido generar el audio' + (st.error ? ': ' + String(st.error).slice(0, 120) : '')); break; } }
+  AUD.jobs = AUD.jobs.filter(x => x !== j); await audCarga(); }
 function movilMas() { // v280: lo que en el móvil no cabe en la barra de abajo
   const T = k => [TABS[k].icon, TABS[k].label, () => setTab(k), '', state.tab === k && !(COM && COM.on)];
   const L = [T('biblio'), T('videoteca'), '-'].concat(LIBS_ORD.map(q => q === '-' ? '-' : T(q))).concat(LUGARES_ON ? [T('lugar')] : []).concat(['-']);
   L.push(['🤝', 'Comunidad', () => { COM.visto = true; COM.on ? comIr('dir').then(comPonAvisos) : comAbre('dir'); }, '', COM && COM.on && COM.vista === 'dir']);
   L.push(['💬', 'Mensajes', () => { COM.visto = true; COM.on ? comIr('msg').then(comPonAvisos) : comAbre('msg'); }, COM.n ? COM.n + ' sin leer' : '', COM && COM.on && COM.vista === 'msg']);
   L.splice(2, 0, ['✨', 'Efectos', () => toast('✨ Efectos: próximamente'), 'pronto']);   // v290
-  L.push(['🎙️', 'Crear audio', () => toast('🎙️ Crear audio: próximamente'), 'pronto']);   // v289
+  L.push(['🎙️', 'Crear audio', () => audioAbre(), state.interno ? '' : 'pronto', !!$('#audpage')]);   // v289 · v291
   L.push(['💡', 'Feedback', () => window.fbAbre && fbAbre(), '']);
   if (state.interno) L.push(['⚙️', 'Admin', () => adminAbre(), ADM.av ? ADM.av + ' pendientes' : '', !!$('#admpage')]);
   return L; }
@@ -2354,7 +2425,7 @@ const admTam = x => !x ? '0 MB' : x < 1024 ** 3 ? Math.max(1, Math.round(x / 102
 async function admCarga(fresco) { let r; try { r = await fetch('/api/admin/panel' + (fresco ? '?fresco=1' : '')).then(x => x.json()); } catch (e) { r = null; } ADM.r = r; if ($('#admpage')) admPinta(); }
 async function admManda(url, body) { const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).then(y => y.json()).catch(() => null); if (!r || !r.ok) { toast((r && r.error) || 'No se ha podido hacer'); return null; } return r; }
 function adminAbre(sec) { // v280: ⚙️ Admin — una página (como Duelos) con el resumen, los miembros y las herramientas del equipo
-  if (!state.interno) return; if (COM && COM.on) comCierra(); if ($('#ligapage')) ligaCierra();
+  if (!state.interno) return; if (COM && COM.on) comCierra(); if ($('#ligapage')) ligaCierra(); if ($('#audpage')) audCierra();
   if (sec) ADM.sec = sec; let pg = $('#admpage');
   if (!pg) { pg = el('div', ''); pg.id = 'admpage'; document.body.appendChild(pg);
     const coloca = () => { if (innerWidth < 768) { ['top', 'bottom', 'left'].forEach(k => pg.style.removeProperty(k)); return; } const m = document.querySelector('main'), n = $('#nav'); const r = m ? m.getBoundingClientRect() : { top: 0, bottom: innerHeight }; pg.style.top = Math.round(r.top) + 'px'; pg.style.bottom = Math.max(0, Math.round(innerHeight - r.bottom)) + 'px'; pg.style.left = Math.round(n ? n.getBoundingClientRect().right : 0) + 'px'; };
@@ -2447,7 +2518,7 @@ function comFichaPaso(d) { const O = COM.orden || []; if (!COM.pz || COM.pz.crea
 document.addEventListener('keydown', e => { if (!COM.on || !COM.pz || /^(INPUT|TEXTAREA)$/.test((document.activeElement || {}).tagName || '') || document.getElementById('avm') || document.getElementById('compide')) return; if (e.key === 'ArrowRight') { e.preventDefault(); comFichaPaso(1); } else if (e.key === 'ArrowLeft') { e.preventDefault(); comFichaPaso(-1); } else if (e.key === 'Escape') { COM.pz = null; comPinta(); } });
 function comPendiente() { const d = COM.D; if (!d) return null; const x = d.solicitudes.find(z => z.para === d.yo && z.estado === 'pendiente'); if (x) return x.de; const c = d.chats.find(z => z.sin_leer); return c ? c.con : (d.chats[0] || {}).con || null; }   // la conversación que más pide atención
 async function comIr(v, a) { COM.noAuto = false; if (v === 'sol') { v = 'msg'; a = a || comPendiente(); } if (v === 'msg' && !a) a = comPendiente(); COM.vista = v; COM.arg = a || null; COM.pz = null; await comChat(); { const ch = COM.arg && COM.D && COM.D.chats.find(z => z.con === COM.arg); if (ch && ch.sin_leer) { COM.n = Math.max(0, (COM.n || 0) - ch.sin_leer); ch.sin_leer = 0; } }   /* al abrirla queda leída también en la lista, sin esperar al siguiente refresco */ comPinta(); comPonAvisos(); }
-async function comAbre(vista, arg) { if ($('#admpage')) admCierra(); COM.on = true; if (vista) { COM.vista = vista; COM.arg = arg || null; } COM.pz = null; let pg = $('#compage'); if (!pg) { pg = el('div', ''); pg.id = 'compage'; document.body.appendChild(pg); }
+async function comAbre(vista, arg) { if ($('#admpage')) admCierra(); if ($('#audpage')) audCierra(); COM.on = true; if (vista) { COM.vista = vista; COM.arg = arg || null; } COM.pz = null; let pg = $('#compage'); if (!pg) { pg = el('div', ''); pg.id = 'compage'; document.body.appendChild(pg); }
   const coloca = () => { const m = document.querySelector('main'), n = $('#nav'); const r = m ? m.getBoundingClientRect() : { top: 0, bottom: innerHeight }; pg.style.top = Math.round(r.top) + 'px'; pg.style.bottom = Math.max(0, Math.round(innerHeight - r.bottom)) + 'px'; pg.style.left = Math.round(n ? n.getBoundingClientRect().right : 0) + 'px'; }; coloca(); if (COM.coloca) window.removeEventListener('resize', COM.coloca); COM.coloca = coloca; window.addEventListener('resize', coloca);
   try { history.replaceState(null, '', '#comunidad'); } catch (e) {} document.querySelectorAll('#nav button.on').forEach(b => b.classList.remove('on')); comPonAvisos(); comPinta(); await comCarga(); const d = COM.D;
   if (d && !vista) COM.vista = 'dir';   // al entrar, siempre «Creadores»

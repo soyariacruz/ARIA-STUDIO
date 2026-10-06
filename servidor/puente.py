@@ -43,7 +43,7 @@ MAX_CUERPO = 40 * 1024 * 1024    # tope de una petición en modo servidor
 MAX_BIBLIO = 200 * 1024 * 1024   # tope de un fichero de la biblioteca común al copiarlo
 KINDS = ('vestidor', 'hair', 'expr')   # las bibliotecas a las que una cuenta puede añadir lo suyo
 _UUID = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
-VERSION = 290
+VERSION = 291
 _ctx = threading.local()   # la cuenta del hilo: la pone cada petición (y, a mano, cada hilo de fondo)
 def uid(): return getattr(_ctx, 'uid', None)   # en local siempre None
 DUENOS = tuple(e.strip().lower() for e in (os.environ.get('ARIA_DUENOS') or 'mix1994max@gmail.com').split(',') if e.strip())   # cuentas que pueden cambiar a Aria Cruz (en la web, la de Max)
@@ -85,6 +85,7 @@ def _dir(*p):   # carpeta dentro de la casa; se crea la primera vez que hace fal
     d = os.path.join(casa(), *p); os.makedirs(d, exist_ok=True); return d
 def live_dir(): return _dir('assets', 'live')
 def video_dir(): return _dir('assets', 'video')
+def audio_dir(): return _dir('assets', 'audio')   # v291: 🎙️ Crear audio
 def pers_dir(): return _dir('assets', 'personajes')
 def refs_dir(): return _dir('assets', 'refs')
 def mini_dir(): return os.path.join(live_dir(), '.mini')
@@ -1888,7 +1889,13 @@ def _estado(rid):   # estado de un trabajo; si ha terminado, lo descarga a la ca
             j['dl'] = time.time()   # una sola descarga a la vez aunque pregunten la web y el vigilante
             data = urllib.request.urlopen(urllib.request.Request(vurl, headers={'User-Agent': UA}), timeout=600).read()
             fn = f"{_safe_item(j['item'])}__{rid[:8]}.mp4"; open(os.path.join(video_dir(), fn), 'wb').write(data); j['file'] = 'assets/video/' + fn; write_meta(j, j['file'], rid, st); _job_done(rid); poster_for(os.path.join(video_dir(), fn))
-    if status == 'completed' and not j.get('file') and j.get('kind') != 'video' and time.time() - j.get('dl', 0) > 240:
+    if status == 'completed' and not j.get('file') and j.get('kind') == 'audio' and time.time() - j.get('dl', 0) > 240:   # v291: 🎙️ el audio, a assets/audio
+        aurl = (st.get('video') or {}).get('url')
+        if aurl:
+            j['dl'] = time.time(); data = urllib.request.urlopen(urllib.request.Request(aurl, headers={'User-Agent': UA}), timeout=300).read()
+            ext = os.path.splitext(aurl.split('?')[0])[1].lower(); ext = ext if ext in ('.mp3', '.wav', '.ogg', '.opus', '.m4a', '.aac') else '.mp3'
+            fn = f"{_safe_item(j['item'])}__{rid[:8]}{ext}"; open(os.path.join(audio_dir(), fn), 'wb').write(data); j['file'] = 'assets/audio/' + fn; write_meta(j, j['file'], rid, st); _job_done(rid)
+    if status == 'completed' and not j.get('file') and j.get('kind') not in ('video', 'audio') and time.time() - j.get('dl', 0) > 240:
         imgs = st.get('images') or st.get('output', {}).get('images') or []
         if imgs:
             j['dl'] = time.time()
@@ -2095,6 +2102,26 @@ def _com_avisos(d, yo):
             otra = [c for c in k.split('|') if c != yo]; visto = (d['visto'].get(yo) or {}).get(otra[0] if otra else '', 0)
             n += sum(1 for m in M if m.get('de') != yo and m.get('t', 0) > visto)
     return n
+ARIA_VOZ = os.environ.get('ARIA_VOZ_ELEVEN') or 'yM93hbw8Qtvdma2wCnJG'   # v291: la voz de Aria en ElevenLabs («Ivanna – Young & Casual»)
+AUDIO_M = {   # clave → (endpoint de WaveSpeed, nombre, precio base $, modo)
+    'el4': ('elevenlabs/eleven-v4', 'ElevenLabs v4', 0.08, 'voz'), 'el3': ('elevenlabs/eleven-v3', 'ElevenLabs v3 · más expresiva', 0.2, 'voz'),
+    'seedtts': ('bytedance/seed-speech-tts-2.0', 'Seed Speech 2.0', 0.06, 'voz'), 'seedaudio': ('bytedance/seed-audio-1.0', 'Seed Audio 1.0', 0.3, 'ambiente'),
+    'vchange': ('elevenlabs/voice-changer', 'ElevenLabs · cambiar voz', 0.004, 'cambiar'), 'sfx': ('kwaivgi/kling-text-to-audio', 'Kling · efecto de sonido', 0.035, 'efecto')}
+def _audio_info():   # modelos, precios del catálogo y voces disponibles
+    M = _vcat(); r = []
+    for k, (ep, nom, usd, modo) in AUDIO_M.items():
+        m = M.get(ep) or {}; r.append({'k': k, 'nombre': nom, 'modo': modo, 'usd': m.get('usd') if m.get('usd') is not None else usd, 'ok': bool(m) or not M})
+    vel = (((M.get('elevenlabs/voice-changer') or {}).get('p') or {}).get('voice_id') or {}).get('enum') or []
+    vse = (((M.get('bytedance/seed-speech-tts-2.0') or {}).get('p') or {}).get('voice') or {}).get('enum') or []
+    return {'modelos': r, 'voces_el': vel, 'voces_seed': vse, 'aria_voz': ARIA_VOZ}
+def _audios():   # mis audios, lo último primero
+    d = audio_dir(); out = []
+    for n in os.listdir(d):
+        if n.startswith('.') or n.endswith('.json'): continue
+        try: m = json.load(open(os.path.join(d, n + '.json'), encoding='utf-8'))
+        except Exception: m = {}
+        out.append({'f': 'assets/audio/' + n, 'meta': m, 't': m.get('t') or os.path.getmtime(os.path.join(d, n))})
+    out.sort(key=lambda x: -x['t']); return out[:500]
 class _Trozo:   # v290: un trozo de un fichero (respuesta 206)
     def __init__(self, f, n): self.f, self.n = f, n
     def read(self, k=-1):
@@ -2499,6 +2526,10 @@ class H(SimpleHTTPRequestHandler):
         if u.path == '/api/fallidas':   # v270
             try: return self._json(200, {'ok': True, 'items': _fall_lee()})
             except Exception: return self._json(200, {'ok': True, 'items': []})
+        if u.path == '/api/audio':   # v291: 🎙️ modelos y voces + mis audios
+            if SERVIDOR and aria_fija(): return self._json(403, {'error': 'Crear audio: próximamente'})
+            try: return self._json(200, dict({'ok': True, 'audios': _audios()}, **_audio_info()))
+            except Exception as e: plog('audio ✕ ' + str(e)[:160]); return self._json(200, {'ok': False, 'error': 'No se ha podido abrir Crear audio.'})
         if u.path == '/api/admin/avisos':   # v290: la burbuja roja de ⚙️ Admin
             if not SERVIDOR or aria_fija(): return self._json(200, {'ok': True, 'total': 0})
             try: return self._json(200, dict({'ok': True}, **_adm_avisos()))
@@ -3067,6 +3098,47 @@ class H(SimpleHTTPRequestHandler):
             n = int(self.headers.get('Content-Length') or 0); body = json.loads(self.rfile.read(n) or b'{}')
             with _fall_l: L = [x for x in _fall_lee() if x.get('id') != body.get('quitar')]; _fall_guarda(L)
             return self._json(200, {'ok': True, 'items': L})
+        if self.path == '/api/audio':   # v291: 🎙️ generar un audio {modelo, texto, voz, direccion, estabilidad, similitud, velocidad, duracion, audio:{data|path}}
+            n = int(self.headers.get('Content-Length') or 0); body = json.loads(self.rfile.read(min(n, 30_000_000)) or b'{}')
+            try:
+                if SERVIDOR and aria_fija(): return self._json(403, {'error': 'Crear audio: próximamente'})
+                if lleno(): return self._json(413, {'error': LLENO, 'lleno': True})
+                if casa_on(): raise RuntimeError('El audio todavía no entra en el saldo regalo: conecta tu clave de WaveSpeed en «Mis APIs».')
+                if not _tope('audio', 40, 3600): raise RuntimeError('Has generado muchos audios seguidos: espera un rato.')
+                k = str(body.get('modelo') or '');
+                if k not in AUDIO_M: raise RuntimeError('Ese modelo de audio no existe.')
+                ep, nom, usd0, modo = AUDIO_M[k]; texto = str(body.get('texto') or '').strip()[:9000]; dire = str(body.get('direccion') or '').strip()[:1500]; voz = str(body.get('voz') or '').strip()[:80]
+                num = lambda x, lo, hi, d: max(lo, min(hi, float(body.get(x) if body.get(x) not in (None, '') else d)))
+                if k in ('el4', 'el3'):
+                    if not texto: raise RuntimeError('Escribe lo que tiene que decir.')
+                    payload = {'text': texto, 'voice_id': voz or ARIA_VOZ, 'stability': num('estabilidad', 0, 1, .5)}
+                    if k == 'el4': payload['similarity'] = num('similitud', 0, 1, .75)
+                elif k == 'seedtts':
+                    if not texto: raise RuntimeError('Escribe lo que tiene que decir.')
+                    payload = {'text': texto, 'speed': num('velocidad', .5, 2, 1)}
+                    if voz: payload['voice'] = voz
+                    if dire: payload['voice_instruction'] = dire
+                elif k == 'seedaudio':
+                    if not (texto or dire): raise RuntimeError('Escribe lo que dice y cómo suena la escena.')
+                    payload = {'prompt': ((dire + '. ') if dire else '') + (f'Dice: «{texto}»' if texto else ''), 'speed': num('velocidad', .5, 2, 1), 'output_format': 'mp3'}
+                elif k == 'vchange':
+                    a = body.get('audio') or {}
+                    if not (a.get('data') or a.get('path')): raise RuntimeError('Sube el audio al que quieres cambiarle la voz.')
+                    if a.get('data') and len(a['data']) > 28_000_000: raise RuntimeError('El audio es demasiado grande (máx. ~20 MB).')
+                    payload = {'audio': resolve_ws({'kind': 'audio', 'data': a['data']} if a.get('data') else {'kind': 'audio', 'path': a['path']}), 'voice_id': voz or 'Alicia', 'remove_background_noise': bool(body.get('limpiar'))}
+                else:   # sfx
+                    if not texto: raise RuntimeError('Describe el sonido.')
+                    payload = {'prompt': texto[:200], 'duration': round(num('duracion', 3, 10, 5), 1)}
+                try: bal0 = float((ws('GET', '/api/v3/balance').get('data') or {}).get('balance'))
+                except Exception: bal0 = None
+                r = ws('POST', '/api/v3/' + ep, payload); rid = (r.get('data') or {}).get('id')
+                if not rid: raise RuntimeError('WaveSpeed no devolvió id: ' + json.dumps(r)[:200])
+                corto = re.sub(r'[^a-z0-9]+', '-', (texto or dire or nom).lower())[:40].strip('-') or 'audio'
+                meta = {'name': (texto or dire or nom)[:80], 'tab': 'audio', 'model': nom, 'modo': modo, 'texto': texto, 'direccion': dire, 'voz': voz or (ARIA_VOZ if k in ('el4', 'el3') else '')}
+                jobs[rid] = {'t0': time.time(), 'item': 'audio_' + corto, 'kind': 'audio', 'model': k, 'prov': 'ws', 'usd': usd0, 'bal0': bal0, 'casa': False, 'credits': None, 'meta': meta}
+                return self._json(200, {'request_id': rid, 'usd': usd0})
+            except Exception as e:
+                plog('audio ✕ ' + str(e)[:200]); return self._json(400, {'error': str(e)})
         if self.path == '/api/admin/acciones':   # v280
             n = int(self.headers.get('Content-Length') or 0); body = json.loads(self.rfile.read(min(n, 20000)) or b'{}')
             if not SERVIDOR or aria_fija(): return self._json(403, {'error': 'solo el equipo'})

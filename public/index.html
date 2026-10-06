@@ -58,6 +58,23 @@ nav button{letter-spacing:.02em!important;padding-left:2px;padding-right:2px;box
 nav button:hover{background:rgba(255,255,255,.7)}
 nav .admbtn .admdotn{position:absolute;top:4px;right:10px;background:#e5484d;color:#fff;font-size:10px;font-weight:800;min-width:16px;height:16px;padding:0 4px;box-sizing:border-box;border-radius:999px;display:flex;align-items:center;justify-content:center;text-decoration:none}
 nav button.pronto{opacity:.45;cursor:default}nav button.pronto:hover{opacity:.7}nav button .nvpronto{display:block;font-style:normal;font-size:7px;letter-spacing:.1em;color:var(--acc);margin-top:1px}
+#audpage{position:fixed;right:0;z-index:70;background:var(--bg);border-left:1px solid var(--line)}
+.audio{height:100%;display:grid;grid-template-columns:minmax(300px,380px) 1fr;min-height:0}
+.audside{border-right:1px solid var(--line);overflow-y:auto;padding:18px 18px 40px;display:flex;flex-direction:column;gap:8px;box-sizing:border-box}
+.audhd{display:flex;align-items:baseline;gap:10px}.audhd h2{margin:0;font-size:19px}.audhd small{color:var(--mut);font-size:11.5px}
+.audmodos{display:grid;grid-template-columns:1fr 1fr;gap:6px}.audmodos button{display:flex;align-items:center;gap:7px;border:1px solid var(--line);background:var(--panel);color:var(--ink);font:inherit;font-size:12.5px;font-weight:700;padding:9px 10px;border-radius:12px;cursor:pointer;text-align:left}.audmodos button span{font-size:17px}.audmodos button.on{border-color:var(--acc);box-shadow:0 0 0 1px var(--acc)}
+.audexp{color:var(--mut);font-size:11.5px;line-height:1.4}
+.audmod1{display:flex;align-items:center;gap:8px}.audmod1 b{font-size:12.5px}.audmod1 small{color:var(--mut);font-size:11.5px;margin-left:auto}
+.audtags{display:flex;flex-wrap:wrap;gap:5px}.audtags button{border:1px solid var(--line);background:none;color:var(--ink);font:inherit;font-size:11.5px;padding:4px 9px;border-radius:999px;cursor:pointer}.audtags button:hover{border-color:var(--acc)}
+.audaj{border:1px solid var(--line);border-radius:12px;padding:8px 10px}.audaj summary{cursor:pointer;font-size:12px;font-weight:700}.audrng{display:grid;grid-template-columns:110px 1fr 52px;align-items:center;gap:8px;font-size:12px;margin-top:8px}.audrng b{text-align:right;font-size:12px}
+.audfile{cursor:pointer;text-align:center}
+.audgo{margin-top:6px}
+.audlist{overflow-y:auto;padding:18px 22px 40px;box-sizing:border-box}
+.audlh{display:flex;align-items:baseline;gap:8px;margin-bottom:12px}.audlh b{font-size:13px;letter-spacing:.08em;text-transform:uppercase}.audlh small{color:var(--mut)}
+.audrow{display:grid;grid-template-columns:34px minmax(0,1fr) minmax(220px,320px) auto;align-items:center;gap:12px;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:var(--panel);margin-bottom:6px}.audrow.pend{grid-template-columns:34px 1fr;opacity:.8}
+.audic{font-size:20px;text-align:center}.audtx b,.audrow > div b{display:block;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.audtx small,.audrow > div small{display:block;color:var(--mut);font-size:11.5px;margin-top:2px}
+.audrow audio{width:100%;height:34px}.audac{display:flex;gap:6px}.audac .btn{padding:6px 10px;white-space:nowrap}
+.audvacio{display:flex;flex-direction:column;align-items:center;text-align:center;gap:6px;padding:60px 20px;color:var(--mut)}.audvacio span{font-size:34px}.audvacio b{color:var(--ink);font-size:15px}.audvacio small{max-width:420px;line-height:1.5}
 .navmore .navsep2{height:1px;background:var(--line);margin:5px 10px}
 nav button.on{background:#fff;color:var(--ink);box-shadow:0 2px 12px rgba(0,0,0,.07)}
 nav .sp{flex:1}
@@ -1719,6 +1736,10 @@ nav .navlib button.more span{font-size:9px}
   .navmore.mvsheet .navsep2{grid-column:1/-1;margin:2px 6px}
   nav .audiobtn,nav .efbtn{display:none!important}
   .navmore.mvsheet .it.dim{opacity:.5}
+  #audpage{top:48px!important;left:0!important;right:0!important;bottom:calc(62px + env(safe-area-inset-bottom))!important;border-left:0!important}
+  .audio{display:block;overflow-y:auto;height:100%}.audside{border-right:0;overflow:visible}.audlist{overflow:visible;padding:12px}
+  .audrow{grid-template-columns:30px 1fr;}.audrow audio,.audrow .audac{grid-column:1/-1}
+  html:has(#audpage){overflow:hidden!important}body:has(#audpage) main{visibility:hidden}body:has(#audpage) main nav{visibility:visible}
   /* v280: el menú de abajo, como una app — 5 botones grandes (Perfil, Imagen, Vídeo, Creaciones, Más); lo demás vive en «Más» */
   nav{justify-content:space-around!important;overflow:hidden!important;padding:4px 2px env(safe-area-inset-bottom)!important;gap:0!important}
   nav .navmain{display:contents!important}
