@@ -43,7 +43,7 @@ MAX_CUERPO = 40 * 1024 * 1024    # tope de una petición en modo servidor
 MAX_BIBLIO = 200 * 1024 * 1024   # tope de un fichero de la biblioteca común al copiarlo
 KINDS = ('vestidor', 'hair', 'expr')   # las bibliotecas a las que una cuenta puede añadir lo suyo
 _UUID = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
-VERSION = 302
+VERSION = 303
 _ctx = threading.local()   # la cuenta del hilo: la pone cada petición (y, a mano, cada hilo de fondo)
 def uid(): return getattr(_ctx, 'uid', None)   # en local siempre None
 DUENOS = tuple(e.strip().lower() for e in (os.environ.get('ARIA_DUENOS') or 'mix1994max@gmail.com').split(',') if e.strip())   # cuentas que pueden cambiar a Aria Cruz (en la web, la de Max)
@@ -1680,7 +1680,8 @@ def _pub_lista():   # todo lo publicado por todas las cuentas, lo más nuevo pri
             P = r.split('/'); k = f'{cid}/{P[1]}/{P[2]}'
             if k in den and _den_oculta(den[k]): continue
             e = m.get('escena') if isinstance(m.get('escena'), dict) else {}
-            out.append({'f': 'assets/publica/' + k, 'kind': 'video' if P[1] == 'video' else 'image', 'cid': cid, 'alias': str(d['alias'].get(cid) or '')[:40], 'prompt': m['prompt'][:8000] if isinstance(m.get('prompt'), str) else '',
+            ch_ = m.get('chars') if isinstance(m.get('chars'), list) else []; pid_ = str(ch_[0] if ch_ else (m.get('char') or ''))[:80]   # v303: el influencer que sale (para su circulito)
+            out.append({'f': 'assets/publica/' + k, 'kind': 'video' if P[1] == 'video' else 'image', 'cid': cid, 'pid': pid_, 'subida': bool(m.get('subida')), 'alias': str(d['alias'].get(cid) or '')[:40], 'prompt': m['prompt'][:8000] if isinstance(m.get('prompt'), str) else '',
                         'escena': {q: e[q][:4000] for q in ('d', 'r', 'f') if isinstance(e.get(q), str)}, 'modelo': str(m.get('model') or '')[:60], 'personaje': str(m.get('charName') or '')[:80], 't': m.get('t') or 0, 'ancho': m.get('width'), 'alto': m.get('height')})
     out.sort(key=lambda x: -(x['t'] or 0))
     with _PUB_L: _PUB['t'] = time.time(); _PUB['L'] = out
@@ -2914,6 +2915,34 @@ class H(SimpleHTTPRequestHandler):
                     if con == ARIA_CID and not any(m.get('x') == ARIA_RESP for m in M): M.append({'de': ARIA_CID, 'x': ARIA_RESP, 't': time.time() + 1})
                     del M[:-500]; _com_guarda(d); return self._json(200, {'ok': True})
             return self._json(400, {'error': 'acción desconocida'})
+        if self.path == '/api/publicas/subir':   # v303: subir a la comunidad algo hecho FUERA de la web — solo con su archivo Y su prompt
+            if not SERVIDOR or not DATOS: return self._json(400, {'error': 'Esto solo funciona en la web'})
+            n = int(self.headers.get('Content-Length') or 0); body = json.loads(self.rfile.read(n) or b'{}')
+            kind = 'video' if body.get('kind') == 'video' else 'image'; prompt = str(body.get('prompt') or '').strip()[:8000]
+            if len(prompt) < 20: return self._json(400, {'error': 'Escribe el prompt con el que se hizo (al menos una frase).'})
+            if _es_nsfw(prompt): return self._json(400, {'error': 'En la comunidad no se publica contenido para adultos.'})
+            m_ = re.match(r'data:([\w/+.-]+);base64,(.*)$', str(body.get('data') or ''), re.S)
+            if not m_: return self._json(400, {'error': 'Falta el archivo'})
+            mime = m_.group(1).lower(); ext = {'image/jpeg': '.jpg', 'image/png': '.png', 'image/webp': '.webp', 'video/mp4': '.mp4', 'video/quicktime': '.mov', 'video/webm': '.webm'}.get(mime)
+            if not ext or (kind == 'video') != mime.startswith('video/'): return self._json(400, {'error': 'Formato no admitido: imágenes JPG, PNG o WEBP; vídeos MP4, MOV o WEBM.'})
+            try: data = base64.b64decode(m_.group(2))
+            except Exception: return self._json(400, {'error': 'El archivo ha llegado roto: prueba otra vez'})
+            if len(data) > 29 * 1024 * 1024: return self._json(413, {'error': 'Es demasiado grande (máximo 28 MB)'})
+            _peso.pop(uid(), None)
+            if lleno(): return self._json(507, {'error': LLENO})
+            dd = video_dir() if kind == 'video' else live_dir(); os.makedirs(dd, exist_ok=True); fn = 'subida-' + hashlib.sha1(data).hexdigest()[:12] + ext; dst = os.path.join(dd, fn); rel = f"assets/{'video' if kind == 'video' else 'live'}/{fn}"
+            if not os.path.exists(dst):
+                with open(dst, 'wb') as o: o.write(data)
+            meta = {'file': rel, 'kind': kind, 'item': 'subida', 'name': 'Subida a la comunidad', 'usd': 0, 't': time.time(), 'prompt': prompt, 'subida': True}
+            if body.get('modelo'): meta['model'] = str(body['modelo'])[:60]
+            pid = str(body.get('pid') or '')[:80]
+            if pid and re.fullmatch(r'[A-Za-z0-9_.-]+', pid): meta['chars'] = [pid]; meta['charName'] = str(body.get('personaje') or '')[:80]
+            for k_, q_ in (('width', 'ancho'), ('height', 'alto')):
+                try: meta[k_] = int(body.get(q_) or 0) or None
+                except (TypeError, ValueError): pass
+            with open(dst + '.json', 'w', encoding='utf-8') as o: json.dump(meta, o, ensure_ascii=False, indent=1)
+            _carp_haz({'accion': 'publicar_una', 'files': [rel]}); _pub_reset(); _peso.pop(uid(), None); plog(f'subida a la comunidad · {rel}')
+            return self._json(200, {'ok': True, 'f': rel})
         if self.path == '/api/efectos':   # v300: el equipo pone o quita un vídeo de ✨ Efectos (y le pone nombre)
             if not liga_puede(): return self._json(403, {'error': 'Solo el equipo puede elegir los efectos'})
             n = int(self.headers.get('Content-Length') or 0); body = json.loads(self.rfile.read(n) or b'{}'); k = str(body.get('id') or '')

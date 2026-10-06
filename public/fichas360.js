@@ -180,7 +180,7 @@
   const accSel = () => accAll().filter(c => F3.acc.includes(c.id));
   const nfHist = () => (((P().alt || {}).nueva || {}).combo) || [];
   function nfRefs() { // @Image1 = su ficha principal · prendas · complementos con foto · objetos sueltos
-    const R = [{ key: 'base', path: principal(), name: 'Su ficha principal' }];
+    const R = [baseK() === 'otra' ? { key: 'base', data: F3.baseData, thumb: F3.baseData, name: 'Tu imagen de partida' } : { key: 'base', path: baseSrc(), name: baseNombre() }];   // v303: la ficha de partida elegida
     F3.prendas.map(prenda).filter(Boolean).forEach(p => R.push({ key: 'p:' + p.id, path: p.ficha, thumb: p.card, name: p.name, p }));
     accSel().forEach(c => { if (c.img && c.modo !== 'prompt') R.push({ key: 'a:' + c.id, path: c.img, thumb: c.thumb || c.img, name: c.nombre, c }); });
     F3.extras.forEach((x, i) => R.push({ key: 'x:' + i, data: x.data, thumb: x.data, name: x.label || 'Objeto ' + (i + 1), x }));
@@ -192,9 +192,12 @@
     const objs = as.map(r => `${r.c.desc || r.c.nombre} exactly as in ${r.tag}`).concat(described.map(c => c.desc || c.nombre)).concat(xs.map(r => `${r.x.label ? r.x.label + ', ' : 'the object of '}exactly as in ${r.tag}`));
     const obj = objs.length ? ` She also has ${objs.join('; ')}: worn or held naturally, visible in the full-body panels and in the views where it would be seen.` : '';
     const pj = pjOf();
-    if (pj) { const R0 = nfRefs(); const man = R0.filter(r => r.p).map(r => r.tag).join(' and ');
-      const t = `Edit @Image1, her character reference sheet (several views of the same person${pj.combo ? ': four views of her head and upper body, then her full body from the front and from the side' : ''}). Keep EXACTLY the same layout, the same panels, framing and crops, poses, expressions, face, hair, accessories, body shape and proportions, the background and the light. ONLY change what she wears: in every panel ${outfit}.${obj}${man ? ` The person wearing the outfit in ${man} is only a mannequin for the clothes: never copy her face, hair, glasses or earrings.` : ''} Photoreal, sharp, natural skin texture, no text, no labels, no extra panels.`;
-      return typeof genderize === 'function' ? genderize(t, pj.genero) : t; }
+    if (pj || baseK() !== 'combo') { const R0 = nfRefs(); const man = R0.filter(r => r.p).map(r => r.tag).join(' and '); const k = baseK();   // v303: también para «solo la cara», «solo el cuerpo» u otra imagen
+      const vistas = k === 'cara' ? ': four views of her head and upper body' : k === 'cuerpo' ? ': her full body' : pj && pj.combo ? ': four views of her head and upper body, then her full body from the front and from the side' : '';
+      const ropa = ps.length ? `she now wears EXACTLY the outfit of ${ps.map(r => `${r.tag} (${r.p.name})`).join(' combined with ')} — every garment, color, fabric, pattern and detail — as far as each panel shows it` : 'she keeps her clothes';
+      const intro = k === 'otra' ? 'Edit @Image1, a reference image of her' : `Edit @Image1, her character reference sheet (several views of the same person${vistas})`;
+      const t = `${intro}. Keep EXACTLY the same layout, the same panels, framing and crops, poses, expressions, face, hair, accessories, body shape and proportions, the background and the light. ONLY change what she wears: in every panel ${ropa}.${obj}${man ? ` The person wearing the outfit in ${man} is only a mannequin for the clothes: never copy her face, hair, glasses or earrings.` : ''} Photoreal, sharp, natural skin texture, no text, no labels, no extra panels.`;
+      return pj && typeof genderize === 'function' ? genderize(t, pj.genero) : t; }
     return `Edit @Image1, her character reference sheet: on the left a 2x2 grid of her head and upper body (top-left front view with a big joyful toothy smile, top-right left side profile, bottom-left three-quarter view smiling, bottom-right back view), then a full-body FRONT view and a full-body left SIDE PROFILE view, both from the neck down. Keep EXACTLY the same layout, the same six panels, framing and crops, poses, expressions, face, hair, glasses, earrings, body shape and proportions, the gray studio background and the soft light. ONLY change what she wears: in all six panels ${outfit}.${obj} Whatever she wears in @Image1 (a tank top, plain underwear) is only the base: none of it stays visible unless the new outfit shows it. Photoreal, sharp, natural skin texture, no text, no labels, no extra panels.`;
   }
   async function nfGenerate() {
@@ -203,7 +206,7 @@
     const m = nfModelFor(images.length);
     const usd = m.usd[NFQ]; if (!(await pregunta(`¿Generar la ficha nueva con ${m.name} a 2K? (${fmtUsd(usd)})`))) return;
     const prompt = nfPrompt(); F3.sending = true; rpinta();
-    const pj0 = pjOf(); const body = { item: 'ficha_nueva', prompt, images, aspect: pj0 && !pj0.combo ? '2:3' : '16:9', quality: NFQ, model: m.key, meta: { name: 'Ficha nueva · ' + (R.filter(r => r.p).map(r => r.p.name).join(' + ') || 'objetos'), tab: 'perfil', personaje: '_fichas', hidden: true, model: m.name, ep: m.ep, prompt, nf: { owner: F3.owner || undefined, nombre: nfNombre(), prendas: F3.prendas.slice(), acc: F3.acc.slice(), extras: F3.extras.map(x => x.label || 'objeto') } } };
+    const pj0 = pjOf(); const body = { item: 'ficha_nueva', prompt, images, aspect: baseAspect(), quality: NFQ, model: m.key, meta: { name: 'Ficha nueva · ' + (R.filter(r => r.p).map(r => r.p.name).join(' + ') || 'objetos'), tab: 'perfil', personaje: '_fichas', hidden: true, model: m.name, ep: m.ep, prompt, nf: { owner: F3.owner || undefined, nombre: nfNombre(), prendas: F3.prendas.slice(), acc: F3.acc.slice(), extras: F3.extras.map(x => x.label || 'objeto') } } };
     let r; try { r = await fetch('/api/generar', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).then(x => x.json()); } catch (e) { r = { error: String(e) }; }
     F3.sending = false; if (!r || r.error) { toast('No se pudo generar: ' + (r ? r.error : 'sin respuesta')); rpinta(); return; }
     const job = { rid: r.request_id, it: { id: 'nf', name: body.meta.name }, tab: 'perfil', m, kind: 'image', nf: true, owner: F3.owner || null, t0: performance.now(), status: 'queued', usd: r.usd != null ? Number(r.usd) : usd, prendas: F3.prendas.slice(), acc: F3.acc.slice(), extras: F3.extras.map(x => x.label || 'objeto') };
@@ -235,7 +238,7 @@
     const bk0 = el('button', 'btn fxback', F3.owner ? '← Volver al creador de fichas' : '← Volver a Fichas 360'); bk0.onclick = () => { F3.open = false; if (window.PJ) PJ.sel = OW(); window.pjScrollTop = true; rpinta(); }; if (!enPagina()) w.appendChild(bk0);
     w.appendChild(el('div', 'pjwhd', `<div><h3>Nueva ficha</h3><p>Su ficha principal con otra ropa y otros objetos: las cuatro vistas y el cuerpo entero salen en una sola imagen, de una vez.</p></div>`));
     // 1 · personaje
-    const s1 = step(1, 'Personaje', 'la ficha se hace con ella'); const pc = el('div', 'nfchar', `<img class="av" src="${P().avatar || C.base.thumb}" alt=""><div><b>${P().name}</b><small>Se parte de su ficha principal</small></div><img class="base" src="${P().comboThumb || principal()}" alt="">`); pc.querySelector('.base').onclick = () => lightbox(principal(), 'Ficha principal'); s1.appendChild(pc); w.appendChild(s1);
+    const s1 = step(1, 'Personaje', 'la ficha se hace con ella'); const pc = el('div', 'nfchar', `<img class="av" src="${P().avatar || C.base.thumb}" alt=""><div><b>${P().name}</b><small>Se parte de: ${baseNombre().toLowerCase()}</small></div><img class="base" src="${baseThumb()}" alt="">`); pc.querySelector('.base').onclick = () => lightbox(baseSrc(), baseNombre()); s1.appendChild(pc); if (enPagina()) s1.appendChild(baseSel()); w.appendChild(s1);
     // 2 · ropa (del Vestidor)
     const s2 = step(2, 'Ropa', 'del Vestidor', 's2'); const ch = el('div', 'nfchips'); const pr = F3.prendas.map(prenda).filter(Boolean)[0];
     if (pr) { const c = el('div', 'nfchip', `<img src="${pr.card}" alt=""><b>${pr.name}</b>`); const x = el('button', 'pjx', '×'); x.title = 'Quitar'; x.onclick = () => { F3.prendas = []; rpinta(); }; c.appendChild(x); c.querySelector('img').onclick = () => lightbox(pr.ficha, pr.name); const cb = el('button', 'lnk nfchg', 'Cambiar'); cb.onclick = elegirPrenda; c.appendChild(cb); ch.appendChild(c); }
@@ -292,7 +295,7 @@
     const g = el('div', 'f3pickg'); b.appendChild(g); L.forEach(c => { const t = el('button', 'f3pickc' + (sel.has(c.id) ? ' on' : ''), `${(c.thumb || c.img) ? `<img src="${c.thumb || c.img}" alt="" loading="lazy">` : '<span class="f3pickno">✨</span>'}<b>${esc(c.nombre || 'Complemento')}</b>`); t.type = 'button'; t.onclick = () => { if (sel.has(c.id)) sel.delete(c.id); else sel.add(c.id); t.classList.toggle('on', sel.has(c.id)); }; g.appendChild(t); });
     const pie = el('div', 'vozpie'); pie.appendChild(el('span', '', 'Toca para marcar o desmarcar')); const ok = el('button', 'btn acc', 'Listo'); ok.onclick = () => { F3.acc = [...sel]; cierra(); rpinta(); }; pie.appendChild(ok); b.appendChild(pie); }
   window.fichPinta = function () {
-    const pg = document.querySelector('#fichpage'); if (!pg) return; F3.owner = null; F3.open = true;
+    const pg = document.querySelector('#fichpage'); if (!pg) return; F3.open = true; if (F3._medido !== baseSrc()) medir();
     const y1 = (pg.querySelector('.fichizq') || {}).scrollTop || 0, y2 = (pg.querySelector('.fichder') || {}).scrollTop || 0;
     pg.innerHTML = ''; const w = el('div', 'fich'); pg.appendChild(w); const izq = el('div', 'fichizq'), der = el('div', 'fichder'); w.appendChild(izq); w.appendChild(der);
     const hd = el('div', 'fichhd', '<h2>🧍 Creador de fichas</h2><small>solo el equipo</small>'); const x = el('button', 'btn fichx', '✕'); x.title = 'Cerrar'; x.onclick = () => window.fichCierra && fichCierra(); hd.appendChild(x); izq.appendChild(hd);
@@ -300,16 +303,38 @@
     ensureCombo(); const same = (a, b) => (a || '').split('?')[0] === (b || '').split('?')[0];
     const V = []; const g = el('div', 'fichgrid');
     const tarjeta = (src, nombre, sub, acts, cls) => { const k = V.length; V.push({ src: String(src).replace('_t.jpg', '.jpg'), nombre, info: sub, acts }); const d = el('button', 'fichc ' + (cls || ''), `<img class="fichim" src="${src}" alt="" loading="lazy"><span class="fichtx"><b>${esc(nombre)}</b><small>${esc(sub || '')}</small></span>`); d.type = 'button'; d.onclick = () => visorFichas(V, k); g.appendChild(d); };
+    tarjeta(P().comboThumb || principal(), 'Ficha principal', 'de la que parten todas', [['⬇', () => dl(principal()), 'Descargar']], 'prin');   // v303: siempre la primera
     F3.jobs.slice().reverse().forEach(j => g.appendChild(el('div', 'fichc gen', `<span class="fichim fichspin"><i class="spin"></i><b data-t0="${j.t0}">${Math.round((performance.now() - j.t0) / 1000)} s</b></span><span class="fichtx"><b>${esc(j.it.name)}</b><small>Generando…</small></span>`)));
     (F3.fallos || []).forEach((f, i) => { const d = el('div', 'fichc mal', `<span class="fichim fichmal">⚠️<small>${esc(f.msg)}</small></span><span class="fichtx"><b>${esc(f.nombre)}</b><small>No se ha generado · ${new Date(f.t).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}</small></span>`); const q = el('button', 'fichq', '✕'); q.title = 'Quitar este aviso'; q.onclick = () => { F3.fallos.splice(i, 1); rpinta(); }; d.appendChild(q); g.appendChild(d); });
     const info = f => [f.t, f.modelo, f.size ? (f.size[0] >= 2400 ? '2K' : f.size[0] < 1500 ? '1K · baja resolución' : '') : ''].filter(Boolean).join(' · ');
     const fuera = fn => async () => { if (window.fichCierra) fichCierra(); await fn(); };
-    const out = (P().fichas || []).filter(f => !same(f.img, P().combo)).slice().reverse();
+    const out = (P().fichas || []).filter(f => !same(f.img, P().combo)).slice().sort((a, b) => String(b.t || '').localeCompare(String(a.t || '')));   // v303: de la más nueva a la más vieja
     nfHist().filter(f => !nfSaved(f) && !out.some(o => same(o.img, f))).slice().reverse().forEach(f => tarjeta(f, 'Versión sin guardar', 'recién generada', [['✓ Guardar en Fichas creadas', async () => { const mt = (F3.meta || {})[f] || { prendas: F3.prendas, acc: F3.acc, extras: F3.extras.map(x => x.label || 'objeto') }; const nm = nfNombre(); if (await comboApi({ action: 'save', file: f, nombre: nm, prendas: mt.prendas, acc: mt.acc, extras: mt.extras })) { toast(`«${nm}» guardada`); rpinta(); } }], ['⬇', () => dl(f), 'Descargar']], 'suelta'));
     out.forEach(f => tarjeta(f.thumb || f.img, f.nombre, info(f), [['⬇', () => dl(f.img), 'Descargar'], ['✨', fuera(() => fichaAImagen(f.img, f.nombre)), 'Usar en Crear imagen'], ['🎬', fuera(() => window.FBapi && FBapi.usarEnVideo(f)), 'Usar en Crear vídeo'], ['🗑', async () => { await (window.FBapi && FBapi.borrar(f)); rpinta(); }, 'Borrar']]));
-    tarjeta(P().comboThumb || principal(), 'Ficha principal', 'de la que parten todas', [['⬇', () => dl(principal()), 'Descargar']], 'prin');
     der.appendChild(el('div', 'fichhd2', `<h3>Fichas</h3><small>${out.length} creada${out.length === 1 ? '' : 's'}${F3.jobs.length ? ` · ${F3.jobs.length} generando` : ''} · toca una para verla en grande</small>`)); der.appendChild(g);
     izq.scrollTop = y1; der.scrollTop = y2;
     clearInterval(F3.ptick); if (F3.jobs.length) F3.ptick = setInterval(() => { if (!enPagina()) { clearInterval(F3.ptick); return; } document.querySelectorAll('#fichpage .fichspin [data-t0]').forEach(n => { n.textContent = Math.round((performance.now() - +n.dataset.t0) / 1000) + ' s'; }); }, 1000);
   };
+
+  // ------------------------------------------------ v303: de qué ficha se parte (la principal, solo la cara, solo el cuerpo u otra imagen) y con qué personaje
+  const BASES = [['combo', 'Cara y cuerpo'], ['cara', 'Solo la cara'], ['cuerpo', 'Solo el cuerpo'], ['otra', 'Otra imagen']];
+  function baseDe(k) { const p = P(); return k === 'combo' ? principal() : k === 'cara' ? p.ficha : k === 'cuerpo' ? p.cuerpo : F3.baseData; }
+  function baseK() { const k = F3.base || 'combo'; if (k === 'otra') return F3.baseData ? 'otra' : 'combo'; return baseDe(k) ? k : 'combo'; }
+  function baseSrc() { return baseDe(baseK()); }
+  function baseThumb() { return baseK() === 'combo' ? (P().comboThumb || principal()) : baseSrc(); }
+  function baseNombre() { return { combo: 'Su ficha principal (cara y cuerpo)', cara: 'Su ficha de la cara', cuerpo: 'Su ficha de cuerpo', otra: 'Tu imagen' }[baseK()]; }
+  function medir() { const src = baseSrc(); F3._medido = src; F3.baseRatio = null; if (!src) return; const im = new Image(); im.onload = () => { if (F3._medido === src) F3.baseRatio = im.naturalWidth / im.naturalHeight; }; im.src = src; }
+  function baseAspect() { const pj0 = pjOf(); const k = baseK(); if (k === 'combo') return pj0 && !pj0.combo ? '2:3' : '16:9'; const r = F3.baseRatio || (k === 'cara' ? 2 / 3 : 16 / 9); const A = (typeof ASPECTS !== 'undefined' && ASPECTS.length) ? ASPECTS : ['16:9', '3:2', '1:1', '2:3']; let best = A[0], d = 99; A.forEach(a => { const [x, y] = a.split(':').map(Number); const dd = Math.abs(Math.log((x / y) / r)); if (dd < d) { d = dd; best = a; } }); return best; }
+  function leeBase(file) { if (!file || !/^image\//.test(file.type)) { toast('Tiene que ser una imagen'); return; } const r = new FileReader(); r.onload = () => { F3.baseData = r.result; F3.base = 'otra'; medir(); rpinta(); }; r.readAsDataURL(file); }
+  function baseSel() {
+    const w = el('div', 'nfbase');
+    const L = [{ id: null, nombre: C.perfil.name || 'Aria Cruz', av: C.perfil.avatar || C.base.thumb }].concat(((window.PJ && PJ.list) || []).filter(p => p.ficha360 || p.combo).map(p => ({ id: p.id, nombre: p.nombre || 'Personaje', av: p.avatar || p.foto || p.ficha360 })));
+    if (L.length > 1) { const r = el('div', 'nfpjs'); L.forEach(p => { const b = el('button', 'nfpj' + ((F3.owner || null) === p.id ? ' on' : ''), `<img src="${p.av}" alt=""><b>${esc(String(p.nombre).split(' ')[0])}</b>`); b.type = 'button'; b.onclick = () => { if ((F3.owner || null) === p.id) return; Object.assign(F3, { owner: p.id, acc: [], pick: null }); medir(); rpinta(); }; r.appendChild(b); }); w.appendChild(el('small', 'pjk', 'Personaje')); w.appendChild(r); }
+    w.appendChild(el('small', 'pjk', 'Ficha de partida')); const seg = el('div', 'nfseg'); const k0 = baseK();
+    const fi = document.createElement('input'); fi.type = 'file'; fi.accept = 'image/*'; fi.hidden = true; fi.onchange = () => leeBase(fi.files[0]); w.appendChild(fi);
+    BASES.forEach(([k, t]) => { const ok = k === 'otra' || !!baseDe(k); const b = el('button', k === k0 ? 'on' : '', t); b.type = 'button'; b.disabled = !ok; if (!ok) b.title = 'Este personaje no tiene esa ficha'; b.onclick = () => { if (k === 'otra' && !F3.baseData) { fi.click(); return; } F3.base = k; medir(); rpinta(); }; seg.appendChild(b); });
+    w.appendChild(seg);
+    if (k0 === 'otra') { const c = el('div', 'nfotra'); const cb = el('button', 'lnk', 'Cambiar la imagen'); cb.onclick = () => fi.click(); const q = el('button', 'lnk', 'Quitar'); q.onclick = () => { F3.baseData = null; F3.base = 'combo'; medir(); rpinta(); }; c.appendChild(cb); c.appendChild(q); w.appendChild(c); }
+    const z = el('div', 'nfbdrop', '⤓ O arrastra aquí una imagen de tu ordenador para partir de ella'); z.onclick = () => fi.click(); z.ondragover = e => { e.preventDefault(); z.classList.add('over'); }; z.ondragleave = () => z.classList.remove('over'); z.ondrop = e => { e.preventDefault(); z.classList.remove('over'); leeBase(e.dataTransfer.files[0]); }; w.appendChild(z);
+    return w; }
 })();
