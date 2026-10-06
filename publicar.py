@@ -12,11 +12,12 @@ import os, shutil
 
 SRC = '/Volumes/home/🗄 Work/CLAUDE/Aria Mirror'
 OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'public')
-MODS = ['feedback.js', 'personajes.js', 'complementos.js', 'fichas.js', 'fichas360.js']
+MODS = ['feedback.js', 'personajes.js', 'complementos.js', 'fichas360.js']   # v272: fichas.js (módulo viejo, sin uso) fuera de la web
 
 s = open(os.path.join(SRC, 'index.html'), encoding='utf-8').read()
 a = '<script src="catalog.js"></script>\n<script>\n'
-b = '</script>\n' + '\n'.join(f'<script src="{m}"></script>' for m in MODS)
+MODS_LOCAL = ['feedback.js', 'personajes.js', 'complementos.js', 'fichas.js', 'fichas360.js']   # cómo los carga la app local (fichas.js sigue en local)
+b = '</script>\n' + '\n'.join(f'<script src="{m}"></script>' for m in MODS_LOCAL)
 assert s.count(a) == 1 and s.count(b) == 1, (s.count(a), s.count(b))   # si cambia cómo carga la app en local, hay que revisar esto
 i, j = s.index(a), s.index(b)
 app = s[i + len(a):j]

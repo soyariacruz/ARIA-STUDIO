@@ -13,7 +13,7 @@
   const SB_URL = 'https://uhscbgidrloskdjbevkn.supabase.co';
   const SB_KEY = 'sb_publishable_GSO5Vqhr7Dg93egtKk_I2w_E_uScoNG';
   const DUENOS = ['mix1994max@gmail.com'];   // la cuenta de Max: para ella Aria Cruz es SU personaje (va primero y se puede editar). Para las demás, Aria es un personaje fijo
-  const APP = ['app.js', 'feedback.js', 'personajes.js', 'complementos.js', 'fichas.js', 'fichas360.js'];   // en este orden, después del catálogo
+  const APP = ['app.js', 'feedback.js', 'personajes.js', 'complementos.js', 'fichas360.js'];   // v272: sin fichas.js   // en este orden, después del catálogo
   const root = document.documentElement;
   try { if (localStorage.getItem('am_theme') !== 'light') root.classList.add('dark'); } catch (e) { root.classList.add('dark'); }
   root.classList.add('gate');   // hasta que la app esté cargada con tu sesión, no se ve

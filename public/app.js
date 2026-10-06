@@ -1722,7 +1722,6 @@ function renderSide() { try { document.body.dataset.tab = state.tab; } catch (e)
     if (window.CUENTA && CUENTA.web) { const k = el('button', 'btn w acc', '🔑 Conectar mis APIs para probarla'); k.onclick = openClaves; st.appendChild(k); st.appendChild(el('div', 'status', 'Sin API no se genera nada. Mientras tanto puedes añadir la prenda a tu creación.')); side.appendChild(sec('Probar en el espejo', st)); return; }   // en la web no hay demo
     const b1 = el('button', 'btn w ' + (done ? '' : 'acc'), done ? '✓ Generado · ver' : 'Generar imagen'); b1.onclick = () => tryOn(false); st.appendChild(b1);
     if (it.looks && it.looks.length > 1) { const b2 = el('button', 'btn w', 'Otra pose'); b2.disabled = !done; b2.onclick = () => { state.pose[it.id] = (state.pose[it.id] || 0) + 1; paint(it, false); log(`<span class="g">▸</span> pose alternativa de <span class="w">«${it.name}»</span> <span class="g">· caché local</span>`); }; st.appendChild(b2); }
-    const b3 = el('button', 'btn w p', 'Probar 10 a la vez'); b3.onclick = batch10; st.appendChild(b3);
     const s = el('div', 'status', done ? `<b>Generado</b> · ${(it._ms / 1000).toFixed(1)} s · $${PRICE.toFixed(4)}` : `Sin generar todavía · <b>$${PRICE.toFixed(4)}</b> por imagen`); st.appendChild(s);
     side.appendChild(sec('Probar en el espejo', st));
   } else {
@@ -2777,29 +2776,6 @@ async function tryOn(force) {
   bar.style.width = '100%'; it._ms = r.ms; state.done.add(it.id);
   setTimeout(() => { mirror.classList.remove('busy'); bar.style.transition = 'none'; bar.style.width = '0'; state.busy = false; if (state.tab === tab) { if (cur() !== it) state.sel[tab] = it; paint(it, false); renderRail(); renderSide(); centerOn(it, true); } toast(`Listo en ${(r.ms / 1000).toFixed(1)} s · $${PRICE.toFixed(4)}`); }, 120);
 }
-async function batch10() {
-  if (state.busy) return;
-  if (LIVE) { const v = view().filter(i => i !== cur()).slice(0, 10); toast('En vivo: se lanzan de una en una (límite de concurrencia de la cuenta)'); for (const it of v) { if (!touring && !LIVE) break; select(it, false, true); await liveGenerate(state.tab, it, livePlan(state.tab, it), `Lote · «${it.name}»`); } return; }
-  state.busy = true;
-  const pool = view().filter(i => i !== cur()); let pick = [];
-  if (CONVERT.has(state.tab)) { pick = view().filter(i => convSrc(i)).slice(0, 10); const rest = pool.filter(i => !pick.includes(i)); while (pick.length < 10 && rest.length) pick.push(rest.shift()); }
-  else { const notDone = pool.filter(i => !state.done.has(i.id)); const src = notDone.length >= 10 ? notDone : pool; while (pick.length < Math.min(10, src.length)) { const it = src[rnd(src.length)]; if (!pick.includes(it)) pick.push(it); } }
-  const grid = $('#batchGrid'); grid.innerHTML = ''; grid.style.setProperty('--car', TABS[state.tab].shape === 'wide' ? '16/9' : '3/4'); $('#batchSub').textContent = 'enviando 10 peticiones…'; $('#batch').classList.add('on');
-  const cells = pick.map((it, i) => { const c = el('div', 'c', `<div class="sk"></div><span class="n">${pad(i + 1)}</span><span class="ok">✓</span>`); c.onclick = () => { if (!c.classList.contains('in')) return; $('#batch').classList.remove('on'); state.done.add(it.id); select(it, false, true); }; grid.appendChild(c); return c; });
-  const ids = pick.map(() => rid());
-  pick.forEach((it, i) => { log(`<span class="m">POST</span> https://api.higgsfield.ai/<span class="u">${MODEL_PATH}</span> <span class="g">· look #${it.num}</span> <span class="q">← 202 queued</span> ${ids[i]}`); });
-  $('#batchSub').textContent = '10 en cola · 20 concurrentes disponibles';
-  let doneN = 0; const t0 = performance.now();
-  await Promise.all(pick.map((it, i) => new Promise(res => setTimeout(() => {
-    const dt = ((performance.now() - t0) / 1000).toFixed(1); state.nGen++; state.spent += PRICE; meter(); state.done.add(it.id); it._ms = dt * 1000;
-    cells[i].style.backgroundImage = `url('${it.looks ? it.looks[0] : ((CONVERT.has(state.tab) && convSrc(it)) || it.files.main)}')`; cells[i].classList.add('in'); doneN++;
-    $('#batchSub').textContent = `${doneN} / 10 completadas · $${(doneN * PRICE).toFixed(4)}`;
-    log(`<span class="m">GET</span>  /requests/${ids[i]}/status <span class="ok">→ completed</span>  <span class="g">${dt} s · look #${it.num}</span>   <span class="pr">$${PRICE.toFixed(4)}</span>`);
-    res();
-  }, 700 + i * 260 + rnd(300)))));
-  $('#batchSub').textContent = `10 / 10 completadas en ${((performance.now() - t0) / 1000).toFixed(1)} s · $${(10 * PRICE).toFixed(4)} · toca una para verla en el espejo`;
-  state.busy = false; renderRail(); renderSide();
-}
 $('#batchClose').onclick = () => $('#batch').classList.remove('on');
 
 // ----------------------------------------------------------------- antes / después
@@ -2871,54 +2847,6 @@ function freeTry() { // Enter y doble clic: con la API en vivo solo enseñan lo 
   if (!LIVE) return state.tab === 'crear' ? submitGen() : tryOn(false);
   const it = cur(), tab = state.tab; if (!it || tab === 'crear') { if (tab === 'crear') toast('Para generar, pulsa el botón «Generar imagen»: ahí ves el precio'); return; }
   const ex = existingImage(tab, it); if (ex && !state.done.has(it.id)) return tryOn(false); if (!ex) toast('Para generar, pulsa el botón «Generar»: ahí ves el precio'); }
-async function tour() {
-  if (LIVE) { toast('El tour está apagado con la API conectada: pulsaría botones que gastan'); return; }
-  if (touring) { touring = false; return; }
-  if (!state.ready) { start(C.base.photo, 'aria_360.png'); await sleep(3800); }
-  touring = true; $('#tourBtn').classList.add('on'); curs.classList.add('on'); log(`<span class="g">▶ tour guiado</span>`);
-  const G = GEN_MS + 1400;
-  try {
-    // 1 · Perfil
-    if (state.tab !== 'perfil') await curClick(navBtn('perfil'));
-    await say('<i>ARIA MIRROR</i> · el perfil del personaje: giro 360 y retrato en vivo, generados con la API.', 4200);
-    await curTo($('#paneTurn')); for (let a = 0; a <= 180 && touring; a += 6) { turnTo(a); curs.style.left = (parseFloat(curs.style.left) + 1.2) + 'px'; await sleep(40); } await sleep(1400);
-    if (!touring) return;
-    // 2 · Peinado
-    await curClick(navBtn('hair')); await say('90 peinados de la base de Notion. Giras la rueda y el espejo cambia al instante.', 2800);
-    await flipRail(10, 320); await curThumb(findIt('hair', /Space Buns/i)); await sleep(1200);
-    await say('¿Y en la vida real? Dos fotos por peinado.', 1800); await curClick(document.querySelector('#side .pol')); await sleep(2000); $('#lb').classList.remove('on'); await sleep(500);
-    await say('Antes y después, con un divisor.', 1500); await curClick($('#cmpBtn')); for (let x = 50; x >= 14 && touring; x -= 2) { mirror.style.setProperty('--cut', x + '%'); await sleep(22); } for (let x = 14; x <= 72 && touring; x += 2) { mirror.style.setProperty('--cut', x + '%'); await sleep(22); } await sleep(600); await curClick($('#cmpBtn'));
-    await say('Este peinado lo guardamos para la creación final.', 1800); await curClick(sideBtn(/Añadir peinado/i)); await sleep(900);
-    if (!touring) return;
-    // 3 · Expresión
-    await curClick(navBtn('expr')); await say('91 expresiones. Elegimos una y la añadimos también.', 2600);
-    await flipRail(6, 340); await curThumb(findIt('expr', /Guiño/i)); await sleep(900); await curClick(sideBtn(/Añadir expresión/i)); await sleep(900);
-    if (!touring) return;
-    // 4 · Vestidor
-    await curClick(navBtn('vestidor')); await say('24 prendas del Vestidor Virtual. Cada prueba es una petición a la API de Higgsfield.', 3000);
-    await curClick($('#btnConsole')); await sleep(600);
-    await curThumb(findIt('vestidor', /lentejuelas/i)); await sleep(600); await curGen(G);
-    await say(`Aria con la prenda puesta: una petición, unos segundos, ${priceTxt()}.`, 3200);
-    await curClick(sideBtn(/Añadir prenda/i)); await sleep(800);
-    if (!LIVE) { await say('Y en lote: diez prendas a la vez, en paralelo.', 2000); await curClick(sideBtn(/Probar 10/i)); await sleep(5600); await curClick($('#batchClose')); await sleep(500); }
-    await curClick($('#btnConsole')); await sleep(500);
-    if (!touring) return;
-    // 5 · Estilo
-    await curClick(navBtn('cartoon')); await say('Tu foto de referencia, convertida a cualquier estilo de dibujo.', 3000);
-    await curThumb(C.cartoon[0]); await curGen(G);
-    await curThumb(C.cartoon[1]); await curGen(G);
-    if (!touring) return;
-    // 6 · Cámara y Película
-    await curClick(navBtn('photo')); await say('Estilos de fotografía…', 1800); await curThumb(C.photo[0]); await curGen(G);
-    await curClick(navBtn('movie')); await say('…y estilos de película.', 1800); await curThumb(C.movie[0]); await curGen(G);
-    if (!touring) return;
-    // 7 · Crear
-    await curClick(navBtn('crear')); await say('Crear: peinado + expresión + prenda en una sola imagen nueva.', 3200);
-    await curThumb(C.crear[0]); await sleep(800); await curGen(G + 600);
-    await say('Creación generada. <i>ARIA MIRROR</i>, construido sobre la API de Higgsfield.', 4500);
-    await say('', 0);
-  } finally { touring = false; $('#tourBtn').classList.remove('on'); curs.classList.remove('on'); $('#cap').classList.remove('on'); log(`<span class="g">■ fin del tour</span>`); }
-}
 
 // ----------------------------------------------------------------- teclado y arranque
 document.addEventListener('keydown', e => {
