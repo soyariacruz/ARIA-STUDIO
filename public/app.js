@@ -1483,7 +1483,7 @@ function comFichaDr(c, p, o) { // v323: LA ficha de un influencer, igual en toda
   if ((p.nicho || []).length) de.appendChild(el('div', 'cpfnicho', p.nicho.map(n => `<span>${esc(n)}</span>`).join('')));
   const pie = el('div', 'cpf2pie'); const a = el('div', 'cpf2acts'); const a2 = el('div', 'cpf2row'); const lk = el('div', 'cpf2lk'); pie.appendChild(a); pie.appendChild(a2); pie.appendChild(lk);
   const nom = esc(p.nombre); const k_ = c.cid + ':' + p.pid, sig = (D0.siguiendo || []).includes(k_);
-  const seguir = () => { const sb = B(a2, sig ? 'Siguiendo' : 'Seguir', () => comHaz({ accion: 'seguir', cid: c.cid, pid: p.pid, on: !sig }, sig ? 'Ya no le sigues' : 'Siguiendo'), 'cpf2seg' + (sig ? ' on' : '')); sb.title = sig ? 'Dejar de seguir' : 'Síguelo para tenerlo siempre arriba. No da ningún permiso: colaborar es aparte.'; };
+  const seguir = () => { const sb = B(a2, sig ? 'Siguiendo ✓' : 'Seguir', () => comHaz({ accion: 'seguir', cid: c.cid, pid: p.pid, on: !sig }, sig ? 'Ya no le sigues' : 'Siguiendo'), 'cpf2seg' + (sig ? ' on' : '')); sb.title = sig ? 'Dejar de seguir' : 'Síguelo para tenerlo siempre arriba. No da ningún permiso: colaborar es aparte.'; };
   const enlace = (t, fn) => { const q = el('button', 'cpf2lnk', t); q.onclick = fn; lk.appendChild(q); };
   if (mia) { B(a, 'Crear con ' + nom, () => { o.fuera(); if (c.aria) comConAria(); else { comCierra(true); setTab('crear'); setChar(p.pid); } }, 'acc');
     B(a2, 'Editar en el Perfil', () => { o.fuera(); comCierra(true); if (window.PJ) { PJ.sel = c.aria ? 'aria' : p.pid; PJ.wiz = null; } setTab('perfil'); }); }
@@ -3058,7 +3058,7 @@ function comPinta() { setTimeout(comMovil, 0); const pg = $('#compage'); if (!pg
           if (x.de !== 'caria' && x.para !== 'caria') { const miN = !!(doy ? x.nsfw_para : x.nsfw_de), suN = !!(doy ? x.nsfw_de : x.nsfw_para), nv = x.nsfw_hasta && x.nsfw_hasta < Date.now() / 1000, on = miN && suN && !nv;
             lin.appendChild(tog('NSFW', miN && !nv, async () => { if (miN && !nv) return comHaz({ accion: 'nsfw', id: x.id, on: false }, 'Modo NSFW desactivado'); if (!(await pregunta(`¿Activar el modo NSFW?\n\nSolo se enciende si lo activáis los dos. ${doy ? comNom(c) + ' podrá crear contenido para adultos con tu personaje.' : 'Podrás crear contenido para adultos con su personaje.'}`))) return; comHaz({ accion: 'nsfw', id: x.id, on: true }, 'Activado por tu parte'); }, on ? 'Activado por los dos' : miN ? 'Activado por ti: falta que lo active' : suN ? 'Te lo propone: actívalo tú también' : 'Apagado. Solo se enciende si lo activáis los dos'));
             if (doy && miN && !nv) lin.appendChild(durDd(x.nsfw_hasta, d => comHaz({ accion: 'nsfw', id: x.id, on: true, dias: d }, 'Duración del NSFW cambiada'), 'Hasta cuándo dura el NSFW')); else if (suN && !miN) lin.appendChild(el('span', 'cpdurtx', 'te lo propone')); }
-          if (usa) { if (x.de === 'caria') B(lin, '✨', comConAria, 'acc cpcrea'); else (D0.prestados || []).filter(p => p.cid === sDueno(x) && (!x.pid || x.pid === p.pid)).slice(0, 1).forEach(p => B(lin, '✨', () => comConPrestado(p), 'acc cpcrea')); const cr = lin.querySelector('.cpcrea'); if (cr) cr.title = 'Crear con ' + q.txt; }
+          /* v354: sin el ✨ (crear con…): se crea desde la ficha del influencer */
           r.dataset.sw = '1'; r._swr = lin; r._quien = pjs[0] ? { cid: du.cid, pid: pjs[0].pid } : null; }
         let pie = '';
         if (false) { // v251: ahora son interruptores (arriba)
