@@ -854,8 +854,10 @@ const VCAMS = [   // v283: [id, grupo, emoji, nombre, lo que se escribe en el pr
   ['atraviesa', 'Especiales', '🚪', 'Atravesar', 'la cámara avanza y pasa a través de una ventana, puerta o hueco cercano hasta llegar al personaje.'],
   ['timelapse', 'Especiales', '⏱️', 'Timelapse', 'el tiempo pasa muy rápido: la luz, las nubes y la gente se mueven a gran velocidad mientras el personaje está casi quieto.'],
   ['maqueta', 'Especiales', '🏘️', 'Efecto maqueta', 'efecto tilt-shift: solo una franja estrecha enfocada y lo de arriba y abajo desenfocado, como una maqueta en miniatura.']];
-const vcam = () => VCAMS.find(c => c[0] === state.vcam) || null;
+const camOk = () => !(window.CUENTA && CUENTA.web) || (state.interno && !CUENTA.verMiembro);   // v285: en pruebas, solo el equipo (los demás ven «Próximamente»)
+const vcam = () => camOk() ? (VCAMS.find(c => c[0] === state.vcam) || null) : null;
 function vCamSel() { // v283: 🎥 movimiento de cámara (Crear vídeo) — mismo desplegable que Complementos
+  if (!camOk()) { const w = el('div', 'accsel lugarsel camsel off', '<small>Cámara</small><span class="cnt">Próximamente</span><i class="pronto">pronto</i>'); w.title = 'Movimientos de cámara: próximamente'; return w; }
   const C = vcam(); const w = el('div', 'accsel camsel' + (state.camOpen ? ' open' : '') + (C ? ' on' : ''));
   w.appendChild(el('small', '', 'Cámara')); w.appendChild(el('span', 'cnt', C ? `${C[2]} ${C[3]}` : 'Libre (la decide el modelo)')); w.appendChild(el('span', 'caret', '▾'));
   const dd = el('div', 'accdd camdd'); const G = ['Todos'].concat([...new Set(VCAMS.map(c => c[1]))]); const fil = state.camG || 'Todos';
