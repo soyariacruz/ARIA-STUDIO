@@ -43,7 +43,7 @@ MAX_CUERPO = 40 * 1024 * 1024    # tope de una petición en modo servidor
 MAX_BIBLIO = 200 * 1024 * 1024   # tope de un fichero de la biblioteca común al copiarlo
 KINDS = ('vestidor', 'hair', 'expr')   # las bibliotecas a las que una cuenta puede añadir lo suyo
 _UUID = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
-VERSION = 294
+VERSION = 295
 _ctx = threading.local()   # la cuenta del hilo: la pone cada petición (y, a mano, cada hilo de fondo)
 def uid(): return getattr(_ctx, 'uid', None)   # en local siempre None
 DUENOS = tuple(e.strip().lower() for e in (os.environ.get('ARIA_DUENOS') or 'mix1994max@gmail.com').split(',') if e.strip())   # cuentas que pueden cambiar a Aria Cruz (en la web, la de Max)
@@ -2106,7 +2106,8 @@ ARIA_VOZ = os.environ.get('ARIA_VOZ_ELEVEN') or 'yM93hbw8Qtvdma2wCnJG'   # v291:
 AUDIO_M = {   # clave → (endpoint de WaveSpeed, nombre, precio base $, modo)
     'el4': ('elevenlabs/eleven-v4', 'ElevenLabs v4', 0.08, 'voz'), 'el3': ('elevenlabs/eleven-v3', 'ElevenLabs v3 · más expresiva', 0.2, 'voz'),
     'seedtts': ('bytedance/seed-speech-tts-2.0', 'Seed Speech 2.0', 0.06, 'voz'), 'seedaudio': ('bytedance/seed-audio-1.0', 'Seed Audio 1.0', 0.3, 'ambiente'),
-    'vchange': ('elevenlabs/voice-changer', 'ElevenLabs · cambiar voz', 0.004, 'cambiar'), 'sfx': ('kwaivgi/kling-text-to-audio', 'Kling · efecto de sonido', 0.035, 'efecto')}
+    'vchange': ('elevenlabs/voice-changer', 'ElevenLabs · cambiar voz', 0.004, 'cambiar'), 'mirelo': ('mirelo-ai/sfx-1.6/text-to-audio', 'Mirelo SFX 1.6 · con ambiente', 0.01, 'efecto'),
+    'sonilo': ('sonilo/v1/text-to-sfx', 'Sonilo · el más barato', 0.002, 'efecto'), 'sfx': ('kwaivgi/kling-text-to-audio', 'Kling · efecto de sonido', 0.035, 'efecto')}   # v295: ElevenLabs SFX no está en WaveSpeed
 def _audio_info():   # modelos, precios del catálogo y voces disponibles
     M = _vcat(); r = []
     for k, (ep, nom, usd, modo) in AUDIO_M.items():
@@ -3263,15 +3264,27 @@ class H(SimpleHTTPRequestHandler):
                     payload = {'text': texto, 'speed': num('velocidad', .5, 2, 1)}
                     if voz: payload['voice'] = voz
                     if dire: payload['voice_instruction'] = dire
-                elif k == 'seedaudio':
-                    if not (texto or dire): raise RuntimeError('Escribe lo que dice y cómo suena la escena.')
-                    payload = {'prompt': ((dire + '. ') if dire else '') + (f'Dice: «{texto}»' if texto else ''), 'speed': num('velocidad', .5, 2, 1), 'output_format': 'mp3'}
+                elif k == 'seedaudio':   # v295: el prompt completo del asistente (estructura de Laura) + referencia opcional: una imagen o hasta 3 audios (no las dos)
+                    pf = str(body.get('prompt_final') or '').strip()[:6000]
+                    if not (pf or texto or dire): raise RuntimeError('Escribe lo que dice y cómo suena la escena.')
+                    payload = {'prompt': pf or (((dire + '. ') if dire else '') + (f'Dice: «{texto}»' if texto else '')), 'speed': num('velocidad', .5, 2, 1), 'output_format': 'mp3'}
+                    ref = body.get('ref') or {}
+                    if ref.get('tipo') == 'imagen' and (ref.get('data') or ref.get('path')):
+                        payload['image'] = resolve_ws({'data': ref['data']} if ref.get('data') else {'path': ref['path']})
+                    elif ref.get('tipo') == 'audio' and ref.get('audios'):
+                        payload['audios'] = [resolve_ws({'kind': 'audio', 'data': a['data']} if a.get('data') else {'kind': 'audio', 'path': a['path']}) for a in ref['audios'][:3] if a.get('data') or a.get('path')]
                 elif k == 'vchange':
                     a = body.get('audio') or {}
                     if not (a.get('data') or a.get('path')): raise RuntimeError('Sube el audio al que quieres cambiarle la voz.')
                     if a.get('data') and len(a['data']) > 28_000_000: raise RuntimeError('El audio es demasiado grande (máx. ~20 MB).')
                     payload = {'audio': resolve_ws({'kind': 'audio', 'data': a['data']} if a.get('data') else {'kind': 'audio', 'path': a['path']}), 'voice_id': voz or 'Alicia', 'remove_background_noise': bool(body.get('limpiar'))}
-                else:   # sfx
+                elif k == 'mirelo':
+                    if not texto: raise RuntimeError('Describe el sonido.')
+                    payload = {'text_prompt': texto[:500], 'duration': round(num('duracion', 1, 10, 5), 1), 'ambience': bool(body.get('ambiente')), 'num_samples': 1}
+                elif k == 'sonilo':
+                    if not texto: raise RuntimeError('Describe el sonido.')
+                    payload = {'prompt': texto[:500], 'duration': int(round(num('duracion', 1, 10, 5))), 'audio_format': 'mp3'}
+                else:   # sfx (Kling)
                     if not texto: raise RuntimeError('Describe el sonido.')
                     payload = {'prompt': texto[:200], 'duration': round(num('duracion', 3, 10, 5), 1)}
                 try: bal0 = float((ws('GET', '/api/v3/balance').get('data') or {}).get('balance'))
