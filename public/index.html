@@ -1625,7 +1625,7 @@ nav .navlib button.more span{font-size:9px}
   .themebtn{flex:none}
   #compage{top:48px!important;left:0!important;right:0!important;bottom:calc(62px + env(safe-area-inset-bottom))!important;border-left:0!important}
   /* menús que en el ordenador se abren al lado: en el móvil, una hoja que sube desde abajo */
-  .chardd.on,.atmenu,.navmore,.carpmenu{position:fixed!important;left:8px!important;right:8px!important;top:auto!important;bottom:calc(70px + env(safe-area-inset-bottom))!important;width:auto!important;max-width:none!important;max-height:60vh!important;overflow:auto!important;z-index:150!important;border-radius:16px!important;box-shadow:0 -10px 40px rgba(0,0,0,.35)!important}
+  .chardd.on,.atmenu,.navmore,.carpmenu,.accsel.open .accdd{position:fixed!important;left:8px!important;right:8px!important;top:auto!important;bottom:calc(70px + env(safe-area-inset-bottom))!important;width:auto!important;max-width:none!important;max-height:60vh!important;overflow:auto!important;z-index:150!important;border-radius:16px!important;box-shadow:0 -10px 40px rgba(0,0,0,.35)!important}
   .atmenu{max-height:45vh!important}
   /* Mensajes: primero la lista; al tocar un chat, solo la conversación */
   .cpchatw{display:block!important}
@@ -1699,6 +1699,10 @@ nav .navlib button.more span{font-size:9px}
   .cpchatw.vehilo .cpcab{padding:6px 0!important}
   .cpline1{flex-wrap:wrap!important;gap:8px!important}
   .cpdd{display:inline-flex!important;align-items:center;gap:6px}.cpddl{font-size:11.5px;color:var(--mut);font-weight:600}
+  /* v282: la ventanita de una imagen de la Combinación (Fototeca, prenda, peinado…): delante de todo y en una columna */
+  .mlb{z-index:140!important;align-items:flex-end!important}
+  .mlbbox{grid-template-columns:minmax(0,1fr)!important;grid-template-rows:52vh auto!important;width:100vw!important;height:auto!important;max-height:88vh!important;border-radius:18px 18px 0 0!important;overflow-y:auto!important}
+  .mlbbox>*{min-width:0}
   /* v280: el menú de abajo, como una app — 5 botones grandes (Perfil, Imagen, Vídeo, Creaciones, Más); lo demás vive en «Más» */
   nav{justify-content:space-around!important;overflow:hidden!important;padding:4px 2px env(safe-area-inset-bottom)!important;gap:0!important}
   nav .navmain{display:contents!important}
