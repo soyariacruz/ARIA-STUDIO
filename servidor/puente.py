@@ -43,7 +43,7 @@ MAX_CUERPO = 40 * 1024 * 1024    # tope de una petición en modo servidor
 MAX_BIBLIO = 200 * 1024 * 1024   # tope de un fichero de la biblioteca común al copiarlo
 KINDS = ('vestidor', 'hair', 'expr')   # las bibliotecas a las que una cuenta puede añadir lo suyo
 _UUID = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
-VERSION = 317
+VERSION = 318
 _ctx = threading.local()   # la cuenta del hilo: la pone cada petición (y, a mano, cada hilo de fondo)
 def uid(): return getattr(_ctx, 'uid', None)   # en local siempre None
 DUENOS = tuple(e.strip().lower() for e in (os.environ.get('ARIA_DUENOS') or 'mix1994max@gmail.com').split(',') if e.strip())   # cuentas que pueden cambiar a Aria Cruz (en la web, la de Max)
@@ -1737,7 +1737,7 @@ def _pub_lista():   # todo lo publicado por todas las cuentas, lo más nuevo pri
             if pjs_ is None: pjs_ = {p['pid']: p['nombre'] for p in _com_personajes(u)}
             pids_ = [x for x in ch_ if x == 'aria' or x in pjs_] or [k_ for k_, n_ in pjs_.items() if n_ and n_ in str(m.get('charName') or '')][:2]
             pid_ = pids_[0] if pids_ else ''
-            out.append({'f': 'assets/publica/' + k, 'kind': 'video' if P[1] == 'video' else 'image', 'cid': cid, 'pid': pid_, 'pids': pids_[:2], 'subida': bool(m.get('subida')), 'alias': str(d['alias'].get(cid) or '')[:40], 'prompt': m['prompt'][:8000] if isinstance(m.get('prompt'), str) else '',
+            out.append({'f': 'assets/publica/' + k, 'kind': 'video' if P[1] == 'video' else 'image', 'cid': cid, 'pid': pid_, 'pids': pids_[:2], 'comp': {k_: str(v_)[:80] for k_, v_ in (m.get('compIds') or {}).items() if k_ in ('vestidor', 'hair') and v_} if isinstance(m.get('compIds'), dict) else {}, 'hairCol': m.get('hairCol') if isinstance(m.get('hairCol'), dict) else None, 'subida': bool(m.get('subida')), 'alias': str(d['alias'].get(cid) or '')[:40], 'prompt': m['prompt'][:8000] if isinstance(m.get('prompt'), str) else '',
                         'escena': {q: e[q][:4000] for q in ('d', 'r', 'f') if isinstance(e.get(q), str)}, 'modelo': str(m.get('model') or '')[:60], 'personaje': str(m.get('charName') or '')[:80], 't': m.get('t') or 0, 'ancho': m.get('width'), 'alto': m.get('height')})
     out.sort(key=lambda x: -(x['t'] or 0))
     with _PUB_L: _PUB['t'] = time.time(); _PUB['L'] = out
