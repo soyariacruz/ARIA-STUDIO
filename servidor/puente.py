@@ -43,7 +43,7 @@ MAX_CUERPO = 40 * 1024 * 1024    # tope de una petición en modo servidor
 MAX_BIBLIO = 200 * 1024 * 1024   # tope de un fichero de la biblioteca común al copiarlo
 KINDS = ('vestidor', 'hair', 'expr')   # las bibliotecas a las que una cuenta puede añadir lo suyo
 _UUID = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
-VERSION = 299
+VERSION = 300
 _ctx = threading.local()   # la cuenta del hilo: la pone cada petición (y, a mano, cada hilo de fondo)
 def uid(): return getattr(_ctx, 'uid', None)   # en local siempre None
 DUENOS = tuple(e.strip().lower() for e in (os.environ.get('ARIA_DUENOS') or 'mix1994max@gmail.com').split(',') if e.strip())   # cuentas que pueden cambiar a Aria Cruz (en la web, la de Max)
@@ -1660,6 +1660,16 @@ def _pub_cuenta(u):   # {ruta: ficha} de lo que una cuenta tiene publicado
             if m.get('hidden') or m.get('nsfw') or m.get('colab') or m.get('importada') or _es_nsfw(m.get('prompt')): continue
             out[r] = m
     return out
+_EFX_L = threading.Lock()   # v300: ✨ Efectos — los vídeos de la Filmoteca que el equipo elige como efecto ({id: {nombre, t}})
+def _efx_f(): return os.path.join(DATOS or ROOT, 'efectos.json')
+def _efx_lee():
+    try: E = json.load(open(_efx_f(), encoding='utf-8'))
+    except Exception: E = {}
+    return E if isinstance(E, dict) else {}
+def _efx_guarda(E):
+    tmp = _efx_f() + '.tmp'
+    with open(tmp, 'w', encoding='utf-8') as o: json.dump(E, o, ensure_ascii=False)
+    os.replace(tmp, _efx_f())
 def _pub_lista():   # todo lo publicado por todas las cuentas, lo más nuevo primero (caché de 20 s; se vacía con cada cambio)
     if not SERVIDOR or not DATOS: return []
     with _PUB_L:
@@ -1931,7 +1941,7 @@ def _com_lee():
     try: d = json.load(open(COM_F, encoding='utf-8'))
     except Exception: d = {}
     if not isinstance(d, dict): d = {}
-    for k, v in (('sol', []), ('msgs', {}), ('alias', {}), ('visto', {}), ('foto', {}), ('sig', {})):
+    for k, v in (('sol', []), ('msgs', {}), ('alias', {}), ('visto', {}), ('foto', {}), ('sig', {}), ('borr', {})):
         if not isinstance(d.get(k), type(v)): d[k] = v
     ahora = time.time()
     for x in d['sol']:   # v223: un permiso con plazo se apaga solo al vencer (se ve terminado en cuanto se lee; se guarda con el siguiente cambio)
@@ -2541,6 +2551,9 @@ class H(SimpleHTTPRequestHandler):
                 par = k.split('|')
                 if yo not in par or not M: continue
                 otra = [c for c in par if c != yo]; otra = otra[0] if otra else yo; visto = (d['visto'].get(yo) or {}).get(otra, 0)
+                b_ = (d['borr'].get(yo) or {}).get(otra, 0)   # v300: lo que eliminé de mi lado ya no se ve
+                if b_: M = [m for m in M if m.get('t', 0) > b_]
+                if not M: continue
                 chats.append({'con': otra, 'ultimo': M[-1], 'sin_leer': sum(1 for m in M if m.get('de') != yo and m.get('t', 0) > visto)})
             chats.sort(key=lambda c: -c['ultimo'].get('t', 0))
             return self._json(200, {'ok': True, 'yo': yo, 'alias': str(d['alias'].get(yo) or ''), 'cuentas': cuentas, 'solicitudes': [x for x in d['sol'] if yo in (x.get('de'), x.get('para'))][-200:], 'chats': chats, 'avisos': _com_avisos(d, yo), 'denuncias': (0 if aria_fija() else sum(1 for v in (d.get('den') or {}).values() if not (isinstance(v, dict) and v.get('vista')))), 'siguiendo': [x for x in d['sig'].get(yo) or [] if isinstance(x, str)], 'carpetas': _comp_lista(d, yo), 'prestados': _prest_lista(d, yo)})
@@ -2553,10 +2566,12 @@ class H(SimpleHTTPRequestHandler):
         if u.path == '/api/comunidad/busca':   # v244: en cuáles de MIS conversaciones se ha dicho eso (el último mensaje que lo contiene)
             yo = _cid(); t = ' '.join(((urllib.parse.parse_qs(u.query).get('q') or [''])[0]).lower().split())[:80]; out = []
             if len(t) >= 2:
-                for k, M in _com_lee()['msgs'].items():
+                D_ = _com_lee()
+                for k, M in D_['msgs'].items():
                     par = k.split('|')
                     if yo not in par or not isinstance(M, list): continue
-                    hit = next((m for m in reversed(M) if isinstance(m, dict) and t in str(m.get('x') or '').lower()), None)
+                    o_ = [c for c in par if c != yo]; b_ = (D_['borr'].get(yo) or {}).get(o_[0] if o_ else yo, 0)   # v300
+                    hit = next((m for m in reversed(M) if isinstance(m, dict) and m.get('t', 0) > b_ and t in str(m.get('x') or '').lower()), None)
                     if hit: otra = [c for c in par if c != yo]; out.append({'con': otra[0] if otra else yo, 'x': str(hit.get('x') or '')[:160], 't': hit.get('t') or 0, 'mio': hit.get('de') == yo})
             return self._json(200, {'ok': True, 'q': t, 'hits': out})
         if u.path == '/api/comunidad/chat':   # la conversación con otra cuenta (y se da por leída)
@@ -2565,7 +2580,8 @@ class H(SimpleHTTPRequestHandler):
             with _com_l:
                 d = _com_lee(); M = d['msgs'].get(_com_par(yo, con)) or []
                 if M and (d['visto'].get(yo) or {}).get(con, 0) < M[-1].get('t', 0): d['visto'].setdefault(yo, {})[con] = time.time(); _com_guarda(d)
-            return self._json(200, {'ok': True, 'mensajes': M[-300:]})
+            b_ = (d['borr'].get(yo) or {}).get(con, 0)   # v300
+            return self._json(200, {'ok': True, 'mensajes': [m for m in M if m.get('t', 0) > b_][-300:]})
         if u.path == '/api/comunidad/avatar':   # el avatar de un personaje PÚBLICO de otra cuenta (lo único suyo que se sirve)
             cid = (q.get('c') or [''])[0]; pid = (q.get('p') or [''])[0]; grande = (q.get('t') or [''])[0] == 'foto'
             if (q.get('t') or [''])[0] == 'creador':   # v229: la foto de un creador (la sube él; es pública dentro de la Comunidad)
@@ -2630,6 +2646,7 @@ class H(SimpleHTTPRequestHandler):
                 P = k.split('/'); v = v if isinstance(v, dict) else {}
                 out.append({'k': k, 'f': 'assets/publica/' + k, 'kind': 'video' if len(P) == 3 and P[1] == 'video' else 'image', 'autor': str(d['alias'].get(P[0]) or 'Creador sin nombre')[:40], 'por': str(d['alias'].get(v.get('por')) or 'Creador sin nombre')[:40], 't': v.get('t') or 0, 'vista': bool(v.get('vista'))})
             return self._json(200, {'ok': True, 'items': out})
+        if u.path == '/api/efectos': return self._json(200, {'ok': True, 'items': _efx_lee()})   # v300
         if u.path == '/api/publicas':   # v237: la Fototeca / Filmoteca de la comunidad (tipo=image|video · cid=un creador · sig=1 solo de quien sigo)
             q = urllib.parse.parse_qs(u.query); tipo = (q.get('tipo') or [''])[0]; de = (q.get('cid') or [''])[0]; yo = _cid(); L = _pub_lista()
             if tipo in ('image', 'video'): L = [x for x in L if x['kind'] == tipo]
@@ -2831,6 +2848,10 @@ class H(SimpleHTTPRequestHandler):
                     k = f"{str(body.get('cid') or '')[:40]}:{str(body.get('pid') or '')[:80]}"; L = [x for x in d['sig'].get(yo) or [] if isinstance(x, str) and x != k]
                     if body.get('on', True) and re.fullmatch(r'[a-z0-9-]+:[A-Za-z0-9_.-]+', k): L.append(k)
                     d['sig'][yo] = L[-500:]; _com_guarda(d); return self._json(200, {'ok': True, 'siguiendo': d['sig'][yo]})
+                if ac == 'borrar_chat':   # v300: eliminar una conversación de MI lado (como en WhatsApp): el otro la sigue teniendo; si vuelve a escribir, reaparece
+                    con = str(body.get('con') or '')[:40]
+                    if not con or con == yo: return self._json(400, {'error': 'conversación no válida'})
+                    ah = time.time(); d['borr'].setdefault(yo, {})[con] = ah; d['visto'].setdefault(yo, {})[con] = ah; _com_guarda(d); return self._json(200, {'ok': True})
                 if ac == 'alias':
                     d['alias'][yo] = re.sub(r'\s+', ' ', str(body.get('nombre') or '')).strip()[:40]; _com_guarda(d); return self._json(200, {'ok': True, 'alias': d['alias'][yo]})
                 if ac == 'solicitar':
@@ -2893,6 +2914,16 @@ class H(SimpleHTTPRequestHandler):
                     if con == ARIA_CID and not any(m.get('x') == ARIA_RESP for m in M): M.append({'de': ARIA_CID, 'x': ARIA_RESP, 't': time.time() + 1})
                     del M[:-500]; _com_guarda(d); return self._json(200, {'ok': True})
             return self._json(400, {'error': 'acción desconocida'})
+        if self.path == '/api/efectos':   # v300: el equipo pone o quita un vídeo de ✨ Efectos (y le pone nombre)
+            if not liga_puede(): return self._json(403, {'error': 'Solo el equipo puede elegir los efectos'})
+            n = int(self.headers.get('Content-Length') or 0); body = json.loads(self.rfile.read(n) or b'{}'); k = str(body.get('id') or '')
+            if not re.fullmatch(r'[A-Za-z0-9_:.-]{1,60}', k): return self._json(400, {'error': 'vídeo no válido'})
+            with _EFX_L:
+                E = _efx_lee(); prev = E.get(k) if isinstance(E.get(k), dict) else {}
+                if body.get('on', True): E[k] = {'nombre': re.sub(r'\s+', ' ', str(body.get('nombre') if body.get('nombre') is not None else prev.get('nombre') or '')).strip()[:60], 't': prev.get('t') or time.time()}
+                else: E.pop(k, None)
+                _efx_guarda(E)
+            return self._json(200, {'ok': True, 'items': E})
         if self.path.startswith('/api/liga'):   # 🥊 Workflows · Duelos: crear, guardar lo que se elige, montar el carrusel (v209: recuperado y también en la web, solo el equipo)
             if not liga_puede(): return self._json(403, {'error': 'Los Workflows son solo para el equipo'})
             n = int(self.headers.get('Content-Length') or 0); body = json.loads(self.rfile.read(n) or b'{}'); LD = liga_dir(); os.makedirs(LD, exist_ok=True)
