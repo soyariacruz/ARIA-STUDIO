@@ -147,12 +147,25 @@ html.sinapi #livedot,html.sinapi .meter{display:none!important}
   // durante un minuto con un aviso a la vista. Antes la app lo tomaba por «no tienes nada» y enseñaba la cuenta vacía.
   let avisoEl = null;
   function aviso(on) {
-    if (!on) { if (avisoEl) { avisoEl.remove(); avisoEl = null; } return; }
+    if (!on) { if (avisoEl) { avisoEl.remove(); avisoEl = null; verMira(true); } return; }
     if (avisoEl) return;
-    avisoEl = document.createElement('div'); avisoEl.textContent = 'Conectando con el servidor… tus datos están a salvo';
-    avisoEl.style.cssText = 'position:fixed;top:10px;left:50%;transform:translateX(-50%);z-index:100000;background:var(--acc);color:#fff;font:600 12.5px var(--sans);padding:9px 16px;border-radius:999px;box-shadow:0 8px 24px rgba(0,0,0,.3)';
+    avisoEl = document.createElement('div'); avisoEl.innerHTML = '<div>Conectando con el servidor… tus datos están a salvo</div><div style="font-weight:500;font-size:11px;opacity:.85;margin-top:2px">Seguramente estamos actualizando ARIA STUDIO a una versión nueva: es un momento</div>';   // v311
+    avisoEl.style.cssText = 'position:fixed;top:10px;left:50%;transform:translateX(-50%);z-index:100000;background:var(--acc);color:#fff;font:600 12.5px var(--sans);padding:9px 18px;border-radius:18px;box-shadow:0 8px 24px rgba(0,0,0,.3);text-align:center;max-width:92vw';
     document.body.appendChild(avisoEl);
   }
+  // v311: la versión del servidor. Si cambia (se ha actualizado), se avisa: «ARIA STUDIO actualizado a la versión N» (+ recargar para tener lo último)
+  let verAviso = null;
+  function verPinta(v) {
+    if (verAviso) verAviso.remove(); verAviso = document.createElement('div');
+    verAviso.innerHTML = `✓ ARIA STUDIO se ha actualizado a la versión ${v} <button style="margin-left:10px;border:0;border-radius:999px;background:#fff;color:#111;font:700 11px var(--sans);padding:5px 11px;cursor:pointer">Recargar</button><button title="Cerrar" style="margin-left:6px;border:0;background:none;color:#fff;font:700 13px var(--sans);cursor:pointer">✕</button>`;
+    verAviso.style.cssText = 'position:fixed;top:10px;left:50%;transform:translateX(-50%);z-index:100000;background:#1f9d55;color:#fff;font:600 12.5px var(--sans);padding:7px 10px 7px 16px;border-radius:999px;box-shadow:0 8px 24px rgba(0,0,0,.3);display:flex;align-items:center;white-space:nowrap;max-width:94vw';
+    const [rb, xb] = verAviso.querySelectorAll('button'); rb.onclick = () => location.reload(); xb.onclick = () => { verAviso.remove(); verAviso = null; };
+    document.body.appendChild(verAviso); setTimeout(() => { if (verAviso) { verAviso.remove(); verAviso = null; } }, 20000);
+  }
+  async function verMira(aviso_) {
+    try { const j = await fetch0(SERVIDOR_URL + '/salud').then(x => x.json()); const v = j && j.v; if (!v) return; if (CU.ver && v !== CU.ver && aviso_ !== false) verPinta(v); CU.ver = v; } catch (e) {}
+  }
+  setTimeout(() => verMira(false), 3000); setInterval(() => verMira(true), 180000);
   let renovando = null;
   function renueva() {   // una sola renovación a la vez, aunque fallen varias peticiones juntas
     if (!renovando) renovando = (async () => { try { const { data, error } = await CU.sb.auth.refreshSession(); if (error || !data || !data.session) return false; sesion(data.session); return true; } catch (e) { return false; } })().finally(() => { setTimeout(() => { renovando = null; }, 3000); });

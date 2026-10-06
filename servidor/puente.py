@@ -43,7 +43,7 @@ MAX_CUERPO = 40 * 1024 * 1024    # tope de una petición en modo servidor
 MAX_BIBLIO = 200 * 1024 * 1024   # tope de un fichero de la biblioteca común al copiarlo
 KINDS = ('vestidor', 'hair', 'expr')   # las bibliotecas a las que una cuenta puede añadir lo suyo
 _UUID = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
-VERSION = 310
+VERSION = 311
 _ctx = threading.local()   # la cuenta del hilo: la pone cada petición (y, a mano, cada hilo de fondo)
 def uid(): return getattr(_ctx, 'uid', None)   # en local siempre None
 DUENOS = tuple(e.strip().lower() for e in (os.environ.get('ARIA_DUENOS') or 'mix1994max@gmail.com').split(',') if e.strip())   # cuentas que pueden cambiar a Aria Cruz (en la web, la de Max)
@@ -2221,7 +2221,8 @@ Devuelves UN solo prompt final, EN ESPAÑOL, natural y claro, listo para un gene
 - Conserva TODO lo técnico de lo elegido: cada etiqueta @ImageN EXACTAMENTE igual (mismo número, mismo formato), la identidad (misma cara, mismos rasgos), la prenda, el peinado, la expresión, el estilo y las restricciones (una sola foto, no un collage ni una hoja de personaje, sin texto ni logos…).
 - Si chocan (por ejemplo, la idea habla de otra ropa y hay una prenda elegida), para lo elegido gana lo elegido, salvo que la idea lo pida claramente.
 - Ignora lo que no describe la imagen (saludos, «gracias», comentarios).
-- Marca entre ⟦ y ⟧ cada frase o trozo que venga de LO ELEGIDO y no de la idea, para que la web pueda resaltarlo. Lo que sale de la idea del usuario va sin marcar.
+- Respeta las palabras y los detalles de la idea: NO los cambies por sinónimos ni los resumas; como mucho corrige faltas, ordénalo y añade detalle que encaje. Si la idea es larga y detallada, tiene que estar entera en el prompt.
+- Marca entre ⟦ y ⟧ lo que venga de LO ELEGIDO y entre ⟪ y ⟫ lo que venga de LA IDEA del usuario (aunque lo hayas ordenado o ampliado), para que la web los resalte con colores distintos. Todo el texto va dentro de una de las dos marcas.
 - Sin listas, sin títulos, sin comillas alrededor, sin explicaciones: responde SOLO con el prompt. Máximo unos 1500 caracteres."""
 MONTAR_SIS_V = """Eres el montador de prompts de VÍDEO de ARIA STUDIO (Seedance), una web española para crear vídeos con IA de un personaje (una influencer virtual).
 Recibes dos cosas:
@@ -2233,7 +2234,8 @@ Devuelves UN solo prompt final, EN ESPAÑOL, con LAS MISMAS secciones y en el mi
 - Conserva TODO lo técnico: cada etiqueta @ImageN EXACTAMENTE igual, la duración, el formato, la identidad (su cara no cambia nunca), la ropa, el peinado, el punto de partida y el TÉCNICO.
 - Si chocan, para lo elegido gana lo elegido, salvo que la idea lo pida claramente.
 - Ignora lo que no describe el vídeo (saludos, «gracias», comentarios).
-- Marca entre ⟦ y ⟧ cada frase o trozo que venga de LO ELEGIDO y no de la idea (los nombres de sección también). Lo que sale de la idea va sin marcar.
+- Respeta las palabras y los detalles de la idea: NO los cambies por sinónimos ni los resumas; como mucho corrige faltas, ordénalo y añade detalle que encaje.
+- Marca entre ⟦ y ⟧ lo que venga de LO ELEGIDO (los nombres de sección también) y entre ⟪ y ⟫ lo que venga de LA IDEA del usuario, para que la web los resalte con colores distintos.
 - Sin explicaciones: responde SOLO con el prompt. Máximo unos 3500 caracteres."""
 _MON_L = threading.Lock()
 def _montar_gasto(usd=0.0, quien=None):   # lo que lleva hoy la clave de la casa → {'dia', 'usd', 'por': {cuenta: veces}}
@@ -2272,7 +2274,7 @@ def _montar(idea, auto, tipo='imagen'):   # v307 → {'prompt', 'usd', 'casa'}: 
     usd = round(usd, 5)
     if casa_: _montar_gasto(usd, yo)
     aviso = ''
-    if not t: t = (idea.strip() + '\n\n' if idea.strip() else '') + '⟦' + auto.strip() + '⟧'; aviso = 'Claude no ha respondido: se ha juntado tal cual'
+    if not t: t = ('⟪' + idea.strip() + '⟫\n\n' if idea.strip() else '') + '⟦' + auto.strip() + '⟧'; aviso = 'Claude no ha respondido: se ha juntado tal cual'
     elif falta:   # solo lo que falta: la frase de lo elegido que nombra esa referencia
         fr = [next((x.strip() for x in re.split(r'(?<=[.!?])\s+|\n', auto) if g_ in x), f'Usa {g_} como referencia.') for g_ in falta]
         t += '\n⟦' + ' '.join(dict.fromkeys(fr)) + '⟧'; aviso = 'faltaba ' + ', '.join(falta)
@@ -2648,7 +2650,7 @@ class H(SimpleHTTPRequestHandler):
                 if not M: continue
                 chats.append({'con': otra, 'ultimo': M[-1], 'sin_leer': sum(1 for m in M if m.get('de') != yo and m.get('t', 0) > visto)})
             chats.sort(key=lambda c: -c['ultimo'].get('t', 0))
-            return self._json(200, {'ok': True, 'yo': yo, 'alias': str(d['alias'].get(yo) or ''), 'cuentas': cuentas, 'solicitudes': [x for x in d['sol'] if yo in (x.get('de'), x.get('para'))][-200:], 'chats': chats, 'avisos': _com_avisos(d, yo), 'denuncias': (0 if aria_fija() else sum(1 for v in (d.get('den') or {}).values() if not (isinstance(v, dict) and v.get('vista')))), 'siguiendo': [x for x in d['sig'].get(yo) or [] if isinstance(x, str)], 'carpetas': _comp_lista(d, yo), 'prestados': _prest_lista(d, yo)})
+            return self._json(200, {'ok': True, 'yo': yo, 'alias': str(d['alias'].get(yo) or ''), 'cuentas': cuentas, 'solicitudes': [x for x in d['sol'] if yo in (x.get('de'), x.get('para'))][-200:], 'chats': chats, 'borrados': (d['borr'].get(yo) or {}), 'avisos': _com_avisos(d, yo), 'denuncias': (0 if aria_fija() else sum(1 for v in (d.get('den') or {}).values() if not (isinstance(v, dict) and v.get('vista')))), 'siguiendo': [x for x in d['sig'].get(yo) or [] if isinstance(x, str)], 'carpetas': _comp_lista(d, yo), 'prestados': _prest_lista(d, yo)})
         if u.path == '/api/comunidad/avisos':   # (la solicitud de ejemplo de Aria nace aquí también: así el aviso sale sin haber abierto la comunidad)
             yo = _cid()
             with _com_l:
