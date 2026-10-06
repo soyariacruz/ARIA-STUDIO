@@ -3264,7 +3264,7 @@ class H(SimpleHTTPRequestHandler):
                     payload = {'text': texto, 'speed': num('velocidad', .5, 2, 1)}
                     if voz: payload['voice'] = voz
                     if dire: payload['voice_instruction'] = dire
-                elif k == 'seedaudio':   # v295: el prompt completo del asistente (estructura de Laura) + referencia opcional: una imagen o hasta 3 audios (no las dos)
+                elif k == 'seedaudio':   # v295: el prompt completo del asistente + referencia opcional: una imagen o hasta 3 audios (no las dos)
                     pf = str(body.get('prompt_final') or '').strip()[:6000]
                     if not (pf or texto or dire): raise RuntimeError('Escribe lo que dice y cómo suena la escena.')
                     payload = {'prompt': pf or (((dire + '. ') if dire else '') + (f'Dice: «{texto}»' if texto else '')), 'speed': num('velocidad', .5, 2, 1), 'output_format': 'mp3'}

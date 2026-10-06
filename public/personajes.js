@@ -908,7 +908,7 @@
   window.ariaPill = () => ariaPill();
   function ariaPill() { if (!(window.CUENTA && CUENTA.web && CUENTA.ariaMia) || pj.sel !== 'aria') return null; ariaEstado(); const d = ARIAED.d; if (!d || !d.editor || !d.pendiente) return null;   /* v252: solo cuando hay cambios */
     const w = el('div', 'ariaed' + (d.pendiente ? ' pend' : ''), d.pendiente ? '<span>●</span><b>Cambios sin publicar</b>' : `<span>✓</span><b>Publicada</b>${d.publicado ? `<small>${esc(d.publicado.slice(5, 10).split('-').reverse().join('/'))}${d.por ? ' · ' + esc(d.por) : ''}</small>` : ''}`);
-    w.title = 'Aria es de equipo: lo que cambiéis Max, Laura o la cuenta de Aria lo veis todos al momento. Los miembros ven la versión publicada.';
+    w.title = 'Aria es de equipo: lo que cambie el equipo o la cuenta de Aria lo veis todos al momento. Los miembros ven la versión publicada.';
     if (d.pendiente && d.publica) { const b = el('button', 'btn acc', 'Publicar para todos'); b.onclick = async () => { if (!(await pregunta('¿Publicar a Aria para todos los miembros?\n\nVerán sus cambios (fichas, perfil, complementos) desde ahora.'))) return; b.disabled = true; b.textContent = 'Publicando…'; let r; try { r = await fetch('/api/aria/publicar', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }).then(x => x.json()); } catch (e) { r = { error: String(e) }; } if (r && r.ok) toast(r.ensayo ? 'Ensayo de publicación hecho (servidor de pruebas)' : 'Aria publicada: los miembros ya la ven'); else toast('No se pudo publicar: ' + ((r && r.error) || 'sin respuesta')); await ariaEstado(true); renderProfile(); }; w.appendChild(b); }
     else if (d.pendiente) w.appendChild(el('small', '', 'los publica Max'));
     return w; }
