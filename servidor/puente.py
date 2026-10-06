@@ -43,7 +43,7 @@ MAX_CUERPO = 40 * 1024 * 1024    # tope de una petición en modo servidor
 MAX_BIBLIO = 200 * 1024 * 1024   # tope de un fichero de la biblioteca común al copiarlo
 KINDS = ('vestidor', 'hair', 'expr')   # las bibliotecas a las que una cuenta puede añadir lo suyo
 _UUID = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
-VERSION = 289
+VERSION = 290
 _ctx = threading.local()   # la cuenta del hilo: la pone cada petición (y, a mano, cada hilo de fondo)
 def uid(): return getattr(_ctx, 'uid', None)   # en local siempre None
 DUENOS = tuple(e.strip().lower() for e in (os.environ.get('ARIA_DUENOS') or 'mix1994max@gmail.com').split(',') if e.strip())   # cuentas que pueden cambiar a Aria Cruz (en la web, la de Max)
@@ -2095,6 +2095,20 @@ def _com_avisos(d, yo):
             otra = [c for c in k.split('|') if c != yo]; visto = (d['visto'].get(yo) or {}).get(otra[0] if otra else '', 0)
             n += sum(1 for m in M if m.get('de') != yo and m.get('t', 0) > visto)
     return n
+class _Trozo:   # v290: un trozo de un fichero (respuesta 206)
+    def __init__(self, f, n): self.f, self.n = f, n
+    def read(self, k=-1):
+        if self.n <= 0: return b''
+        k = self.n if k is None or k < 0 else min(k, self.n); d = self.f.read(k); self.n -= len(d); return d
+    def close(self): self.f.close()
+_AV = [0.0, None]
+def _adm_avisos():   # v290: lo pendiente del equipo (la burbuja roja de ⚙️ Admin): quien entró con Google sin estar en la lista
+    if _AV[1] is not None and time.time() - _AV[0] < 60: return _AV[1]
+    L = {m['email'] for m in _mi_lista()}
+    try: us = (_sb_adm('GET', '/auth/v1/admin/users?page=1&per_page=1000') or {}).get('users') or []
+    except Exception: us = []
+    sin = sum(1 for x in us if isinstance(x, dict) and str(x.get('email') or '').lower() not in L)
+    r = {'sin_acceso': sin, 'total': sin}; _AV[0], _AV[1] = time.time(), r; return r
 class H(SimpleHTTPRequestHandler):
     timeout = 120 if SERVIDOR else None   # en servidor, una conexión que no dice nada se corta
     def __init__(self, *a, **k): super().__init__(*a, directory=ROOT, **k)
@@ -2106,6 +2120,39 @@ class H(SimpleHTTPRequestHandler):
             if o and o.lower().rstrip('/') in ORIGENES:   # la web alojada llama desde otro dominio: solo a los orígenes de la lista
                 self.send_header('Access-Control-Allow-Origin', o); self.send_header('Access-Control-Allow-Credentials', 'true'); self.send_header('Vary', 'Origin')
         super().end_headers()
+    def send_head(self):   # v290: con «Range», solo el trozo pedido (Safari y el iPhone lo necesitan para reproducir vídeo)
+        rg = self.headers.get('Range') if self.command == 'GET' else None
+        m = re.fullmatch(r'bytes=(\d*)-(\d*)', (rg or '').strip())
+        if not m: return super().send_head()
+        path = self.translate_path(self.path)
+        if not os.path.isfile(path): return super().send_head()
+        try: f = open(path, 'rb')
+        except OSError: return super().send_head()
+        st = os.fstat(f.fileno()); size = st.st_size; a, b = m.groups()
+        if a == '': start = max(0, size - int(b or 0)); end = size - 1
+        else: start = int(a); end = min(size - 1, int(b)) if b else size - 1
+        if start >= size or start > end:
+            f.close(); self.send_response(416); self.send_header('Content-Range', f'bytes */{size}'); self.send_header('Content-Length', '0'); self.end_headers(); return None
+        self.send_response(206); self.send_header('Content-Type', self.guess_type(path)); self.send_header('Accept-Ranges', 'bytes')
+        self.send_header('Content-Range', f'bytes {start}-{end}/{size}'); self.send_header('Content-Length', str(end - start + 1)); self.send_header('Last-Modified', self.date_time_string(int(st.st_mtime))); self.end_headers()
+        f.seek(start); return _Trozo(f, end - start + 1)
+    def _subir_biblio(self):   # v290: la Filmoteca ligera al disco del servidor ($DATOS/biblioteca/assets/videoteca/…) — solo con la llave ARIA_ADMIN
+        adm = os.environ.get('ARIA_ADMIN') or ''
+        if len(adm) < 32 or not hmac.compare_digest((self.headers.get('X-Admin') or '').encode(), adm.encode()): return self._corta(404)
+        n = int(self.headers.get('Content-Length') or 0)
+        if n > 90_000_000: return self._json(413, {'error': 'demasiado grande'})
+        try: body = json.loads(self.rfile.read(n) or b'{}')
+        except Exception: return self._json(400, {'error': 'no es JSON'})
+        rel = str(body.get('rel') or '')
+        if not DATOS or not re.fullmatch(r'assets/videoteca/[A-Za-z0-9_.-]+', rel) or '..' in rel: return self._json(400, {'error': 'ruta no válida'})
+        base = os.path.join(DATOS, 'biblioteca'); full = os.path.join(base, *rel.split('/'))
+        if not _dentro(base, full): return self._json(400, {'error': 'ruta no válida'})
+        if body.get('ver'): return self._json(200, {'ok': True, 'tam': os.path.getsize(full) if os.path.isfile(full) else 0})
+        try: data = base64.b64decode(body.get('data') or '', validate=True)
+        except Exception: return self._json(400, {'error': 'datos no válidos'})
+        os.makedirs(os.path.dirname(full), exist_ok=True); tmp = f'{full}.tmp{threading.get_ident()}'
+        with open(tmp, 'wb') as o: o.write(data)
+        os.replace(tmp, full); _biblio_no.pop(rel, None); return self._json(200, {'ok': True, 'tam': len(data)})
     def _corta(self, code, msg='no'):   # respuesta de error (en HEAD, sin cuerpo)
         if self.command != 'HEAD': return self._json(code, {'error': msg})
         self.send_response(code); self.send_header('Content-Length', '0'); self.end_headers()
@@ -2115,6 +2162,7 @@ class H(SimpleHTTPRequestHandler):
         if not SERVIDOR: return fn()
         if self.command == 'GET' and self.path.startswith('/api/admin/copia'): return self._copia()
         if self.command in ('GET', 'POST') and self.path.startswith('/api/admin/importar'): return self._importar()
+        if self.command == 'POST' and self.path == '/api/admin/biblio': return self._subir_biblio()   # v290
         if self.command in ('GET', 'HEAD') and self.path == '/salud': return self._json(200, {'ok': True, 'v': VERSION}) if self.command == 'GET' else self._corta(200)   # el alojamiento pregunta aquí si el servidor está vivo (sin sesión, sin datos)
         if self.command == 'POST':
             try: n = int(self.headers.get('Content-Length') or 0)
@@ -2451,6 +2499,10 @@ class H(SimpleHTTPRequestHandler):
         if u.path == '/api/fallidas':   # v270
             try: return self._json(200, {'ok': True, 'items': _fall_lee()})
             except Exception: return self._json(200, {'ok': True, 'items': []})
+        if u.path == '/api/admin/avisos':   # v290: la burbuja roja de ⚙️ Admin
+            if not SERVIDOR or aria_fija(): return self._json(200, {'ok': True, 'total': 0})
+            try: return self._json(200, dict({'ok': True}, **_adm_avisos()))
+            except Exception: return self._json(200, {'ok': True, 'total': 0})
         if u.path == '/api/admin/panel':   # v280: ⚙️ Admin (solo el equipo)
             if not SERVIDOR or aria_fija(): return self._json(403, {'error': 'solo el equipo'})
             if 'fresco' in q: _ADM_P[1] = None; _ADM_C.clear()
