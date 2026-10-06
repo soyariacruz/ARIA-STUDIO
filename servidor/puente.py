@@ -43,7 +43,7 @@ MAX_CUERPO = 40 * 1024 * 1024    # tope de una petición en modo servidor
 MAX_BIBLIO = 200 * 1024 * 1024   # tope de un fichero de la biblioteca común al copiarlo
 KINDS = ('vestidor', 'hair', 'expr')   # las bibliotecas a las que una cuenta puede añadir lo suyo
 _UUID = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
-VERSION = 276
+VERSION = 277
 _ctx = threading.local()   # la cuenta del hilo: la pone cada petición (y, a mano, cada hilo de fondo)
 def uid(): return getattr(_ctx, 'uid', None)   # en local siempre None
 DUENOS = tuple(e.strip().lower() for e in (os.environ.get('ARIA_DUENOS') or 'mix1994max@gmail.com').split(',') if e.strip())   # cuentas que pueden cambiar a Aria Cruz (en la web, la de Max)
@@ -562,6 +562,24 @@ def _miembros(token):   # la fila de quien pregunta; si la columna «precio» to
     except urllib.error.HTTPError as e:
         if e.code != 400: raise
         return _sb_get('/rest/v1/miembros?select=email,interno', token)
+def _sb_adm(metodo, path, body=None, prefer=''):   # v277: la lista de miembros con la clave secreta del servidor (solo para el panel 👥 Miembros del equipo)
+    sec = os.environ.get('SUPABASE_SECRET') or ''
+    if not sec: raise RuntimeError('falta SUPABASE_SECRET en el servidor')
+    hd = {'apikey': sec, 'Authorization': 'Bearer ' + sec, 'Accept': 'application/json', 'User-Agent': UA}
+    if body is not None: hd['Content-Type'] = 'application/json'
+    if prefer: hd['Prefer'] = prefer
+    rq = urllib.request.Request(SB_URL + path, data=None if body is None else json.dumps(body).encode(), headers=hd, method=metodo)
+    with urllib.request.urlopen(rq, timeout=20) as r: raw = r.read(1 << 22)
+    return json.loads(raw) if raw.strip() else None
+def _mi_lista():
+    try: L = _sb_adm('GET', '/rest/v1/miembros?select=email,interno,precio,alta&order=alta.desc')
+    except urllib.error.HTTPError as e:
+        if e.code != 400: raise
+        L = _sb_adm('GET', '/rest/v1/miembros?select=email,interno,alta&order=alta.desc')
+    return [{'email': str(m.get('email') or ''), 'interno': m.get('interno') is True, 'precio': m.get('precio'), 'alta': str(m.get('alta') or '')[:10]} for m in (L or []) if isinstance(m, dict)]
+def _ses_olvida(email):   # quien se quita de la lista deja de entrar ya, sin esperar a que caduque su sesión recordada
+    with _ses_l:
+        for k in [k for k, s in _ses.items() if isinstance(s[1], tuple) and s[1][1] == email]: del _ses[k]
 def _sesion(token):   # token de acceso de Supabase → (uid, email, interno). Se recuerda 5 min como mucho (y nunca más allá de lo que dura el token)
     if not token or len(token) > 4096 or not re.fullmatch(r'[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+', token): raise _NoEntra(401, 'sesión no válida')
     h = hashlib.sha256(token.encode()).hexdigest()
@@ -2357,6 +2375,10 @@ class H(SimpleHTTPRequestHandler):
         if u.path == '/api/fallidas':   # v270
             try: return self._json(200, {'ok': True, 'items': _fall_lee()})
             except Exception: return self._json(200, {'ok': True, 'items': []})
+        if u.path == '/api/miembros':   # v277: 👥 la lista de miembros (solo el equipo)
+            if not SERVIDOR or aria_fija(): return self._json(403, {'error': 'solo el equipo'})
+            try: return self._json(200, {'ok': True, 'items': _mi_lista()})
+            except Exception as e: plog('miembros ✕ ' + str(e)[:160]); return self._json(200, {'ok': False, 'error': 'No se ha podido leer la lista de miembros.'})
         if u.path == '/api/bolsa':   # v269: 🎁 la bolsa del saldo regalo (solo el equipo)
             if not SERVIDOR or aria_fija(): return self._json(403, {'error': 'solo el equipo'})
             if 'fresco' in q: _bolsa_saldo(True)
@@ -2912,6 +2934,32 @@ class H(SimpleHTTPRequestHandler):
             n = int(self.headers.get('Content-Length') or 0); body = json.loads(self.rfile.read(n) or b'{}')
             with _fall_l: L = [x for x in _fall_lee() if x.get('id') != body.get('quitar')]; _fall_guarda(L)
             return self._json(200, {'ok': True, 'items': L})
+        if self.path == '/api/miembros':   # v277: {accion:'alta', emails:'texto', precio?} · {accion:'baja', email} — solo el equipo; nunca toca las cuentas del equipo
+            n = int(self.headers.get('Content-Length') or 0); body = json.loads(self.rfile.read(min(n, 200000)) or b'{}')
+            if not SERVIDOR or aria_fija(): return self._json(403, {'error': 'solo el equipo'})
+            if not _tope('miembros', 60, 3600): return self._json(429, {'error': 'Demasiados cambios seguidos: espera un rato.'})
+            ac = body.get('accion'); quien = getattr(_ctx, 'email', '')
+            try:
+                L = _mi_lista(); equipo = {m['email'] for m in L if m['interno']} | {e.lower() for e in DUENOS}; ya = {m['email'] for m in L}
+                if ac == 'alta':
+                    em = sorted({e.lower().strip('.') for e in re.findall(r'[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}', str(body.get('emails') or ''))})
+                    if not em: return self._json(400, {'error': 'No veo ningún correo en lo que has pegado.'})
+                    if len(em) > 300: return self._json(400, {'error': 'Como mucho 300 correos de una vez.'})
+                    pr = body.get('precio'); pr = None if pr in (None, '') else float(str(pr).replace(',', '.'))
+                    if pr is not None and not (0 <= pr <= 5000): return self._json(400, {'error': 'El plan tiene que ser entre 0 y 5000 $.'})
+                    filas = [dict({'email': e}, **({'precio': pr} if pr is not None else {})) for e in em if e not in equipo]   # las del equipo no se tocan
+                    if filas: _sb_adm('POST', '/rest/v1/miembros', filas, 'resolution=merge-duplicates,return=minimal')
+                    nuevos = [e for e in em if e not in ya]; plog(f'👥 miembros: {quien} da de alta {len(nuevos)} nuevos ({len(filas)} filas)')
+                    return self._json(200, {'ok': True, 'nuevos': len(nuevos), 'actualizados': len(filas) - len(nuevos), 'equipo': len(em) - len(filas), 'items': _mi_lista()})
+                if ac == 'baja':
+                    e = str(body.get('email') or '').strip().lower()
+                    if e in equipo: return self._json(400, {'error': 'Las cuentas del equipo no se quitan desde aquí.'})
+                    if e not in ya: return self._json(404, {'error': 'Ese correo no está en la lista.'})
+                    _sb_adm('DELETE', '/rest/v1/miembros?email=eq.' + urllib.parse.quote(e)); _ses_olvida(e); plog(f'👥 miembros: {quien} quita a {e}')
+                    return self._json(200, {'ok': True, 'items': _mi_lista()})
+                return self._json(400, {'error': 'acción desconocida'})
+            except ValueError: return self._json(400, {'error': 'El plan tiene que ser un número (lo que paga en Skool).'})
+            except Exception as e: plog('miembros ✕ ' + str(e)[:200]); return self._json(400, {'error': 'No se ha podido guardar el cambio.'})
         if self.path == '/api/bolsa':   # v269: regalar saldo (a una cuenta o a todas) y el aviso — solo el equipo
             n = int(self.headers.get('Content-Length') or 0); body = json.loads(self.rfile.read(n) or b'{}')
             if not SERVIDOR or aria_fija(): return self._json(403, {'error': 'solo el equipo'})

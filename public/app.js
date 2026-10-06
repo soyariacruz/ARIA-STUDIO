@@ -124,7 +124,7 @@ function buildNav() {
       cb.onclick = () => { if (COM.on) { comIr('dir').then(comPonAvisos); return; } COM.visto = true; comAbre('dir'); }; nav.appendChild(cb);
       const mb = el('button', 'more msgbtn', '<span>💬</span>Mensajes'); mb.title = 'Tus conversaciones con otros creadores: solicitudes, colaboraciones y carpetas compartidas'; mb.onclick = () => { if (COM.on) { comIr('msg').then(comPonAvisos); return; } COM.visto = true; comAbre('msg'); }; nav.appendChild(mb); }
   if (state.interno) {
-    nav.appendChild(el('div', 'nav-sep')); const wb = el('button', 'more', '<span>🧰</span>Workflows'); wb.title = 'Programas internos del equipo (solo cuentas autorizadas)'; wb.onclick = () => navMore(wb, [['🥊', 'Duelos', () => { if (window.CUENTA && CUENTA.web) { ligaAbre(); return; } location.href = 'liga.html'; }, 'interno']].concat(window.CUENTA && CUENTA.web && innerWidth >= 768 ? [['🎁', 'Bolsa del saldo regalo', () => openBolsa(), 'interno']] : [])); nav.appendChild(wb); }
+    nav.appendChild(el('div', 'nav-sep')); const wb = el('button', 'more', '<span>🧰</span>Workflows'); wb.title = 'Programas internos del equipo (solo cuentas autorizadas)'; wb.onclick = () => navMore(wb, [['🥊', 'Duelos', () => { if (window.CUENTA && CUENTA.web) { ligaAbre(); return; } location.href = 'liga.html'; }, 'interno']].concat(window.CUENTA && CUENTA.web && innerWidth >= 768 ? [['👥', 'Miembros', () => openMiembros(), 'interno'], ['🎁', 'Bolsa del saldo regalo', () => openBolsa(), 'interno']] : [])); nav.appendChild(wb); }
   nav.appendChild(el('div', 'sp')); comPonAvisos();
 }
 function setTab(k) {
@@ -2074,6 +2074,30 @@ async function openBolsa() { // v269: 🎁 la bolsa del saldo regalo (equipo)
     const pie = el('div', 'pjacts'); const re = el('button', 'btn', '↻ Actualizar'); re.onclick = async () => pinta(await fetch('/api/bolsa?fresco=1').then(y => y.json()).catch(() => null)); const rc = el('a', 'btn acc', 'Recargar la bolsa en WaveSpeed ↗'); rc.href = 'https://wavespeed.ai/top-up'; rc.target = '_blank'; rc.rel = 'noopener'; pie.appendChild(re); pie.appendChild(rc); b.appendChild(pie); };
   let r; try { r = await fetch('/api/bolsa').then(x => x.json()); } catch (e) { r = null; } if (m0.isConnected) pinta(r); }
 window.openBolsa = openBolsa;
+async function openMiembros() { // v277: 👥 quién puede entrar (equipo): pegar correos para dar de alta, quitar con un clic
+  let m0 = $('#miembm'); if (m0) m0.remove(); m0 = el('div', 'fxm'); m0.id = 'miembm'; document.body.appendChild(m0); m0.onclick = e => { if (e.target === m0) m0.remove(); };
+  const b = el('div', 'devbox gastobox bolsabox'); m0.appendChild(b); b.innerHTML = '<p>Leyendo la lista…</p>'; let filtro = '';
+  const manda = body => fetch('/api/miembros', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).then(y => y.json()).catch(() => null);
+  const pinta = r => { b.innerHTML = ''; const x = el('button', 'btn carpverx', '✕'); x.onclick = () => m0.remove(); b.appendChild(x);
+    if (!r || !r.ok) { b.appendChild(el('p', '', esc((r && r.error) || 'No se ha podido abrir la lista de miembros.'))); return; }
+    const L = r.items || [], eq = L.filter(z => z.interno).length;
+    b.appendChild(el('div', 'devemo', '👥')); b.appendChild(el('h3', '', 'Miembros'));
+    b.appendChild(el('div', 'gastot', `<div><small>Pueden entrar</small><b>${L.length}</b></div><div><small>Equipo</small><b>${eq}</b></div><div><small>Miembros</small><b>${L.length - eq}</b></div>`));
+    b.appendChild(el('small', 'gastonota', 'Pega uno o varios correos (como sea: en lista, separados por comas, copiados de Skool…). Tiene que ser el correo con el que entran en Google. El plan es lo que pagan en Skool: de ahí sale su saldo regalo; si lo dejas vacío, 4 $. Para cambiar el plan de alguien, vuelve a darlo de alta con el plan nuevo.'));
+    const ta = el('textarea', 'search'); ta.rows = 3; ta.placeholder = 'correo@gmail.com, otro@gmail.com…'; ta.style.width = '100%'; ta.style.resize = 'vertical'; b.appendChild(ta);
+    { const fila = el('div', 'bolsafila'); const pr = el('input', 'search'); pr.type = 'number'; pr.min = 0; pr.step = 1; pr.placeholder = 'Plan de Skool en $ (opcional)'; fila.appendChild(pr);
+      const g = el('button', 'btn acc', 'Dar de alta'); g.onclick = async () => { if (!ta.value.trim()) { toast('Pega algún correo'); ta.focus(); return; } g.disabled = true; const z = await manda({ accion: 'alta', emails: ta.value, precio: pr.value }); g.disabled = false;
+        if (z && z.ok) { toast(`👥 ${z.nuevos} ${z.nuevos === 1 ? 'nuevo' : 'nuevos'}${z.actualizados ? ` · ${z.actualizados} ya estaban (plan actualizado)` : ''}${z.equipo ? ` · ${z.equipo} del equipo, sin tocar` : ''}`); pinta(z); } else toast((z && z.error) || 'No se ha podido dar de alta'); };
+      fila.appendChild(g); b.appendChild(fila); }
+    b.appendChild(el('h4', '', 'Quién puede entrar')); const bu = el('input', 'search'); bu.placeholder = 'Buscar un correo…'; bu.value = filtro; b.appendChild(bu); const lista = el('div', 'gastol'); b.appendChild(lista);
+    const pon = () => { lista.innerHTML = ''; const q = filtro.trim().toLowerCase(); const V = L.filter(z => !q || z.email.includes(q));
+      V.forEach(z => { const row = el('div', 'gastor', `<i></i><div><b>${esc(z.email)}</b><small>${z.interno ? 'equipo' : 'plan ' + (z.precio != null ? fmtUsd(z.precio) : '—')}${z.alta ? ' · desde ' + new Date(z.alta).toLocaleDateString('es-ES', { day: 'numeric', month: 'short', year: 'numeric' }) : ''}</small></div>`);
+        if (!z.interno) { const q_ = el('button', 'btn', 'Quitar'); q_.title = 'Deja de poder entrar (su cuenta y sus creaciones no se borran)'; q_.onclick = async () => { if (!(await pregunta(`¿Quitar a ${z.email}?\n\nDeja de poder entrar en ARIA STUDIO. Su cuenta y sus creaciones no se borran: si vuelve a darse de alta, lo recupera todo.`))) return; const zz = await manda({ accion: 'baja', email: z.email }); if (zz && zz.ok) { toast('Quitado'); pinta(zz); } else toast((zz && zz.error) || 'No se ha podido quitar'); }; row.appendChild(q_); }
+        lista.appendChild(row); });
+      if (!V.length) lista.appendChild(el('p', '', q ? 'Ningún correo coincide.' : 'Todavía no hay nadie.')); };
+    bu.oninput = () => { filtro = bu.value; pon(); }; pon(); };
+  let r; try { r = await fetch('/api/miembros').then(x => x.json()); } catch (e) { r = null; } if (m0.isConnected) pinta(r); }
+window.openMiembros = openMiembros;
 function openGasto() { // v266: el registro de gasto — cada generación con lo que costó (lo que guarda su ficha)
   let m0 = $('#gastom'); if (m0) m0.remove(); m0 = el('div', 'fxm'); m0.id = 'gastom'; document.body.appendChild(m0); m0.onclick = e => { if (e.target === m0) m0.remove(); };
   const b = el('div', 'devbox gastobox'); m0.appendChild(b); const x = el('button', 'btn carpverx', '✕'); x.onclick = () => m0.remove(); b.appendChild(x);
