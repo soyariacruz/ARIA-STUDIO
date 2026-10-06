@@ -396,13 +396,13 @@ function genSettings(tab, it) { // modelo · calidad · formato · prompt (+ fot
     eb.onclick = () => { state.promptExp = !state.promptExp; eb.textContent = state.promptExp ? '▴ contraer' : '▾ ver completo'; fit(); }; ta.addEventListener('input', () => { if (state.promptExp) fit(); }); requestAnimationFrame(fit); } box.appendChild(pw);
   if (tab === 'crear') { // v307: ✨ el prompt final — Claude junta tu idea con lo elegido arriba (resaltado) y lo puedes retocar; al generar se manda este texto
     window._pautoSync = null; const fb = el('div', 'pfin'); const idea = String(it._prompt || '').trim(); const fresco = !!it._final && it._finalSig === pfSig(it);
-    const mb = el('button', 'btn w pfbtn', it._montando ? '✨ Mejorando…' : it._final ? '✨ Volver a mejorar el prompt' : '✨ Mejorar el prompt'); mb.disabled = !!it._montando; fb.appendChild(mb);
-    mb.onclick = async () => { mb.disabled = true; mb.textContent = '✨ Mejorando…'; const ok = await pfMontar(it, livePlan('crear', it).prompt); if (!ok) toast('Ahora no se ha podido mejorar: al generar se juntará tal cual'); if (state.tab === 'crear') renderSide(); };
-    if (it._final) { if (!fresco) fb.appendChild(el('div', 'pfaviso', 'Has cambiado tu idea o lo de arriba: al generar se vuelve a mejorar (tus retoques se respetan).'));
+    const mb = el('button', 'btn w pfbtn', it._montando ? '✨ Juntando…' : it._final ? '✨ Volver a juntar' : '✨ Juntar mi idea con lo elegido'); mb.disabled = !!it._montando; fb.appendChild(mb);
+    mb.onclick = async () => { mb.disabled = true; mb.textContent = '✨ Juntando…'; const ok = await pfMontar(it, livePlan('crear', it).prompt); if (!ok) toast('Ahora no se ha podido juntar: al generar se mandará tu idea y lo elegido tal cual'); if (state.tab === 'crear') renderSide(); };
+    if (it._final) { if (!fresco) fb.appendChild(el('div', 'pfaviso', 'Has cambiado tu idea o lo de arriba: al generar se vuelve a juntar (tus retoques se respetan).'));
       const pwf = el('div', 'pw'); const fta = el('textarea', 'prompt pfta'); fta.value = it._final; fta.spellcheck = false; fta.oninput = () => { it._final = fta.value; it._finalEd = true; }; pwf.appendChild(fta); fb.appendChild(pwf); promptWithMenu(fta, pwf, () => planRefs(tab, it));
       requestAnimationFrame(() => { fta.style.height = 'auto'; fta.style.height = Math.min(460, fta.scrollHeight + 4) + 'px'; if (fta._paint) fta._paint(); });
       fb.appendChild(el('small', 'pfnota', '<mark class="pfm">Resaltado</mark>: lo que has elegido arriba. Retócalo si quieres: al generar se manda este texto.')); }
-    else fb.appendChild(el('small', 'pfnota', idea ? 'Al generar se junta tu idea con lo que has elegido arriba. «Mejorar el prompt» te lo enseña antes para retocarlo.' : 'Sin idea, se genera con lo que has elegido arriba. «Mejorar el prompt» te lo enseña en español para retocarlo.'));
+    else fb.appendChild(el('small', 'pfnota', idea ? 'Al generar se junta tu idea con lo que has elegido arriba. «Juntar mi idea con lo elegido» te lo enseña antes para retocarlo.' : 'Sin idea, se genera con lo que has elegido arriba. «Juntar mi idea con lo elegido» te lo enseña en español para retocarlo.'));
     box.appendChild(fb); }
   const refsTxt = plan.images.length > m.refs ? `${plan.images.length} referencias → ${m.name} solo admite ${m.refs}: el resto va descrito en el prompt` : `${plan.images.length} referencia(s): ${plan.images.map(i => i.data ? 'tu foto' : i.path.split('/').pop()).join(', ')}`;
   if (tab !== 'crear') box.appendChild(el('div', 'status', refsTxt + (plan.images.length > m.refs ? ' · <b>Consejo:</b> con Grok Image 2.0 (10) o Marketing Studio (16) se mandan todas como imagen.' : '')));
@@ -1009,14 +1009,14 @@ function videoControls(it) {
   const pl = el('div', 'lblrow pleft'); pl.appendChild(lab('Tu idea')); const vx = el('span', 'lnk', state.vidExp ? '▴ contraer' : '▾ ver completo'); pl.appendChild(vx); box.appendChild(pl);
   const pw = el('div', 'pw'); const ta = el('textarea', 'prompt'); ta.value = state.videa || ''; ta.spellcheck = false; ta.placeholder = 'Cuéntalo con tus palabras: qué pasa, qué dice, cómo se mueve… Lo que elijas arriba se junta solo.'; ta.oninput = () => { state.videa = ta.value.trim() ? ta.value : null; }; pw.appendChild(ta); promptWithMenu(ta, pw); box.appendChild(pw);
   const fitv = () => { if (state.vidExp) { ta.style.height = 'auto'; ta.style.height = ta.scrollHeight + 2 + 'px'; ta.style.maxHeight = 'none'; } else { ta.style.height = ''; ta.style.maxHeight = ''; } }; vx.onclick = () => { state.vidExp = !state.vidExp; vx.textContent = state.vidExp ? '▴ contraer' : '▾ ver completo'; fitv(); }; ta.addEventListener('input', () => { if (state.vidExp) fitv(); }); requestAnimationFrame(fitv);
-  { const fb = el('div', 'pfin'); const fresco = !!state.vfinal && state.vfinSig === vfSig(it); const mb = el('button', 'btn w pfbtn', state.vmontando ? '✨ Mejorando…' : state.vfinal ? '✨ Volver a mejorar el prompt' : '✨ Mejorar el prompt'); mb.disabled = !!state.vmontando; fb.appendChild(mb);
-    mb.onclick = async () => { mb.disabled = true; mb.textContent = '✨ Mejorando…'; const ok = await vfMontar(it); if (!ok) toast('Ahora no se ha podido mejorar: al generar se juntará tal cual'); if (state.tab === 'video') renderSide(); };
-    if (state.vfinal) { if (!fresco) fb.appendChild(el('div', 'pfaviso', 'Has cambiado tu idea o lo de arriba: al generar se vuelve a mejorar (tus retoques se respetan).'));
+  { const fb = el('div', 'pfin'); const fresco = !!state.vfinal && state.vfinSig === vfSig(it); const mb = el('button', 'btn w pfbtn', state.vmontando ? '✨ Juntando…' : state.vfinal ? '✨ Volver a juntar' : '✨ Juntar mi idea con lo elegido'); mb.disabled = !!state.vmontando; fb.appendChild(mb);
+    mb.onclick = async () => { mb.disabled = true; mb.textContent = '✨ Juntando…'; const ok = await vfMontar(it); if (!ok) toast('Ahora no se ha podido juntar: al generar se mandará tu idea y lo elegido tal cual'); if (state.tab === 'video') renderSide(); };
+    if (state.vfinal) { if (!fresco) fb.appendChild(el('div', 'pfaviso', 'Has cambiado tu idea o lo de arriba: al generar se vuelve a juntar (tus retoques se respetan).'));
       const pwf = el('div', 'pw'); const fta = el('textarea', 'prompt pfta'); fta.value = state.vfinal; fta.spellcheck = false; const cnt = el('div', 'pcount'); const cuenta = () => { const n = quitaM(fta.value).length; cnt.textContent = MAXC ? `${mil(n)} / máx. ${mil(MAXC)} caracteres` : `${mil(n)} caracteres`; cnt.classList.toggle('over', !!MAXC && n > MAXC); };
       fta.oninput = () => { state.vfinal = fta.value; state.vfinEd = true; cuenta(); }; pwf.appendChild(fta); fb.appendChild(pwf); promptWithMenu(fta, pwf); fb.appendChild(cnt); cuenta();
       requestAnimationFrame(() => { fta.style.height = 'auto'; fta.style.height = Math.min(560, fta.scrollHeight + 4) + 'px'; if (fta._paint) fta._paint(); });
       fb.appendChild(el('small', 'pfnota', '<mark class="pfm">Resaltado</mark>: lo que has elegido arriba. Retócalo si quieres: al generar se manda este texto.')); }
-    else fb.appendChild(el('small', 'pfnota', state.videa ? 'Al generar se junta tu idea con lo que has elegido arriba. «Mejorar el prompt» te lo enseña antes para retocarlo.' : 'Sin idea, se genera con lo que has elegido arriba. «Mejorar el prompt» te lo enseña en español para retocarlo.'));
+    else fb.appendChild(el('small', 'pfnota', state.videa ? 'Al generar se junta tu idea con lo que has elegido arriba. «Juntar mi idea con lo elegido» te lo enseña antes para retocarlo.' : 'Sin idea, se genera con lo que has elegido arriba. «Juntar mi idea con lo elegido» te lo enseña en español para retocarlo.'));
     box.appendChild(fb); }
   const est = videoUsd(state.vdur, state.vres, ar);
   /* v257: el coste va en el botón */
@@ -3269,10 +3269,10 @@ async function vfMontar(it) { if (state.vmontando) return state.vmontando; const
     if (r && r.ok && r.prompt) { state.vfinal = r.prompt; state.vfinSig = sig; state.vfinEd = false; return true; } return false; })();
   try { return await state.vmontando; } finally { state.vmontando = null; } }
 async function vPromptGen(it) { const auto = vPromptBase(it); const idea = String(state.videa || '').trim(); if (state.vfinal && state.vfinSig === vfSig(it)) return quitaM(state.vfinal); if (!idea && !state.vfinal) return auto;
-  toast('✨ Mejorando tu prompt…'); const ok = await vfMontar(it); if (state.tab === 'video') renderSide(); return ok ? quitaM(state.vfinal) : (idea ? idea + '\n\n' + auto : auto); }
+  toast('✨ Juntando tu idea con lo elegido…'); const ok = await vfMontar(it); if (state.tab === 'video') renderSide(); return ok ? quitaM(state.vfinal) : (idea ? idea + '\n\n' + auto : auto); }
 async function promptGen(it, auto) { // lo que se manda al generar en Crear imagen
   const idea = String(it._prompt || '').trim(); if (it._final && it._finalSig === pfSig(it)) return quitaM(it._final); if (!idea && !it._final) return auto;
-  toast('✨ Mejorando tu prompt…'); const ok = await pfMontar(it, auto); if (state.tab === 'crear') renderSide();
+  toast('✨ Juntando tu idea con lo elegido…'); const ok = await pfMontar(it, auto); if (state.tab === 'crear') renderSide();
   return ok ? quitaM(it._final) : (idea ? idea + '\n\n' + auto : auto); }
 async function liveGenerate(tab, it, plan, label) {
   if (tab === 'crear') { const v = nsfwVeto(); if (v) { toast(v); return null; } }
