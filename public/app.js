@@ -1497,6 +1497,11 @@ function comFichaDr(c, p, o) { // v323: LA ficha de un influencer, igual en toda
     seguir(); B(a2, 'Mensaje', () => o.msg(c.cid));
     if (xc) enlace('Dejar de colaborar', async () => { if ((await pregunta(`¿Dejar de colaborar con ${p.nombre}?\n\nLo que ya habéis creado se queda. Para volver a colaborar habrá que pedirlo de nuevo.`))) comHaz({ accion: 'terminar', id: xc.id }, 'Colaboración terminada'); });
     else if (pend) enlace('Cancelar la solicitud', () => comHaz({ accion: 'terminar', id: x1.id }, 'Solicitud cancelada')); }
+  if (c.aria && mia) { // v351: en la cuenta de Aria, sus ajustes también se ven (fijos: siempre pública y abierta; colabora con todos)
+    const aj = el('div', 'cpf2aj'); de.appendChild(aj); const fijo = () => toast('Aria es siempre pública y colabora con todos automáticamente');
+    const sw = (txt, on) => { const r = el('button', 'cpsw2' + (on ? ' on' : ''), `<span class="cpswt"><i></i></span><b>${txt}</b>`); r.title = 'Aria: fijo'; r.onclick = fijo; aj.appendChild(r); };
+    sw('Público en la Comunidad', true); sw('Abierto a colaborar (solo SFW)', true);
+    aj.appendChild(el('label', 'cpf2ig', `<span>Seguidores en Instagram</span><b>${esc(p.igseg || '—')}</b>`)); aj.appendChild(el('small', 'cpnota', 'Aria colabora con todos automáticamente: estos ajustes son fijos.')); }
   if (c.yo) { // tu influencer: sus ajustes, discretos (encima de los botones)
     const aj = el('div', 'cpf2aj'); de.appendChild(aj);
     const sw = (txt, on, fn) => { const r = el('button', 'cpsw2' + (on ? ' on' : ''), `<span class="cpswt"><i></i></span><b>${txt}</b>`); r.onclick = fn; aj.appendChild(r); };
