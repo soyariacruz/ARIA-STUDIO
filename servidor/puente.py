@@ -37,13 +37,13 @@ SB_URL = (os.environ.get('SB_URL') or 'https://uhscbgidrloskdjbevkn.supabase.co'
 SB_KEY = os.environ.get('SB_KEY') or 'sb_publishable_GSO5Vqhr7Dg93egtKk_I2w_E_uScoNG'   # pública por diseño (es la del navegador); lo que protege los datos son las reglas de Supabase
 BIBLIO_URL = (os.environ.get('ARIA_BIBLIOTECA') or 'https://uhscbgidrloskdjbevkn.supabase.co/storage/v1/object/public/assets/').rstrip('/') + '/'   # almacén público de la biblioteca común
 BIBLIO_OK = tuple('assets/' + x for x in ('biblio/', 'vestidor/', 'hair/', 'expr/', 'movie/', 'cartoon/', 'photo/', 'crear/', 'conv/', 'videoteca/', 'perfil/', 'refs/', 'video/', 'personajes/_opciones/'))   # lo que puede venir de la biblioteca común (+ personajes/_lienzo.jpg y lo de assets/live que usa el perfil común)
-ORIGENES = tuple(o.strip().lower().rstrip('/') for o in (os.environ.get('ARIA_ORIGENES') or 'https://aria-studio-eta.vercel.app,http://localhost:3000').split(',') if o.strip())
+ORIGENES = tuple(o.strip().lower().rstrip('/') for o in (os.environ.get('ARIA_ORIGENES') or 'https://aria-studio-eta.vercel.app,https://studio.ariacruz.com,https://ariacruz.com,http://localhost:3000').split(',') if o.strip())
 FETCH_HOSTS = tuple(h.strip().lower() for h in (os.environ.get('ARIA_FETCH_HOSTS') or ','.join([urllib.parse.urlsplit(SB_URL).hostname or '', '.wavespeed.ai', '.higgsfield.ai', '.cloudfront.net', '.bytepluses.com', '.volces.com'])).split(',') if h.strip())   # /api/fetch en servidor: host exacto o «.sufijo»; «*» = cualquier sitio público
 MAX_CUERPO = 40 * 1024 * 1024    # tope de una petición en modo servidor
 MAX_BIBLIO = 200 * 1024 * 1024   # tope de un fichero de la biblioteca común al copiarlo
 KINDS = ('vestidor', 'hair', 'expr')   # las bibliotecas a las que una cuenta puede añadir lo suyo
 _UUID = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
-VERSION = 275
+VERSION = 276
 _ctx = threading.local()   # la cuenta del hilo: la pone cada petición (y, a mano, cada hilo de fondo)
 def uid(): return getattr(_ctx, 'uid', None)   # en local siempre None
 DUENOS = tuple(e.strip().lower() for e in (os.environ.get('ARIA_DUENOS') or 'mix1994max@gmail.com').split(',') if e.strip())   # cuentas que pueden cambiar a Aria Cruz (en la web, la de Max)
