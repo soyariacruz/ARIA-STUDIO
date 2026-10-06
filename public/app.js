@@ -1454,11 +1454,15 @@ function pubAvs(x, cls) { // v317: el circulito de lo publicado: su influencer (
   if (P.length) P.forEach((p, i) => uno(pubAvSrc(x, p), i)); else uno(`/api/comunidad/avatar?c=${encodeURIComponent(x.cid)}&t=creador`, 0);
   b.title = (x.personaje && x.personaje !== 'Sin personaje' ? x.personaje + ' · ' : '') + 'de ' + pubCreador(x) + ' · ver su ficha'; return b; }
 function pubCreador(x) { const c = (typeof COM !== 'undefined' && COM.D) ? comCta(x.cid) : null; return x.alias || (c && c.personajes && c.personajes.length ? comNom(c) : '') || 'un creador'; }
-function pubCredito(x, antes) { // v317: el crédito de lo publicado: qué influencer sale y quién lo ha creado (los dos, clicables)
-  const w = el('div', 'pubcred'); const av = pubAvs(x, 'pubcredav'); av.onclick = () => { if (antes) antes(); pubFicha(x); }; w.appendChild(av);
-  const inf = x.personaje && x.personaje !== 'Sin personaje' ? x.personaje : ''; const t = el('div', 'pubcredt'); t.appendChild(el('small', '', x.subida ? 'Subida a la comunidad' : 'Publicada en la comunidad'));
-  if (inf) { const a = el('button', 'pubcredn', esc(inf)); a.type = 'button'; a.title = 'Ver la ficha de ' + inf; a.onclick = () => { if (antes) antes(); pubFicha(x); }; t.appendChild(a); }
-  const c = el('button', 'pubcredc', `${inf ? 'creada por ' : 'por '}<b>${esc(pubCreador(x))}</b>${x.mia ? ' (tú)' : ''}`); c.type = 'button'; c.title = 'Ver al creador y todo lo que comparte'; c.onclick = async () => { if (antes) antes(); COM.visto = true; if (!COM.on) await comAbre('dir'); COM.pz = { cid: x.cid, creador: true }; comPinta(); }; t.appendChild(c); w.appendChild(t); return w; }
+function pubCredito(x, antes) { // v317 · v329: «Publicada en la comunidad» · los circulitos en fila (1.º el del creador, 2.º el que colabora; cada uno abre su ficha) · «creada por …»
+  const w = el('div', 'pubcred pc2'); w.appendChild(el('small', 'pubcredk', x.subida ? 'Subida a la comunidad' : 'Publicada en la comunidad'));
+  const P = (x.pids && x.pids.length ? x.pids : x.pid ? [x.pid] : []).slice(0, 2); const N = String(x.personaje && x.personaje !== 'Sin personaje' ? x.personaje : '').split(/\s*\+\s*/);
+  const abre = async pid => { if (antes) antes(); if (typeof COM === 'undefined') return; COM.visto = true; if (!COM.D) await comCarga(); if (pid === 'aria') { const a = comCta('caria'); if (a && a.personajes && a.personajes[0]) { fichaPop('caria', a.personajes[0].pid); return; } } fichaPop(x.cid, pid); };
+  const fila = el('div', 'pubcredavs'); w.appendChild(fila);
+  const circ = (src, ini, tit, fn) => { const b = el('button', 'pubcredci', `<i>${esc(ini)}</i>${src ? `<img src="${src}" alt="" loading="lazy">` : ''}`); b.type = 'button'; b.title = tit; const im = b.querySelector('img'); if (im) im.onerror = () => im.remove(); b.onclick = fn; fila.appendChild(b); };
+  if (P.length) P.forEach((pid, k) => { const nom = N[k] || (pid === 'aria' ? 'Aria Cruz' : ''); circ(pubAvSrc(x, pid), (nom || '?').charAt(0).toUpperCase(), (nom ? nom + ' · ' : '') + 'ver su ficha', () => abre(pid)); });
+  else circ(`/api/comunidad/avatar?c=${encodeURIComponent(x.cid)}&t=creador`, (pubCreador(x) || '?').charAt(0).toUpperCase(), 'Ver al creador', () => abre(null));
+  const c = el('button', 'pubcredc', `creada por <b>${esc(pubCreador(x))}</b>${x.mia ? ' (tú)' : ''}`); c.type = 'button'; c.title = 'Ver al creador y todo lo que comparte'; c.onclick = async () => { if (antes) antes(); COM.visto = true; if (!COM.on) await comAbre('dir'); COM.pz = { cid: x.cid, creador: true }; comPinta(); }; w.appendChild(c); return w; }
 function comFichaDr(c, p, o) { // v323: LA ficha de un influencer, igual en todas partes (Comunidad y ventanita): foto · nombre · datos · descripción · lo que puedes hacer. o = {cerrar, ver(pz), msg(cid), fuera}
   const D0 = COM.D; const B = (host, t, fn, cls) => { const b = el('button', 'btn' + (cls ? ' ' + cls : ''), t); b.onclick = e => { e.stopPropagation(); fn(); }; host.appendChild(b); return b; };
   const dr = el('div', 'cpficha cpf2'); { const x = el('button', 'cpx', '×'); x.title = 'Cerrar'; x.onclick = o.cerrar; dr.appendChild(x); }
