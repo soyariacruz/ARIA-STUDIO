@@ -74,7 +74,7 @@ html.sinapi #livedot,html.sinapi .meter{display:none!important}
     '<ul class="gpts"><li><b>Tu personaje, siempre el mismo</b>Crea su ficha una vez y sale igual en todas sus fotos.</li><li><b>Recrea cualquier foto con él</b>Elige una de la Fototeca o arrastra la tuya.</li><li><b>Empiezas con saldo regalo</b>Tus primeras imágenes van por nuestra cuenta. Después, desde 3 céntimos por imagen y sin suscripción.</li></ul>' +
     '<button class="gin" id="gateIn" hidden>Entrar con Google</button>' +
     '<button id="gateOut" hidden>Cerrar sesión</button>' +
-    '<p class="gerr" id="gateErr" hidden></p><p class="gnota" id="gateNota" hidden>Acceso por invitación · <a href="https://www.skool.com/influencer-ai/about" target="_blank" rel="noopener">comunidad de Aria Cruz</a></p></div></div>';
+    '<p class="gerr" id="gateErr" hidden></p><p class="gnota" id="gateNota" hidden>Acceso por invitación · <a href="https://www.skool.com/influencer-ai/about" target="_blank" rel="noopener">comunidad de Aria Cruz</a></p><p class="gnota glegal" hidden>Al entrar aceptas las <a href="/legal.html#condiciones" target="_blank">Condiciones de uso</a> y la <a href="/legal.html#privacidad" target="_blank">Privacidad</a> · solo mayores de 18 años</p></div></div>';
   document.body.prepend(gate);
   const G = (id) => gate.querySelector('#' + id);
   // La portada tiene cuatro caras: esperando, entrar, abriendo el estudio y «sin acceso».
@@ -110,6 +110,7 @@ html.sinapi #livedot,html.sinapi .meter{display:none!important}
     out.onclick = () => { out.disabled = true; out.textContent = 'Cerrando…'; salir(); };
     const mk = (t, fn) => { const b = document.createElement('button'); b.className = 'cmx'; b.textContent = t; b.onclick = () => { closeMenu(); fn(); }; return b; };   // v267
     const extra = [window.openGasto ? mk('📒 Registro de gasto', () => openGasto()) : null, window.openAyuda ? mk('❓ Ayuda', () => openAyuda()) : null].filter(Boolean);
+    if (window.LEGAL_OK) { const lg = document.createElement('a'); lg.className = 'cmlegal'; lg.href = '/legal.html'; lg.target = '_blank'; lg.textContent = 'Aviso legal · Privacidad · Condiciones'; extra.push(lg); }   // v271
     menu.append(av, n, e, ...extra, out);
     menu.style.top = (r.bottom + 8) + 'px'; menu.style.right = Math.max(8, innerWidth - r.right) + 'px';
     menu.onclick = (ev) => ev.stopPropagation();
@@ -270,3 +271,5 @@ html.sinapi #livedot,html.sinapi .meter{display:none!important}
   };
   document.head.appendChild(lib);
 })();
+// v271 · los textos legales: solo se enlazan si la página está publicada (con los datos del titular completos)
+fetch('/legal.html', { method: 'HEAD' }).then(r => { if (!r.ok) return; window.LEGAL_OK = true; document.querySelectorAll('.glegal').forEach(p => { p.hidden = false; }); }).catch(() => {});

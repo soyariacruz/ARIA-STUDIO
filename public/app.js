@@ -2052,7 +2052,7 @@ function openAyuda() { let m0 = $('#ayudam'); if (m0) m0.remove(); m0 = el('div'
   b.appendChild(el('div', 'devemo', '❓')); b.appendChild(el('h3', '', 'Ayuda')); const q = el('input', 'search'); q.placeholder = 'Buscar en la ayuda…'; b.appendChild(q); const L = el('div', 'ayudal'); b.appendChild(L);
   const pinta = () => { L.innerHTML = ''; const t = q.value.trim().toLowerCase(); AYUDA.forEach(([sec_, P]) => { const P2 = P.filter(([p, r]) => !t || (p + ' ' + r).toLowerCase().includes(t)); if (!P2.length) return; L.appendChild(el('div', 'ayudas', esc(sec_)));
     P2.forEach(([p, r]) => { const d = document.createElement('details'); d.className = 'ayudaq'; if (t) d.open = true; d.innerHTML = `<summary>${esc(p)}</summary><p>${esc(r)}</p>`; L.appendChild(d); }); }); if (!L.children.length) L.appendChild(el('p', '', 'No hay nada con eso. Escríbenos con el botón de feedback.')); };
-  q.oninput = pinta; pinta(); setTimeout(() => q.focus(), 0); }
+  q.oninput = pinta; pinta(); if (window.LEGAL_OK) { const lg = el('p', 'gastonota', '<a href="/legal.html" target="_blank">Aviso legal · Privacidad · Cookies · Condiciones de uso</a>'); b.appendChild(lg); } setTimeout(() => q.focus(), 0); }   // v271
 window.openAyuda = openAyuda;
 async function openBolsa() { // v269: 🎁 la bolsa del saldo regalo (equipo)
   let m0 = $('#bolsam'); if (m0) m0.remove(); m0 = el('div', 'fxm'); m0.id = 'bolsam'; document.body.appendChild(m0); m0.onclick = e => { if (e.target === m0) m0.remove(); };
