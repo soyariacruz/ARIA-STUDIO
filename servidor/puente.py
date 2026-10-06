@@ -43,7 +43,7 @@ MAX_CUERPO = 40 * 1024 * 1024    # tope de una petición en modo servidor
 MAX_BIBLIO = 200 * 1024 * 1024   # tope de un fichero de la biblioteca común al copiarlo
 KINDS = ('vestidor', 'hair', 'expr')   # las bibliotecas a las que una cuenta puede añadir lo suyo
 _UUID = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
-VERSION = 343
+VERSION = 344
 _ctx = threading.local()   # la cuenta del hilo: la pone cada petición (y, a mano, cada hilo de fondo)
 def uid(): return getattr(_ctx, 'uid', None)   # en local siempre None
 DUENOS = tuple(e.strip().lower() for e in (os.environ.get('ARIA_DUENOS') or 'mix1994max@gmail.com').split(',') if e.strip())   # cuentas que pueden cambiar a Aria Cruz (en la web, la de Max)
@@ -1761,7 +1761,7 @@ def _encuadre_ia(src):   # v320 → (panel, cara) en fracciones (x0, y0, x1, y1)
     except Exception as e: plog(f'encuadre IA ✕ {type(e).__name__}: {str(e)[:120]}'); return None
 def _avatar_centrado(base, fp, grande=False):   # v312: la foto del influencer en la Comunidad, con la cara centrada. Se hace UNA vez; si su dueña cambia la foto después, se queda la suya
     if not SERVIDOR: return None
-    mk = os.path.join(base, '.foto_ia2.json' if grande else '.avatar_ia2.json'); out = os.path.join(base, '.foto_ia2.jpg' if grande else '.avatar_ia2.jpg')   # v343: rehechas (nunca la espalda; la foto elegida por su dueño, primero)   # v313: también la grande (3:4) · v320: encuadradas con IA (ficheros nuevos: se rehacen todas)
+    mk = os.path.join(base, '.foto_ia3.json' if grande else '.avatar_ia3.json'); out = os.path.join(base, '.foto_ia3.jpg' if grande else '.avatar_ia3.jpg')   # v343: rehechas (nunca la espalda; la foto elegida por su dueño, primero)   # v313: también la grande (3:4) · v320: encuadradas con IA (ficheros nuevos: se rehacen todas)
     try: mt = os.path.getmtime(fp)
     except OSError: return None
     try: j = json.load(open(mk, encoding='utf-8'))
@@ -1774,13 +1774,13 @@ def _avatar_centrado(base, fp, grande=False):   # v312: la foto del influencer e
         import cv2
         from PIL import Image
         cc = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
-        for n in (('avatar.jpg',) if os.path.basename(fp) == 'avatar.jpg' else ('ficha360.jpg', 'ficha.jpg', 'importada.jpg') if grande else ('vista_frente.jpg', 'ficha360.jpg', 'ficha.jpg', os.path.basename(fp))):   # v343: la que eligió su dueño manda   # primero su vista de frente; si no, la ficha; si no, la propia foto (la grande, siempre de la ficha entera)
+        for n in ((os.path.basename(fp),) if os.path.basename(fp) in ('avatar.jpg', 'avatarSrc.jpg') else ('ficha360.jpg', 'ficha.jpg', 'importada.jpg') if grande else ('vista_frente.jpg', 'ficha360.jpg', 'ficha.jpg', os.path.basename(fp))):   # v343 · v344: la que eligió su dueño manda   # primero su vista de frente; si no, la ficha; si no, la propia foto (la grande, siempre de la ficha entera)
             src = os.path.join(base, n)
             if not os.path.isfile(src): continue
             img = cv2.imread(src)
             if img is None: continue
             g = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY); H0, W0 = g.shape; px0, py0 = 0, 0
-            ia = _encuadre_ia(src) if n not in ('vista_frente.jpg', 'avatar.jpg') else None   # v320: la IA dice cuál es el panel de frente; todo se recorta DENTRO de ese panel
+            ia = _encuadre_ia(src) if n not in ('vista_frente.jpg', 'avatar.jpg', 'avatarSrc.jpg') else None   # v320: la IA dice cuál es el panel de frente; todo se recorta DENTRO de ese panel
             if ia:
                 (a0, b0, a1, b1), (c0, d0, c1, d1) = ia; px0, py0 = int(a0 * W0), int(b0 * H0); g = g[py0:int(b1 * H0), px0:int(a1 * W0)]; img = img[py0:int(b1 * H0), px0:int(a1 * W0)]
             H, W = g.shape
@@ -1788,8 +1788,11 @@ def _avatar_centrado(base, fp, grande=False):   # v312: la foto del influencer e
             if not len(fs) and ia:   # v343: en el panel que dijo la IA no hay cara (p. ej. la espalda) → se busca la cara de frente en TODA la ficha
                 g0 = cv2.cvtColor(cv2.imread(src), cv2.COLOR_BGR2GRAY); fs0 = cc.detectMultiScale(g0, scaleFactor=1.1, minNeighbors=5, minSize=(max(30, W0 // 16), max(30, W0 // 16)))
                 if len(fs0): g = g0; img = cv2.imread(src); px0, py0 = 0, 0; H, W = g.shape; fs = fs0
+            if len(fs):   # v344: solo caras con ojos (una de frente); si ninguna los tiene, las que haya
+                ec = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_eye.xml'); con_ojos = [f_ for f_ in fs if len(ec.detectMultiScale(g[int(f_[1]):int(f_[1] + f_[3] * 0.6), int(f_[0]):int(f_[0] + f_[2])], scaleFactor=1.1, minNeighbors=4)) >= 2]
+                if con_ojos: fs = con_ojos
             if len(fs): x, y, w, h = max(fs, key=lambda f_: int(f_[2]) * int(f_[3]) * 1000 - (int(f_[0]) + int(f_[1])))   # la cara más grande (a igualdad, la de arriba a la izquierda: la de frente)
-            elif n == 'avatar.jpg': continue   # su foto sin cara detectable: se enseña tal cual
+            elif n in ('avatar.jpg', 'avatarSrc.jpg'): continue   # su foto sin cara detectable: se enseña tal cual
             elif ia: x, y, w, h = int(c0 * W0) - px0, int(d0 * H0) - py0, int((c1 - c0) * W0), int((d1 - d0) * H0)   # sin cara detectada: la que dice la IA
             else: continue
             if grande:   # de la cabeza a los hombros, en vertical 3:4, con la cara en el tercio de arriba
@@ -2863,7 +2866,13 @@ class H(SimpleHTTPRequestHandler):
             uu = _com_cuentas().get(cid, '__no__')
             if uu == '__no__' or not _pid_ok(pid) or not any(x['pid'] == pid for x in _com_personajes(uu, cid == _cid())): return self._corta(404)
             with como(uu): base = os.path.join(pers_dir(), pid)
-            fp = next((os.path.join(base, n) for n in (('avatar.jpg', 'vista_frente.jpg', 'foto.jpg') if grande else ('avatar.jpg', 'foto.jpg')) if os.path.isfile(os.path.join(base, n))), None)
+            def _grandeok(n_):   # v344: la foto elegida solo vale en grande si tiene resolución (la automática es de 256 px)
+                try:
+                    from PIL import Image
+                    return min(Image.open(os.path.join(base, n_)).size) >= 400
+                except Exception: return False
+            cands_ = (['avatarSrc.jpg'] + (['avatar.jpg'] if _grandeok('avatar.jpg') else []) + ['vista_frente.jpg', 'avatar.jpg', 'foto.jpg']) if grande else ['avatar.jpg', 'foto.jpg']
+            fp = next((os.path.join(base, n) for n in cands_ if os.path.isfile(os.path.join(base, n))), None)
             if not fp:   # v330: su foto de perfil con otro nombre (la que dice su ficha)
                 try:
                     pj_ = json.load(open(os.path.join(base, 'personaje.json'), encoding='utf-8'))
@@ -2875,7 +2884,7 @@ class H(SimpleHTTPRequestHandler):
                 except Exception: pass   # v230: en grande, su vista de frente o la foto de perfil que ha encuadrado su dueña (no la hoja entera)
             if not fp: return self._corta(404)
             if not grande: fp = _avatar_centrado(base, fp) or fp   # v312: con la cara centrada
-            elif os.path.basename(fp) != 'vista_frente.jpg':   # v313: sin vista de frente, la grande también centrada (sacada de su ficha entera)
+            elif os.path.basename(fp) not in ('vista_frente.jpg', 'avatar.jpg'):   # v313: sin vista de frente, la grande también centrada (sacada de su ficha entera) · v344: su foto elegida (grande), tal cual
                 c_ = _avatar_centrado(base, fp, True)
                 if c_: b = open(c_, 'rb').read(); self.send_response(200); self.send_header('Content-Type', 'image/jpeg'); self.send_header('Content-Length', str(len(b))); self.send_header('Cache-Control', 'private, max-age=60'); self.end_headers(); self.wfile.write(b); return
             if grande:   # la foto de la ficha, en grande para la galería (copia de 640 px, hecha una vez)
