@@ -43,7 +43,7 @@ MAX_CUERPO = 40 * 1024 * 1024    # tope de una petición en modo servidor
 MAX_BIBLIO = 200 * 1024 * 1024   # tope de un fichero de la biblioteca común al copiarlo
 KINDS = ('vestidor', 'hair', 'expr')   # las bibliotecas a las que una cuenta puede añadir lo suyo
 _UUID = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
-VERSION = 293
+VERSION = 294
 _ctx = threading.local()   # la cuenta del hilo: la pone cada petición (y, a mano, cada hilo de fondo)
 def uid(): return getattr(_ctx, 'uid', None)   # en local siempre None
 DUENOS = tuple(e.strip().lower() for e in (os.environ.get('ARIA_DUENOS') or 'mix1994max@gmail.com').split(',') if e.strip())   # cuentas que pueden cambiar a Aria Cruz (en la web, la de Max)
@@ -2615,15 +2615,31 @@ class H(SimpleHTTPRequestHandler):
             if not c: return self._json(404, {'error': 'Esa carpeta ya no está compartida contigo.'})
             return self._json(200, {'ok': True, 'nombre': str(c.get('nombre') or 'Carpeta')[:40], 'alias': str(_com_lee()['alias'].get(cid) or '')[:40], 'items': [dict(_comp_ficha(uu, L), f=f'assets/compartida/{cid}/{kid}/{L[1]}/{L[2]}', kind='video' if L[1] == 'video' else 'image') for L in _comp_items(uu, c)]})   # las carpetas de Mis creaciones de la cuenta
         if u.path == '/api/papelera':   # lo borrado de Mis creaciones que aún se puede recuperar (30 días), lo más reciente primero
-            trash = papelera(); out = []; ahora = time.time()
+            trash = papelera(); out = []; ahora = time.time(); deotro = set()
+            for fn in os.listdir(trash):   # v294: los archivos de una prenda o ficha borrada van con ella, no sueltos
+                if fn.endswith('.papel'):
+                    try: deotro.update(tn for _r, tn in (json.load(open(os.path.join(trash, fn), encoding='utf-8')).get('files') or []))
+                    except Exception: pass
             for fn in os.listdir(trash):
                 fp = os.path.join(trash, fn)
-                if fn.startswith('.') or fn.endswith('.json') or not os.path.isfile(fp + '.json'): continue   # solo creaciones (llevan su ficha .json al lado)
+                if fn.startswith('.') or fn.endswith('.json') or fn in deotro or not os.path.isfile(fp + '.json'): continue   # solo creaciones (llevan su ficha .json al lado)
                 try: meta = json.load(open(fp + '.json', encoding='utf-8'))
                 except Exception: meta = {}
                 t = os.path.getmtime(fp); video = fn.lower().endswith('.mp4'); po = os.path.splitext(fn)[0] + '.jpg'
-                out.append({'file': fn, 'src': 'assets/papelera/' + fn, 'thumb': 'assets/papelera/' + (po if video and os.path.isfile(os.path.join(trash, po)) else fn), 'kind': 'video' if video else 'image', 'name': str(meta.get('name') or fn)[:120], 't': int(t), 'dias': max(0, 30 - int((ahora - t) // 86400))})
-            out.sort(key=lambda x: -x['t']); return self._json(200, {'ok': True, 'items': out[:500], 'dias': 30, 'caduca': bool(SERVIDOR)})
+                aud = fn.lower().endswith(('.mp3', '.wav', '.ogg', '.m4a', '.opus'))
+                out.append({'tipo': 'audio' if aud else 'creacion', 'file': fn, 'src': 'assets/papelera/' + fn, 'thumb': '' if aud else 'assets/papelera/' + (po if video and os.path.isfile(os.path.join(trash, po)) else fn), 'kind': 'audio' if aud else 'video' if video else 'image', 'name': str(meta.get('name') or fn)[:120], 't': int(t), 'dias': max(0, 30 - int((ahora - t) // 86400))})
+            for fn in os.listdir(trash):   # v294: personajes (carpetas) y prendas/fichas (con su .papel)
+                fp = os.path.join(trash, fn); t = os.path.getmtime(fp); dias = max(0, 30 - int((ahora - t) / 86400))
+                if fn.startswith('personaje_') and os.path.isdir(fp):
+                    try: P0 = json.load(open(os.path.join(fp, 'personaje.json'), encoding='utf-8'))
+                    except Exception: P0 = {}
+                    av = next((x for x in ('avatar.jpg', 'avatar.png', 'foto.jpg') if os.path.isfile(os.path.join(fp, x))), None)
+                    out.append({'tipo': 'personaje', 'file': fn, 'name': str(P0.get('name') or fn.split('_')[1])[:80], 'thumb': f'assets/papelera/{fn}/{av}' if av else '', 'kind': 'image', 't': int(t), 'dias': dias})
+                elif fn.endswith('.papel'):
+                    try: P0 = json.load(open(fp, encoding='utf-8'))
+                    except Exception: continue
+                    out.append({'tipo': P0.get('tipo'), 'file': fn, 'name': str(P0.get('name') or fn)[:80], 'thumb': 'assets/papelera/' + P0['thumb'] if P0.get('thumb') else '', 'kind': 'image', 't': int(t), 'dias': dias})
+            out.sort(key=lambda x: -x['t']); return self._json(200, {'ok': True, 'items': out[:800], 'dias': 30, 'caduca': bool(SERVIDOR)})
         if u.path == '/api/pendientes':   # trabajos de personajes que la página aún no ha recogido (si se recarga, no se pierden)
             out = [{'rid': rid, 'item': j.get('item'), 'meta': {k: (j.get('meta') or {}).get(k) for k in ('personaje', 'pjKind', 'name', 'pjEditor')}, 'file': j.get('file'), 'usd': j.get('usd'), 'kind': j.get('kind', 'image'), 'edad': round(time.time() - j['t0'], 1)}
                    for rid, j in list(jobs.items()) if j.get('owner') == uid() and not j.get('claimed') and not j.get('failed') and str((j.get('meta') or {}).get('personaje') or '_').strip()[:1] not in ('_', '')]
@@ -2902,9 +2918,65 @@ class H(SimpleHTTPRequestHandler):
             if aria_fija() or (getattr(_ctx, 'email', '') or '').lower() not in ARIA_PUBLICAN: return self._json(403, {'error': 'Publicar a Aria para todos solo lo puede hacer Max'})
             try: return self._json(200, _aria_publica())
             except Exception as e: plog('Aria publicar ✕ ' + str(e)[:200]); return self._json(400, {'error': str(e)[:300]})
+        if self.path == '/api/papelera/borrar':   # v294: {file} o {todo:true} → se borra para siempre
+            n = int(self.headers.get('Content-Length') or 0); body = json.loads(self.rfile.read(min(n, 5000)) or b'{}'); trash = papelera(); import shutil
+            L = os.listdir(trash) if body.get('todo') else [os.path.basename(str(body.get('file') or ''))]
+            for fn in L:
+                if not fn or fn.startswith('.'): continue
+                fp = os.path.join(trash, fn)
+                if not _dentro(trash, fp): continue
+                try:
+                    if os.path.isdir(fp): shutil.rmtree(fp)
+                    elif os.path.isfile(fp):
+                        if fn.endswith('.papel'):
+                            try:
+                                for _r, tn in json.load(open(fp, encoding='utf-8')).get('files') or []:
+                                    if os.path.isfile(os.path.join(trash, tn)): os.remove(os.path.join(trash, tn))
+                            except Exception: pass
+                        os.remove(fp)
+                        for extra in ('.json',):
+                            if os.path.isfile(fp + extra): os.remove(fp + extra)
+                        po = os.path.join(trash, os.path.splitext(fn)[0] + '.jpg')
+                        if fn.lower().endswith('.mp4') and os.path.isfile(po): os.remove(po)
+                except Exception as e: plog('papelera borrar ✕ ' + str(e)[:120])
+            plog('papelera: borrado para siempre ' + ('TODO' if body.get('todo') else L[0])); return self._json(200, {'ok': True})
+        if self.path == '/api/audio/borrar':   # v294: un audio a la papelera {f:'assets/audio/…'}
+            n = int(self.headers.get('Content-Length') or 0); body = json.loads(self.rfile.read(min(n, 5000)) or b'{}'); import shutil
+            rel = _rel_ok(str(body.get('f') or '')); p = os.path.join(casa(), *rel.split('/')) if rel and rel.startswith('assets/audio/') else ''
+            if not p or not _dentro(casa(), p) or not os.path.isfile(p): return self._json(404, {'error': 'Ese audio no está en tu cuenta.'})
+            for extra in ('', '.json'):
+                if os.path.isfile(p + extra): shutil.move(p + extra, os.path.join(papelera(), os.path.basename(p) + extra))
+            return self._json(200, {'ok': True})
         if self.path == '/api/restaurar':   # saca una creación de la papelera y la devuelve a Mis creaciones
-            n = int(self.headers.get('Content-Length') or 0); body = json.loads(self.rfile.read(n) or b'{}'); fn = os.path.basename(str(body.get('file') or ''))
+            n = int(self.headers.get('Content-Length') or 0); body = json.loads(self.rfile.read(n) or b'{}'); fn = os.path.basename(str(body.get('file') or '')); import shutil
             trash = papelera(); src = os.path.join(trash, fn)
+            if fn.startswith('personaje_') and os.path.isdir(src):   # v294: un personaje entero
+                pid = fn.split('_')[1] if fn.count('_') >= 2 else ''; pid = '_'.join(fn.split('_')[1:-1]) or pid; dst = os.path.join(pers_dir(), pid)
+                if not _pid_ok(pid) or os.path.exists(dst): return self._json(400, {'error': 'Ya hay un personaje con ese nombre.'})
+                shutil.move(src, dst); plog('restaurar ← papelera personaje ' + pid); return self._json(200, {'ok': True, 'tipo': 'personaje'})
+            if fn.endswith('.papel') and os.path.isfile(src):   # v294: una prenda o una ficha
+                P0 = json.load(open(src, encoding='utf-8')); base = casa() if SERVIDOR else ROOT
+                for rel, tn in P0.get('files') or []:
+                    a, b = os.path.join(trash, tn), os.path.join(base, rel)
+                    if os.path.isfile(a) and _dentro(base, b) and not os.path.exists(b): os.makedirs(os.path.dirname(b), exist_ok=True); shutil.move(a, b)
+                if P0.get('tipo') == 'prenda':
+                    with _cerrojo():
+                        head, C = _cat_load(); it = P0.get('item') or {}
+                        if it.get('id') and not any(v['id'] == it['id'] for v in C['vestidor']):
+                            C['vestidor'].append(it)
+                            for v in C['vestidor']:
+                                if v['id'] in (P0.get('kids') or []): v['parent'] = it['id']
+                            _cat_save(head, C)
+                elif P0.get('tipo') == 'ficha':
+                    pf = os.path.join(pers_dir(), str(P0.get('pid') or ''), 'personaje.json')
+                    if not os.path.isfile(pf): return self._json(400, {'error': 'Su personaje ya no existe: restaura primero el personaje.'})
+                    with _cerrojo():
+                        PP = json.load(open(pf)); PP['fichas'] = (PP.get('fichas') or []) + [P0.get('item') or {}]; json.dump(PP, open(pf, 'w'), ensure_ascii=False, indent=1)
+                os.remove(src); plog('restaurar ← papelera ' + fn); return self._json(200, {'ok': True, 'tipo': P0.get('tipo')})
+            if fn.lower().endswith(('.mp3', '.wav', '.ogg', '.m4a', '.opus')) and os.path.isfile(src):   # v294: un audio
+                for extra in ('', '.json'):
+                    if os.path.isfile(src + extra): shutil.move(src + extra, os.path.join(audio_dir(), fn + extra))
+                return self._json(200, {'ok': True, 'tipo': 'audio'})
             if not fn or fn.startswith('.') or not os.path.isfile(src) or not os.path.isfile(src + '.json'): return self._json(400, {'error': 'no está en la papelera'})
             import shutil
             dest = video_dir() if fn.lower().endswith('.mp4') else live_dir()
@@ -2998,10 +3070,11 @@ class H(SimpleHTTPRequestHandler):
             with _cerrojo():
                 PP = json.load(open(pf)); L = PP.get('fichas') or []; it = next((f for f in L if f.get('id') == body.get('fid')), None)
                 if not it: return self._json(404, {'error': 'ficha no encontrada'})
-                trash = papelera()
+                trash = papelera(); movidos = []
                 for k in ('img', 'thumb'):
                     fp = busca(it.get(k), propio=True)
-                    if fp and _dentro(d, fp): shutil.move(fp, os.path.join(trash, pid + '_' + os.path.basename(fp)))
+                    if fp and _dentro(d, fp): shutil.move(fp, os.path.join(trash, pid + '_' + os.path.basename(fp))); movidos.append([os.path.relpath(fp, casa()), pid + '_' + os.path.basename(fp)])
+                json.dump({'tipo': 'ficha', 'pid': pid, 'item': it, 'files': movidos, 'name': (it.get('nombre') or 'Ficha') + ' · ' + str(PP.get('name') or pid), 'thumb': movidos[0][1] if movidos else ''}, open(os.path.join(trash, f'ficha_{pid}_{int(time.time())}.papel'), 'w', encoding='utf-8'), ensure_ascii=False)   # v294
                 PP['fichas'] = [f for f in L if f is not it]; json.dump(PP, open(pf, 'w'), ensure_ascii=False, indent=1)
             plog(f'ficha de {pid} a la papelera · {it.get("nombre")}'); return self._json(200, {'ok': True})
         if self.path == '/api/personaje_combo':   # ficha principal del personaje: su 2x2 + su cuerpo de frente + su cuerpo de perfil (tercios de su ficha de cuerpo), 16:9 como la de Aria
@@ -3741,10 +3814,11 @@ class H(SimpleHTTPRequestHandler):
                     nuevo = kids[0]; nuevo.pop('parent', None)
                     for k in kids[1:]: k['parent'] = nuevo['id']
                 C['vestidor'] = [v for v in C['vestidor'] if v['id'] != pid]
-                trash = papelera()
+                trash = papelera(); movidos = []
                 for rel in (it.get('ficha'), it.get('card'), ((it.get('ficha') or '').split('?')[0] if SERVIDOR else (it.get('ficha') or '')) + '.json'):
                     full = (busca(rel, propio=True) or '') if SERVIDOR else os.path.join(ROOT, rel or '')   # en servidor solo se mueve lo que es de la cuenta: una prenda de la biblioteca común no se toca (queda oculta para ella)
-                    if rel and os.path.isfile(full): shutil.move(full, os.path.join(trash, os.path.basename(full)))
+                    if rel and os.path.isfile(full): shutil.move(full, os.path.join(trash, os.path.basename(full))); movidos.append([os.path.relpath(full, casa() if SERVIDOR else ROOT), os.path.basename(full)])
+                json.dump({'tipo': 'prenda', 'item': it, 'kids': [k['id'] for k in kids], 'files': movidos, 'name': it.get('name') or pid, 'thumb': movidos[0][1] if movidos else ''}, open(os.path.join(trash, f'prenda_{pid}_{int(time.time())}.papel'), 'w', encoding='utf-8'), ensure_ascii=False)   # v294: para poder devolverla
                 _cat_save(head, C)
             if SERVIDOR: plog(f'prenda borrada {pid}'); return self._json(200, {'ok': True, 'promoted': kids[0]['id'] if kids else None})   # Notion es solo del ordenador de Max
             try:   # archivar también su ficha en Notion (en segundo plano; reversible desde la papelera de Notion)
