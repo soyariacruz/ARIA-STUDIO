@@ -1302,8 +1302,10 @@ function creationMeta(it, host) { if (it.ajena) return ajenaMeta(it, host); // p
     host.appendChild(sec('', dt)); }
   { const rs = el('div', 'stack'); const rec_ = recComp(m); if (Object.keys(rec_).length || (m.prompt && it.kind !== 'video')) { const rb = el('button', 'btn w acc', '✨ Recrear'); rb.title = 'Carga en Crear imagen todo lo de esta creación: personaje, prenda, peinado, referencia, complementos y ajustes'; rb.onclick = () => { closeGal(); recrear(it); }; rs.appendChild(rb); } if (window.CUENTA && CUENTA.web && it.kind !== undefined && !it.pending && it.src && !m.colab && !m.importada) { const f0 = it.src.split('?')[0]; const enPub = CARP.L.some(k => k.pub && k.items.includes(f0)); const veto = it.hidden ? 'está oculta' : m.nsfw ? 'es NSFW' : ''; const pb = el('button', 'btn w outline' + (enPub ? ' pubon' : ''), enPub ? '🌐 Publicada en la comunidad · quitar' : '🌐 Publicar en la comunidad'); pb.title = veto ? 'No se puede publicar: ' + veto : 'Sale en la Fototeca / Filmoteca de la comunidad con su prompt: cualquiera podrá verla, recrearla e importarla'; pb.disabled = !!veto && !enPub;
       pb.onclick = async () => { const auto = CARP.L.find(k => k.pubauto); if (enPub && !(auto && auto.items.includes(f0))) { toast('Está publicada dentro de una carpeta: quítala desde «Compartir» de esa carpeta'); return; } if (await carpHaz({ accion: 'publicar_una', files: [f0], on: !enPub }, enPub ? 'Ya no está en la comunidad' : 'Publicada en la comunidad')) { creationMeta(it, host); carpLado(); } }; rs.appendChild(pb); }
-    const d0 = el('button', 'btn w outline', '⬇ Descargar'); d0.onclick = () => { const a = document.createElement('a'); a.href = it.src; a.download = it.src.split('/').pop(); document.body.appendChild(a); a.click(); a.remove(); }; rs.appendChild(d0);
-    if (LIVE && it.kind !== 'video' && !it.video && String(it.src || '').split('?')[0].startsWith('assets/live/') && !m.ampliada_de && !/ · 4K$/.test(m.name || '')) { const up = el('button', 'btn w outline', '🔍 Ampliar a 4K · ' + fmtUsd(0.01)); up.title = 'Una copia nueva a 4K, con más detalle (la original no se toca)'; up.onclick = () => ampliar(it, up); rs.appendChild(up); }   /* v266 */
+    if (it.v4k) { const vs = el('div', 'vers4k'); [['4k', '4K'], ['orig', 'Original']].forEach(([k, t]) => { const b = el('button', (it.ver || '4k') === k ? 'on' : '', t); b.onclick = () => verVersion(it, k); vs.appendChild(b); }); rs.appendChild(vs);   /* v342: Original / 4K */
+      const cmp = el('button', 'btn w outline', '⇆ Antes / después'); cmp.onclick = () => compara(it.src0, it.v4k.src); rs.appendChild(cmp); }
+    const d0 = el('button', 'btn w outline', '⬇ Descargar'); d0.onclick = () => { if (it.v4k) menuDescarga(d0, [['Original', it.src0], ['Ampliada a 4K', it.v4k.src]]); else bajaArchivo(it.src); }; rs.appendChild(d0);
+    if (LIVE && !it.v4k && it.kind !== 'video' && !it.video && String(it.src || '').split('?')[0].startsWith('assets/live/') && !m.ampliada_de && !/ · 4K$/.test(m.name || '')) { const up = el('button', 'btn w outline', '🔍 Ampliar a 4K · ' + fmtUsd(0.01)); up.title = 'Una copia nueva a 4K, con más detalle (la original no se toca)'; up.onclick = () => ampliar(it, up); rs.appendChild(up); }   /* v266 */
     host.appendChild(sec('', rs)); }
   if (m.prompt) { const pb = el('div', 'stack'); pb.appendChild(el('div', 'promptbox', atHtml(m.prompt, m.refs))); pb.querySelectorAll('b.at.link').forEach(b => { b.title = 'Ver la imagen · ' + b.title; b.onclick = e => { e.stopPropagation(); openRefN(m, +b.dataset.n); }; }); const cp = el('button', 'btn w', 'Copiar prompt'); cp.onclick = () => { navigator.clipboard && navigator.clipboard.writeText(m.prompt); toast('Prompt copiado'); }; pb.appendChild(cp); host.appendChild(sec('Prompt', pb)); }
   else host.appendChild(sec('Prompt', el('div', 'status', 'No se guardó su prompt.')));   /* v319 */
@@ -2208,6 +2210,9 @@ function buildCreations(j) {
     let thumb = c.kind === 'video' ? (c.poster || (m.source && !String(m.source).startsWith('data:') ? m.source : null) || C.base.thumb) : (c.thumb || c.file);
     const o = old.get(id) || {}; o.kindLabel = c.kind === 'video' ? 'Vídeos' : 'Imágenes'; o.hidden = !!m.hidden; o.fav = !!m.fav; const srcName = c.kind === 'video' ? ((TABS.video.items.find(x => x.id === m.item) || {}).name) : null; return Object.assign(o, { id, name: m.name || srcName || (allItems().find(x => x.id === m.item) || {}).name || m.item || id, sub: `${m.colab ? '🤝 ' + (m.colab.mia ? 'con ' + (m.colab.personaje || 'otro creador') : (m.colab.alias || 'otro creador')) + ' · ' : ''}${m.model || MN[m.model_key] || ''}${fecha ? ' · ' + fecha : ''}`, kind: c.kind, src: c.file, thumb, meta: m, video: c.kind === 'video' ? c.file : null }); });
   const pend = (typeof activeJobs === 'function' ? activeJobs() : []).map(j => ({ id: 'job-' + j.rid, name: (j.kind === 'video' ? 'Vídeo · ' : '') + (j.name || j.it.name), sub: 'generándose · ' + j.m.name, kind: j.kind, kindLabel: j.kind === 'video' ? 'Vídeos' : 'Imágenes', pending: true, oculta: !!j.hidden, src: '', thumb: j.thumb || j.it.thumb || (j.it.files && j.it.files.thumb) || j.it.card || j.it.src || C.base.thumb, meta: {} }));
+  { const L = TABS.creaciones.items; const porSrc = new Map(L.map(i => [String(i.src || '').split('?')[0], i]));   // v342: la ampliada a 4K es una versión de su original
+    L.forEach(i => { const o = i.meta && i.meta.ampliada_de && porSrc.get(String(i.meta.ampliada_de).split('?')[0]); if (o && o !== i && !o.meta.ampliada_de) { o.src0 = String(o.src || '').split('?')[0] === String(i.meta.ampliada_de).split('?')[0] ? o.src : (o.src0 || o.src); o.v4k = i; i.grupo4k = true; o.src = o.ver === 'orig' ? o.src0 : i.src; } });
+    TABS.creaciones.items = L.filter(i => !i.grupo4k); }
   TABS.creaciones.items = pend.concat(TABS.creaciones.items);
   if (!state.sel.creaciones || !TABS.creaciones.items.includes(state.sel.creaciones)) state.sel.creaciones = TABS.creaciones.items.find(i => !i.pending) || TABS.creaciones.items[0];
   if (state.ready && (state.tab === 'creaciones' || state.tab === 'perfil' || state.tab === 'crear')) { renderRail(); if (state.tab === 'creaciones') renderSide(); $('#pickTitle').textContent = `Mis creaciones · ${TABS.creaciones.items.filter(i => !i.pending).length}`; }
@@ -2245,6 +2250,20 @@ function saldoPinta() { const m = document.querySelector('header .meter'); if (!
   const on = (SALDO.apis || []).filter(a => a.on); const con = on.filter(a => typeof a.saldo === 'number'); const tot = con.reduce((x, a) => x + a.saldo, 0);
   b.style.display = on.length ? '' : 'none'; b.classList.toggle('bajo', con.length > 0 && tot < 1); b.title = 'Lo que te queda en tus APIs. Pulsa para ver el detalle';
   b.innerHTML = `<span>Saldo</span><b>${con.length ? dolar(tot) : '—'}</b><i>▾</i>`; }
+function bajaArchivo(src) { const a = document.createElement('a'); a.href = src; a.download = String(src).split('?')[0].split('/').pop(); document.body.appendChild(a); a.click(); a.remove(); }
+function menuDescarga(btn, ops) { // v342: un menú pequeño junto al botón (no una ventana): qué versión bajar
+  let m = $('#dlmenu'); if (m) { m.remove(); if (m._for === btn) return; } m = el('div', 'navmore dlmenu'); m.id = 'dlmenu'; m._for = btn;
+  ops.forEach(([t, src]) => { const r = el('button', 'it', `<span>⬇</span><b>${esc(t)}</b>`); r.onclick = () => { m.remove(); bajaArchivo(src); }; m.appendChild(r); }); document.body.appendChild(m);
+  const r = btn.getBoundingClientRect(); m.style.minWidth = Math.round(Math.min(r.width, 260)) + 'px'; m.style.left = Math.round(Math.min(r.left, innerWidth - m.offsetWidth - 8)) + 'px'; m.style.top = Math.round(r.bottom + 6 + m.offsetHeight > innerHeight ? r.top - m.offsetHeight - 6 : r.bottom + 6) + 'px';
+  setTimeout(() => { const fuera = e => { if (!m.isConnected) { document.removeEventListener('click', fuera, true); return; } if (!m.contains(e.target) && !btn.contains(e.target)) { m.remove(); document.removeEventListener('click', fuera, true); } }; document.addEventListener('click', fuera, true); }, 0); }
+function verVersion(it, k) { if (!it || !it.v4k) return; it.ver = k; it.src = k === 'orig' ? it.src0 : it.v4k.src; const i0 = cur(); if (i0 === it) paint(it, true); renderSide(); }   // v342
+function compara(a, b) { // v342: antes / después con un deslizador (la original a la izquierda, la 4K a la derecha)
+  let m0 = $('#cmpm'); if (m0) m0.remove(); m0 = el('div', 'fxm'); m0.id = 'cmpm'; document.body.appendChild(m0); m0.onclick = e => { if (e.target === m0) m0.remove(); };
+  const box = el('div', 'devbox cmpbox'); m0.appendChild(box); const x = el('button', 'btn carpverx', '✕'); x.onclick = () => m0.remove(); box.appendChild(x);
+  const w = el('div', 'cmpw', `<img class="cmpb" src="${b}" alt=""><div class="cmpa"><img src="${a}" alt=""></div><i class="cmpl"></i><em class="cmpt l">Original</em><em class="cmpt r">4K</em>`); box.appendChild(w);
+  const pon = p => { p = Math.max(0, Math.min(100, p)); w.querySelector('.cmpa').style.clipPath = `inset(0 ${100 - p}% 0 0)`; w.querySelector('.cmpl').style.left = p + '%'; }; pon(50);
+  let on = false; const mueve = e => { const r = w.getBoundingClientRect(); pon((e.clientX - r.left) / r.width * 100); };
+  w.onpointerdown = e => { on = true; w.setPointerCapture(e.pointerId); mueve(e); }; w.onpointermove = e => { if (on) mueve(e); }; w.onpointerup = () => { on = false; }; }
 async function ampliar(it, btn) { // v266: la misma creación a 4K → aparece en Mis creaciones como «… · 4K»
   const f = String(it && it.src || '').split('?')[0]; if (!f.startsWith('assets/live/')) { toast('Solo se pueden ampliar tus imágenes'); return; }
   if (!(await pregunta(`¿Ampliar «${it.name || 'esta imagen'}» a 4K?\n\nCuesta unos ${fmtUsd(0.01)}. Se crea una copia nueva a 4K en Mis creaciones; la original no se toca.`))) return;
@@ -2806,13 +2825,21 @@ window.admCierra = admCierra;
 function admPinta() {
   const pg = $('#admpage'); if (!pg) return; const r = ADM.r; const sc = pg.querySelector('.admin'); const y = sc ? sc.scrollTop : 0; pg.innerHTML = ''; const w = el('div', 'admin'); pg.appendChild(w);
   const hd = el('div', 'admhd'); hd.appendChild(el('h2', '', '⚙️ Admin')); const tabs = el('div', 'admtabs');
-  [['resumen', '📊 Resumen'], ['miembros', '👥 Miembros'], ['herramientas', '🧰 Herramientas']].forEach(([k, t]) => { const b = el('button', ADM.sec === k ? 'on' : '', t + (k === 'miembros' && ADM.av ? `<u class="admdotn in">${ADM.av}</u>` : '')); b.onclick = () => { ADM.sec = k; admPinta(); }; tabs.appendChild(b); });
+  [['resumen', '📊 Resumen'], ['miembros', '👥 Miembros'], ['feedback', '💡 Feedback'], ['herramientas', '🧰 Herramientas']].forEach(([k, t]) => { const b = el('button', ADM.sec === k ? 'on' : '', t + (k === 'miembros' && ADM.av ? `<u class="admdotn in">${ADM.av}</u>` : '')); b.onclick = () => { ADM.sec = k; admPinta(); }; tabs.appendChild(b); });
   hd.appendChild(tabs); const re = el('button', 'btn', '↻'); re.title = 'Actualizar'; re.onclick = () => { ADM.r = null; admPinta(); admCarga(true); }; hd.appendChild(re); const x = el('button', 'btn', '✕'); x.title = 'Cerrar'; x.onclick = () => { admCierra(); setTab(state.tab); }; hd.appendChild(x); w.appendChild(hd);
   if (ADM.sec === 'herramientas') { admHerr(w); return; }
+  if (ADM.sec === 'feedback') { admFeedback(w); return; }   /* v342 */
   if (!r) { w.appendChild(el('p', 'admvacio', 'Leyendo…')); return; }
   if (!r.ok) { w.appendChild(el('p', 'admvacio', esc(r.error || 'No se ha podido abrir el panel.'))); return; }
   if (ADM.sec === 'resumen') admResumen(w, r); else admMiembros(w, r);
   w.scrollTop = y; }
+async function admFeedback(w) { // v342: 💡 lo que deja la gente con el botón de feedback (lo último arriba)
+  const host = el('div', 'admfb'); w.appendChild(host); host.appendChild(el('p', 'admvacio', 'Leyendo…')); let r = null; try { r = await fetch('/api/admin/feedback').then(x => x.json()); } catch (e) {}
+  host.innerHTML = ''; if (!r || !r.ok) { host.appendChild(el('p', 'admvacio', esc((r && r.error) || 'No se ha podido leer el feedback.'))); return; }
+  if (!r.items.length) { host.appendChild(el('p', 'admvacio', 'Todavía nadie ha dejado feedback.')); return; }
+  let visto = ''; try { visto = localStorage.getItem('am_fb_visto') || ''; } catch (e) {} try { localStorage.setItem('am_fb_visto', r.items[0].t || ''); } catch (e) {}
+  host.appendChild(el('h4', 'admh4', `Feedback · ${r.items.length}`));
+  r.items.forEach(f => { const nuevo = visto && f.t > visto; const c = el('div', 'admfbc' + (nuevo ? ' nuevo' : ''), `<div class="admfbh"><b>${esc((f.usuario || 'alguien').split('@')[0])}</b><small>${esc(f.t || '')}${f.seccion ? ' · ' + esc(f.seccion) : ''}</small><em>${esc(f.tipo || '')}${f.via ? ' · ' + esc(f.via) : ''}</em></div><p>${esc(f.texto || '')}</p>`); host.appendChild(c); }); }
 function admResumen(w, r) {
   const R = r.resumen, dk = r.disco; const g = el('div', 'admstats');
   const st = (ic, n, t, sub, fn) => { const c = el(fn ? 'button' : 'div', 'admstat', `<span>${ic}</span><b>${n}</b><small>${t}</small>${sub ? `<i>${sub}</i>` : ''}`); if (fn) c.onclick = fn; g.appendChild(c); };

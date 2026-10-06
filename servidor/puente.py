@@ -43,7 +43,7 @@ MAX_CUERPO = 40 * 1024 * 1024    # tope de una petición en modo servidor
 MAX_BIBLIO = 200 * 1024 * 1024   # tope de un fichero de la biblioteca común al copiarlo
 KINDS = ('vestidor', 'hair', 'expr')   # las bibliotecas a las que una cuenta puede añadir lo suyo
 _UUID = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
-VERSION = 341
+VERSION = 342
 _ctx = threading.local()   # la cuenta del hilo: la pone cada petición (y, a mano, cada hilo de fondo)
 def uid(): return getattr(_ctx, 'uid', None)   # en local siempre None
 DUENOS = tuple(e.strip().lower() for e in (os.environ.get('ARIA_DUENOS') or 'mix1994max@gmail.com').split(',') if e.strip())   # cuentas que pueden cambiar a Aria Cruz (en la web, la de Max)
@@ -2901,6 +2901,17 @@ class H(SimpleHTTPRequestHandler):
             if not SERVIDOR or aria_fija(): return self._json(200, {'ok': True, 'total': 0})
             try: return self._json(200, dict({'ok': True}, **_adm_avisos()))
             except Exception: return self._json(200, {'ok': True, 'total': 0})
+        if u.path == '/api/admin/feedback':   # v342: 💡 lo que deja la gente con el botón de feedback (solo el equipo)
+            if not SERVIDOR or aria_fija(): return self._json(403, {'error': 'solo el equipo'})
+            L = []
+            try:
+                with open(os.path.join(DATOS, 'feedback.jsonl'), encoding='utf-8') as fh: lineas = fh.readlines()[-400:]
+                for ln in reversed(lineas):
+                    try: r_ = json.loads(ln)
+                    except Exception: continue
+                    L.append({k_: r_.get(k_) for k_ in ('t', 'texto', 'tipo', 'via', 'seccion', 'usuario')})
+            except FileNotFoundError: pass
+            return self._json(200, {'ok': True, 'items': L})
         if u.path == '/api/admin/panel':   # v280: ⚙️ Admin (solo el equipo)
             if not SERVIDOR or aria_fija(): return self._json(403, {'error': 'solo el equipo'})
             if 'fresco' in q: _ADM_P[1] = None; _ADM_C.clear()
