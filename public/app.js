@@ -548,6 +548,7 @@ function aspectPicker(list, val, onchange) { // cuadraditos con la forma real de
 function mkSel(opts, val, onchange) { const sl = el('select', 'sel'); opts.forEach(([k, n]) => { const o = document.createElement('option'); o.value = k; o.textContent = n; sl.appendChild(o); }); sl.value = val; sl.onchange = () => onchange(sl.value); return sl; }
 function persist(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
 // ---- pool de referencias (estilo Higgsfield/Magnific): se añaden y se quitan; cada una lleva su etiqueta @Image1 / @Video1 / @Audio1 para el prompt
+try { state.vcam = localStorage.getItem('am_vcam') || null; } catch (e) {}   // v283 (si el id ya no existe, vcam() da null)
 state.vpool = state.vpool || []; state.vprompt = state.vprompt || null; state.ipool = state.ipool || []; if (state.showPrompt === undefined) state.showPrompt = true; try { state.nsfw = localStorage.getItem('am_nsfw') === '1'; } catch (e) {}
 function poolTags(pool) { pool = pool || state.vpool; const n = { image: 0, video: 0, audio: 0 }; return pool.map(r => { n[r.kind]++; return { r, tag: '@' + (r.kind === 'image' ? 'Image' : r.kind === 'video' ? 'Video' : 'Audio') + n[r.kind] }; }); }
 function poolHas(src, pool) { return (pool || state.vpool).some(r => r.src === src); }
@@ -814,6 +815,60 @@ function vFrameBox(cual) { // v259: recuadro de imagen inicial / final (opcional
   ['dragenter', 'dragover'].forEach(ev => d.addEventListener(ev, e => { if (!ok) return; e.preventDefault(); e.stopPropagation(); d.classList.add('over'); })); d.addEventListener('dragleave', () => d.classList.remove('over'));
   d.addEventListener('drop', async e => { if (!ok) return; e.preventDefault(); e.stopPropagation(); d.classList.remove('over'); const u = e.dataTransfer.getData('text/uri-list') || e.dataTransfer.getData('text/plain') || ''; if (/^https?:/i.test(u) && new URL(u, location.href).origin === location.origin) { const p = decodeURIComponent(new URL(u).pathname.replace(/^\//, '')); pon(p, p.split('/').pop()); return; } const data = await dropData(e); if (data) pon(data); else toast('No he podido leer esa imagen'); });
   return d; }
+const VCAMS = [   // v283: [id, grupo, emoji, nombre, lo que se escribe en el prompt]
+  ['fija', 'Fija', '⏸', 'Plano fijo', 'cámara completamente quieta, como en un trípode, durante todo el plano: mismo encuadre, altura y distancia de principio a fin.'],
+  ['holandes', 'Fija', '📐', 'Plano holandés', 'cámara quieta pero inclinada en diagonal (horizonte torcido) para dar tensión e inquietud.'],
+  ['cenital', 'Fija', '🔽', 'Cenital', 'cámara justo encima del personaje mirando en vertical hacia abajo, quieta.'],
+  ['pan_d', 'Panorámica', '➡️', 'Panorámica a la derecha', 'la cámara gira en horizontal sobre su propio eje, de izquierda a derecha, suave y constante, con el horizonte recto; termina en un encuadre limpio.'],
+  ['pan_i', 'Panorámica', '⬅️', 'Panorámica a la izquierda', 'la cámara gira en horizontal sobre su propio eje, de derecha a izquierda, suave y constante, con el horizonte recto; termina en un encuadre limpio.'],
+  ['latigo', 'Panorámica', '💨', 'Barrido rápido', 'giro horizontal muy rápido (whip pan) con desenfoque de movimiento, que pasa de un encuadre nítido a otro.'],
+  ['tilt_up', 'Panorámica', '⤴️', 'Inclinar hacia arriba', 'la cámara, sin moverse de sitio, se inclina hacia arriba recorriendo al personaje de los pies a la cara.'],
+  ['tilt_down', 'Panorámica', '⤵️', 'Inclinar hacia abajo', 'la cámara, sin moverse de sitio, se inclina hacia abajo desde la cara del personaje hasta los pies.'],
+  ['zoom_in', 'Zoom', '🔍', 'Zoom lento hacia dentro', 'zoom óptico lento y uniforme hacia la cara del personaje, sin mover la cámara; termina en un plano más cerrado y estable.'],
+  ['zoom_out', 'Zoom', '🔭', 'Zoom lento hacia fuera', 'zoom óptico lento y uniforme que se abre desde la cara del personaje y va mostrando el lugar; termina en un plano amplio y estable.'],
+  ['crash', 'Zoom', '💥', 'Zoom de golpe', 'zoom muy rápido y contundente (crash zoom) hacia la cara del personaje, como un golpe de efecto.'],
+  ['vertigo', 'Zoom', '🌀', 'Efecto vértigo', 'dolly zoom: la cámara se aleja mientras el zoom se cierra; el personaje mantiene su tamaño y el fondo se estira detrás.'],
+  ['dolly_in', 'Travelling', '⏩', 'Acercarse', 'la cámara avanza físicamente en línea recta hacia el personaje, suave y controlada, sin cambiar de altura, hasta un plano más cerrado.'],
+  ['dolly_out', 'Travelling', '⏪', 'Alejarse', 'la cámara retrocede físicamente en línea recta alejándose del personaje, suave y controlada; entra más lugar en el encuadre.'],
+  ['lat_d', 'Travelling', '↪️', 'Travelling lateral a la derecha', 'la cámara se desplaza en línea recta hacia la derecha mirando siempre al mismo sitio; el fondo pasa con paralaje.'],
+  ['lat_i', 'Travelling', '↩️', 'Travelling lateral a la izquierda', 'la cámara se desplaza en línea recta hacia la izquierda mirando siempre al mismo sitio; el fondo pasa con paralaje.'],
+  ['sigue', 'Travelling', '🚶', 'Seguimiento', 'la cámara acompaña al personaje mientras camina, a su mismo ritmo, manteniéndolo siempre bien encuadrado mientras el lugar pasa a su alrededor.'],
+  ['detras', 'Travelling', '👤', 'Seguir por detrás', 'la cámara va detrás del personaje a la altura del hombro y le sigue por su camino; se ve hacia dónde va.'],
+  ['delante', 'Travelling', '🗣️', 'Retroceder delante', 'la cámara retrocede delante del personaje mientras camina hacia ella, cara a cámara, a su mismo paso (walk and talk).'],
+  ['paralelo', 'Travelling', '🏃', 'Seguimiento lateral', 'la cámara avanza en paralelo junto al personaje, de perfil, a su misma velocidad y distancia.'],
+  ['suelo', 'Travelling', '👟', 'A ras de suelo', 'cámara muy baja, casi a ras de suelo, acompañando el movimiento; se ven los pasos y el suelo pasar.'],
+  ['arco_d', 'Alrededor', '↷', 'Arco a la derecha', 'la cámara recorre un arco corto alrededor del personaje hacia la derecha, a la misma distancia y altura; termina viéndolo desde un nuevo ángulo.'],
+  ['arco_i', 'Alrededor', '↶', 'Arco a la izquierda', 'la cámara recorre un arco corto alrededor del personaje hacia la izquierda, a la misma distancia y altura; termina viéndolo desde un nuevo ángulo.'],
+  ['orbita', 'Alrededor', '🔄', 'Órbita completa', 'la cámara da una vuelta completa alrededor del personaje a distancia constante; el personaje queda centrado y el fondo gira detrás.'],
+  ['sube', 'Alrededor', '⬆️', 'Subir en vertical', 'la cámara sube en vertical en línea recta, sin inclinarse, mostrando al personaje desde cada vez más arriba.'],
+  ['baja', 'Alrededor', '⬇️', 'Bajar en vertical', 'la cámara baja en vertical en línea recta, sin inclinarse, hasta la altura de los ojos del personaje.'],
+  ['grua_up', 'Dron y grúa', '🏗️', 'Grúa hacia arriba', 'la cámara se eleva como en una grúa y se aleja por encima del personaje, revelando el lugar desde arriba.'],
+  ['grua_down', 'Dron y grúa', '🎢', 'Grúa hacia abajo', 'la cámara baja desde lo alto, como en una grúa, hasta la altura del personaje.'],
+  ['dron_in', 'Dron y grúa', '🛸', 'Dron acercándose', 'vista aérea que avanza y desciende suavemente hasta llegar al personaje.'],
+  ['dron_out', 'Dron y grúa', '🚁', 'Dron alejándose', 'empieza cerca del personaje y se aleja y eleva en vuelo suave hasta un plano aéreo amplio del lugar.'],
+  ['mano', 'En mano', '🤳', 'Cámara en mano', 'cámara sujeta a mano a la altura de una persona, con ligero balanceo y micro-ajustes naturales.'],
+  ['selfie', 'En mano', '🙋', 'Selfie', 'el personaje se graba a sí mismo con el brazo extendido; el encuadre se mueve con su brazo y el móvil no se ve.'],
+  ['pegada', 'En mano', '🎯', 'Cámara pegada al cuerpo', 'cámara sujeta al cuerpo del personaje (snorricam): su cara queda quieta en el centro y el mundo se mueve a su alrededor.'],
+  ['pov', 'En mano', '👀', 'Primera persona', 'vemos exactamente lo que ven sus ojos (POV), con el movimiento natural de su cabeza.'],
+  ['fpv', 'Especiales', '🏎️', 'Dron FPV', 'vuelo rápido y fluido de dron FPV a baja altura, atravesando el lugar con giros suaves hasta el personaje.'],
+  ['atraviesa', 'Especiales', '🚪', 'Atravesar', 'la cámara avanza y pasa a través de una ventana, puerta o hueco cercano hasta llegar al personaje.'],
+  ['timelapse', 'Especiales', '⏱️', 'Timelapse', 'el tiempo pasa muy rápido: la luz, las nubes y la gente se mueven a gran velocidad mientras el personaje está casi quieto.'],
+  ['maqueta', 'Especiales', '🏘️', 'Efecto maqueta', 'efecto tilt-shift: solo una franja estrecha enfocada y lo de arriba y abajo desenfocado, como una maqueta en miniatura.']];
+const vcam = () => VCAMS.find(c => c[0] === state.vcam) || null;
+function vCamSel() { // v283: 🎥 movimiento de cámara (Crear vídeo) — mismo desplegable que Complementos
+  const C = vcam(); const w = el('div', 'accsel camsel' + (state.camOpen ? ' open' : '') + (C ? ' on' : ''));
+  w.appendChild(el('small', '', 'Cámara')); w.appendChild(el('span', 'cnt', C ? `${C[2]} ${C[3]}` : 'Libre (la decide el modelo)')); w.appendChild(el('span', 'caret', '▾'));
+  const dd = el('div', 'accdd camdd'); const G = ['Todos'].concat([...new Set(VCAMS.map(c => c[1]))]); const fil = state.camG || 'Todos';
+  const ch = el('div', 'camgr'); G.forEach(g => { const b = el('button', g === fil ? 'on' : '', g); b.type = 'button'; b.onclick = e => { e.stopPropagation(); state.camG = g; state.camOpen = true; renderSide(); }; ch.appendChild(b); }); dd.appendChild(ch);
+  const pon = id => { state.vcam = id; persist('am_vcam', id || ''); state.camOpen = false; renderSide(); if (id) toast('🎥 ' + vcam()[3] + ' · añadido al prompt'); };
+  { const r = el('div', 'it' + (!C ? ' on' : ''), '<span class="emo">✨</span><b>Libre</b><em>la decide el modelo</em><span class="ck">✓</span>'); r.onclick = e => { e.stopPropagation(); pon(null); }; dd.appendChild(r); }
+  VCAMS.filter(c => fil === 'Todos' || c[1] === fil).forEach(c => { const r = el('div', 'it' + (C && C[0] === c[0] ? ' on' : ''), `<span class="emo">${c[2]}</span><div class="camtx"><b>${c[3]}</b><small>${c[4]}</small></div><span class="ck">✓</span>`); r.onclick = e => { e.stopPropagation(); pon(c[0]); }; dd.appendChild(r); });
+  w.appendChild(dd);
+  const place = () => { if (!w.isConnected || innerWidth < 768) return; const r = w.getBoundingClientRect(); const h = Math.min(520, innerHeight - 24); Object.assign(dd.style, { position: 'fixed', width: '380px', left: Math.round(r.right + 12) + 'px', top: Math.round(Math.max(12, Math.min(r.top - 8, innerHeight - h - 12))) + 'px', maxHeight: h + 'px' }); };
+  w.onclick = e => { if (e.target.closest('.accdd')) return; state.camOpen = !state.camOpen; w.classList.toggle('open', state.camOpen); if (state.camOpen) place(); };
+  if (state.camOpen) setTimeout(place, 0);
+  setTimeout(() => { const close = e => { if (!w.isConnected) { document.removeEventListener('click', close, true); return; } if (!w.contains(e.target)) { state.camOpen = false; w.classList.remove('open'); } }; document.addEventListener('click', close, true); }, 0);
+  return w; }
 function vPromptBase(it) { // v259: el prompt base con la estructura de la Filmoteca (referencias · personaje · vestuario · peinado · formato/estilo · lugar · acción por tiempos · técnico)
   const P = state.vpool, c = CH(), k = state.comp, sinPj = state.vchar === false; const tag = id => { let n = 0; for (const r of P) { if (r.kind === 'image') n++; if (r.id === id) return '@Image' + n; } return ''; };
   const imgsTags = poolTags(P); const dur = state.vdur || 5; const ar = state.vstart && state.vaspectAuto !== false ? 'el formato de la imagen inicial' : ({ '9:16': 'vertical 9:16', '16:9': 'horizontal 16:9', '1:1': 'cuadrado 1:1', '3:4': 'vertical 3:4', '4:3': 'horizontal 4:3', '21:9': 'panorámico 21:9' }[state.vaspect] || state.vaspect);
@@ -827,7 +882,8 @@ function vPromptBase(it) { // v259: el prompt base con la estructura de la Filmo
     const tp = tag('auto:vestidor'); if (tp) L.push(`VESTUARIO: lleva exactamente la ropa de ${tp}.`);
     const th = tag('auto:hair'); if (th) L.push(`PEINADO: exactamente como en ${th}.`);
     const ac = window.accActive ? accActive().filter(a => (a.desc || a.nombre) && a.tipo !== 'movil' && !(c.aria && /glasses|earring|gafas|pendiente/i.test((a.desc || '') + ' ' + (a.nombre || '')))) : [];   /* las gafas y los aros de Aria ya van en PERSONAJE */ if (ac.length) L.push('COMPLEMENTOS: ' + ac.map(a => { const t = tag('auto:acc:' + a.id); return (a.desc || a.nombre) + (t ? ` exactamente como en ${t}` : ''); }).join('; ') + '.'); }
-  L.push(`FORMATO: ${dur} s · un solo plano continuo · ${ar}. ` + (k.movie ? `Realismo cinematográfico, encuadres cerrados, poca profundidad de campo. Velocidad real, nada de cámara lenta.` : `Vídeo UGC estilo selfie, cámara en mano con micro-movimientos naturales, sin estabilización, sin gradación de cine, sin luz profesional: auténtico de redes sociales.`));
+  L.push(`FORMATO: ${dur} s · un solo plano continuo · ${ar}. ` + (k.movie ? `Realismo cinematográfico, encuadres cerrados, poca profundidad de campo. Velocidad real, nada de cámara lenta.` : vcam() ? `Vídeo natural de redes sociales, sin gradación de cine, sin luz profesional: auténtico.` : `Vídeo UGC estilo selfie, cámara en mano con micro-movimientos naturales, sin estabilización, sin gradación de cine, sin luz profesional: auténtico de redes sociales.`));
+  if (vcam()) L.push(`CÁMARA: ${vcam()[3].toLowerCase()} — ${vcam()[4]} Un único movimiento de cámara en todo el plano.`);   // v283
   if (k.movie) L.push(`ESTILO: look y gradación de color de ${k.movie.name}${k.movie.desc ? ': ' + k.movie.desc.trim().replace(/\.+$/, '') : ''}.`);
   { const tl = tag('auto:lugar'); L.push('LUGAR: ' + (tl ? `el sitio de ${tl}${k.lugar && k.lugar.desc ? ' (' + k.lugar.desc + ')' : ''}.` : state.vstart ? 'el mismo sitio de la imagen inicial.' : 'un salón acogedor con plantas y luz natural de ventana.')); }
   L.push(`ACCIÓN:\n0:00–0:${String(Math.min(dur, 59)).padStart(2, '0')} — ${sinPj ? 'Describe aquí lo que pasa, plano a plano.' : 'Mira a cámara, respira con naturalidad, parpadea y sonríe suavemente.'} SFX: ambiente suave del lugar.`);
@@ -856,8 +912,9 @@ function videoControls(it) {
   { const w4 = el('div'); w4.appendChild(lab('Formato')); const una = !!state.vstart;   /* v259 */ const NOM = { '9:16': 'vertical', '16:9': 'horizontal', '1:1': 'cuadrado', '3:4': 'retrato', '4:3': 'apaisado', '21:9': 'cine' };   // v254: siempre a la vista
     const VA = VM ? (VM.aspect.length ? VM.aspect : []) : V_ASPECTS; const opts = (una || (VM && !VA.length) ? [['auto', VM && !VA.length ? 'Como la imagen' : `Como la imagen (≈ ${ar})`]] : []).concat(VA.map(a => [a, `${a} · ${NOM[a] || ''}`])); const val = una && state.vaspectAuto !== false ? 'auto' : state.vaspect;
     const ap = aspectPicker(VA, val, v => { state.vaspectAuto = false; state.vaspect = v; persist('am_vaspect', v); renderSide(); }); if (opts[0] && opts[0][0] === 'auto') { const [x0, y0] = (ar || '3:4').split(':').map(Number); const r0 = x0 / y0; const bw = r0 >= 1 ? 22 : Math.round(22 * r0), bh = r0 >= 1 ? Math.round(22 / r0) : 22; const b0 = el('button', 'asp auto' + (val === 'auto' ? ' on' : '')); b0.innerHTML = `<i style="width:${bw}px;height:${bh}px"></i><span>Imagen inicial</span>`; b0.title = 'El formato de la imagen inicial'; b0.onclick = () => { state.vaspectAuto = true; renderSide(); }; ap.insertBefore(b0, ap.firstChild); } w4.appendChild(ap);  box.appendChild(w4); }
+  box.appendChild(vCamSel());   // v283: 🎥 movimiento de cámara
   if (!VM || VM.audio) { const ck = el('label', 'chk'); ck.innerHTML = `<input type="checkbox" ${state.vaudio ? 'checked' : ''}> Generar audio (${VM ? 'voz y ambiente' : 'Seedance inventa voz/ambiente'})`; ck.querySelector('input').onchange = e => { state.vaudio = e.target.checked; }; box.appendChild(ck); }
-  const plan = vPromptBase(it); { const sig = state.vpool.map(r => r.id).join(',') + '|' + ((state.comp.movie || {}).id || '') + '|' + !!state.vstart + !!state.vend + '|' + state.vchar; if (state.vpSig !== sig) { state.vpSig = sig; state.vprompt = null; } }   /* v259: como en Crear imagen, cambiar lo elegido rehace el prompt */
+  const plan = vPromptBase(it); { const sig = state.vpool.map(r => r.id).join(',') + '|' + ((state.comp.movie || {}).id || '') + '|' + !!state.vstart + !!state.vend + '|' + state.vchar + '|' + (state.vcam || ''); if (state.vpSig !== sig) { state.vpSig = sig; state.vprompt = null; } }   /* v259: como en Crear imagen, cambiar lo elegido rehace el prompt */
   const pl = el('div', 'lblrow'); pl.appendChild(lab('Prompt')); const rst = el('span', 'lnk', '↺ original'); rst.style.display = state.vprompt ? '' : 'none'; pl.appendChild(rst); box.appendChild(pl); const MAXC = vChars();
   const pw = el('div', 'pw'); const ta = el('textarea', 'prompt'); ta.value = state.vprompt || plan; ta.spellcheck = false; const cnt = el('div', 'pcount'); const cuenta = () => { const n = ta.value.length; const mil = x => String(x).replace(/\B(?=(\d{3})+(?!\d))/g, '.'); cnt.textContent = MAXC ? `${mil(n)} / máx. ${mil(MAXC)} caracteres` : `${mil(n)} caracteres`; cnt.classList.toggle('over', !!MAXC && n > MAXC); }; ta.oninput = () => { state.vprompt = ta.value.trim() === plan.trim() ? null : ta.value; rst.style.display = state.vprompt ? '' : 'none'; cuenta(); }; rst.onclick = () => { state.vprompt = null; ta.value = plan; rst.style.display = 'none'; cuenta(); }; pw.appendChild(ta); promptWithMenu(ta, pw); box.appendChild(pw); cuenta(); box.appendChild(cnt);
   const est = videoUsd(state.vdur, state.vres, ar);
