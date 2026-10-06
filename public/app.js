@@ -1500,13 +1500,13 @@ function comFichaDr(c, p, o) { // v323: LA ficha de un influencer, igual en toda
   if (c.aria && mia) { // v351: en la cuenta de Aria, sus ajustes también se ven (fijos: siempre pública y abierta; colabora con todos)
     const aj = el('div', 'cpf2aj'); de.appendChild(aj); const fijo = () => toast('Aria es siempre pública y colabora con todos automáticamente');
     const sw = (txt, on) => { const r = el('button', 'cpsw2' + (on ? ' on' : ''), `<span class="cpswt"><i></i></span><b>${txt}</b>`); r.title = 'Aria: fijo'; r.onclick = fijo; aj.appendChild(r); };
-    sw('Público en la Comunidad', true); sw('Abierto a colaborar (solo SFW)', true);
+    sw('Público en la Comunidad', true); sw('Abierto a colaborar', true);
     aj.appendChild(el('label', 'cpf2ig', `<span>Seguidores en Instagram</span><b>${esc(p.igseg || '—')}</b>`)); aj.appendChild(el('small', 'cpnota', 'Aria colabora con todos automáticamente: estos ajustes son fijos.')); }
   if (c.yo) { // tu influencer: sus ajustes, discretos (encima de los botones)
     const aj = el('div', 'cpf2aj'); de.appendChild(aj);
     const sw = (txt, on, fn) => { const r = el('button', 'cpsw2' + (on ? ' on' : ''), `<span class="cpswt"><i></i></span><b>${txt}</b>`); r.onclick = fn; aj.appendChild(r); };
     sw('Público en la Comunidad', !p.oculto, () => comHaz({ accion: 'visible', pid: p.pid, publico: !!p.oculto }, p.oculto ? 'Ahora es público' : 'Ahora está oculto'));
-    if (!p.oculto) sw('Abierto a colaborar (solo SFW)', !!p.abierto, () => comHaz({ accion: 'abierto', pid: p.pid, on: !p.abierto }, p.abierto ? 'Ya no está abierto' : 'Abierto a colaborar'));
+    if (!p.oculto) sw('Abierto a colaborar', !!p.abierto, () => comHaz({ accion: 'abierto', pid: p.pid, on: !p.abierto }, p.abierto ? 'Ya no está abierto' : 'Abierto a colaborar'));
     { const igN = p.igseg || ''; const w = el('label', 'cpf2ig', '<span>Seguidores en Instagram</span>'); const i = el('input', 'cpsegin'); i.value = igN; i.placeholder = 'p. ej. 12K'; i.maxLength = 10; const g = () => { if (i.value.trim() !== igN) comHaz({ accion: 'igseg', pid: p.pid, n: i.value.trim() }, 'Guardado'); }; i.onblur = g; i.onkeydown = e => { if (e.key === 'Enter') i.blur(); }; w.appendChild(i); aj.appendChild(w); }
     if (!p.ig) aj.appendChild(el('small', 'cpnota', 'Añade su Instagram en su ficha (Perfil) y saldrá aquí.'));
     const col = D0.solicitudes.filter(z => z.estado === 'aceptada' && z.para === D0.yo && (!z.pid || z.pid === p.pid));

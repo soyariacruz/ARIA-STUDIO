@@ -26,7 +26,7 @@ html.gate #gate{display:flex}
 #gate .gwrap{display:flex;align-items:center;justify-content:center;gap:44px;width:100%;max-width:1040px}
 #gate .gfotos{display:none;gap:14px;align-items:center;flex:1;min-width:0;justify-content:flex-end}
 #gate.entrar .gfotos{display:flex}
-#gate .gfotos img{width:30%;max-width:200px;aspect-ratio:3/4;object-fit:cover;border-radius:20px;box-shadow:0 0 0 4px #fff,0 0 0 5px #cfa966,0 22px 50px rgba(0,0,0,.35);background:var(--panel)}
+#gate .gfotos img{width:32%;max-width:260px;aspect-ratio:3/4;object-fit:cover;border-radius:20px;box-shadow:0 0 0 4px #fff,0 0 0 5px #cfa966,0 22px 50px rgba(0,0,0,.35);background:var(--panel)}
 #gate .gfotos img:nth-child(2){transform:translateY(-26px) scale(1.06)}
 #gate .gpts{display:none;list-style:none;margin:0;padding:0;text-align:left;flex-direction:column;gap:12px}
 #gate.entrar .gpts{display:flex}
@@ -68,7 +68,7 @@ html.sinapi #livedot,html.sinapi .meter{display:none!important}
 
   const gate = document.createElement('div');
   gate.id = 'gate';
-  gate.innerHTML = '<div class="gwrap"><div class="gfotos"><img src="/portada/1.jpg?v=352" alt=""><img src="/portada/2.jpg?v=352" alt=""><img src="/portada/3.jpg?v=352" alt=""></div>' +
+  gate.innerHTML = '<div class="gwrap"><div class="gfotos"><img src="/portada/1.jpg?v=353" alt=""><img src="/portada/2.jpg?v=353" alt=""><img src="/portada/3.jpg?v=353" alt=""></div>' +
     '<div class="gcard"><h1>ARIA<i>STUDIO</i></h1>' +
     '<p id="gateMsg"></p>' +
     '<ul class="gpts"><li><b>Tu personaje, siempre el mismo</b>Crea su ficha una vez y sale igual en todas sus fotos.</li><li><b>Recrea cualquier foto con él</b>Elige una de la Fototeca o arrastra la tuya.</li><li><b>Empiezas con saldo regalo</b>Tus primeras imágenes van por nuestra cuenta. Después, desde 3 céntimos por imagen y sin suscripción.</li></ul>' +
