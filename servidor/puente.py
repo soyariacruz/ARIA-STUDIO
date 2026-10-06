@@ -43,7 +43,7 @@ MAX_CUERPO = 40 * 1024 * 1024    # tope de una petición en modo servidor
 MAX_BIBLIO = 200 * 1024 * 1024   # tope de un fichero de la biblioteca común al copiarlo
 KINDS = ('vestidor', 'hair', 'expr')   # las bibliotecas a las que una cuenta puede añadir lo suyo
 _UUID = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
-VERSION = 312
+VERSION = 313
 _ctx = threading.local()   # la cuenta del hilo: la pone cada petición (y, a mano, cada hilo de fondo)
 def uid(): return getattr(_ctx, 'uid', None)   # en local siempre None
 DUENOS = tuple(e.strip().lower() for e in (os.environ.get('ARIA_DUENOS') or 'mix1994max@gmail.com').split(',') if e.strip())   # cuentas que pueden cambiar a Aria Cruz (en la web, la de Max)
@@ -1675,9 +1675,9 @@ def _vistos():
     try: L = json.load(open(_vistos_fp(), encoding='utf-8'))
     except Exception: L = []
     return [x for x in L if isinstance(x, str)][:300] if isinstance(L, list) else []
-def _avatar_centrado(base, fp):   # v312: la foto del influencer en la Comunidad, con la cara centrada. Se hace UNA vez; si su dueña cambia la foto después, se queda la suya
+def _avatar_centrado(base, fp, grande=False):   # v312: la foto del influencer en la Comunidad, con la cara centrada. Se hace UNA vez; si su dueña cambia la foto después, se queda la suya
     if not SERVIDOR: return None
-    mk = os.path.join(base, '.avatar_auto.json'); out = os.path.join(base, '.avatar_centrado.jpg')
+    mk = os.path.join(base, '.foto_auto.json' if grande else '.avatar_auto.json'); out = os.path.join(base, '.foto_centrada.jpg' if grande else '.avatar_centrado.jpg')   # v313: también la grande (3:4)
     try: mt = os.path.getmtime(fp)
     except OSError: return None
     try: j = json.load(open(mk, encoding='utf-8'))
@@ -1690,7 +1690,7 @@ def _avatar_centrado(base, fp):   # v312: la foto del influencer en la Comunidad
         import cv2
         from PIL import Image
         cc = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
-        for n in ('vista_frente.jpg', 'ficha360.jpg', 'ficha.jpg', os.path.basename(fp)):   # primero su vista de frente; si no, la ficha; si no, la propia foto
+        for n in (('ficha360.jpg', 'ficha.jpg', 'importada.jpg') if grande else ('vista_frente.jpg', 'ficha360.jpg', 'ficha.jpg', os.path.basename(fp))):   # primero su vista de frente; si no, la ficha; si no, la propia foto (la grande, siempre de la ficha entera)
             src = os.path.join(base, n)
             if not os.path.isfile(src): continue
             img = cv2.imread(src)
@@ -1699,6 +1699,10 @@ def _avatar_centrado(base, fp):   # v312: la foto del influencer en la Comunidad
             fs = cc.detectMultiScale(g, scaleFactor=1.1, minNeighbors=6, minSize=(max(40, W // 30), max(40, W // 30)))
             if not len(fs): continue
             x, y, w, h = max(fs, key=lambda f_: int(f_[2]) * int(f_[3]) * 1000 - (int(f_[0]) + int(f_[1])))   # la cara más grande (a igualdad, la de arriba a la izquierda: la de frente)
+            if grande:   # de la cabeza a los hombros, en vertical 3:4, con la cara en el tercio de arriba
+                y0 = int(max(0, y - h * 0.45)); al = int(min(max(w, h) * 2.6 * 4 / 3, H - y0)); an = int(min(al * 3 / 4, W)); al = int(an * 4 / 3); cx = x + w / 2   # si no cabe por abajo, se encoge (no sube: no coge el panel de arriba)
+                x0 = int(min(max(0, cx - an / 2), W - an))
+                im = Image.open(src).convert('RGB').crop((x0, y0, x0 + an, y0 + al)); im.thumbnail((640, 860)); im.save(out, quality=88); ok = True; break
             lado = int(min(max(w, h) * 1.7, W, H)); cx = x + w / 2; cy = y + h * 0.55
             x0 = int(min(max(0, cx - lado / 2), W - lado)); y0 = int(min(max(0, cy - lado / 2), H - lado))
             im = Image.open(src).convert('RGB').crop((x0, y0, x0 + lado, y0 + lado)); im.thumbnail((400, 400)); im.save(out, quality=88); ok = True; break
@@ -2726,6 +2730,9 @@ class H(SimpleHTTPRequestHandler):
             fp = next((os.path.join(base, n) for n in (('vista_frente.jpg', 'avatar.jpg', 'foto.jpg') if grande else ('avatar.jpg', 'foto.jpg')) if os.path.isfile(os.path.join(base, n))), None)   # v230: en grande, su vista de frente o la foto de perfil que ha encuadrado su dueña (no la hoja entera)
             if not fp: return self._corta(404)
             if not grande: fp = _avatar_centrado(base, fp) or fp   # v312: con la cara centrada
+            elif os.path.basename(fp) != 'vista_frente.jpg':   # v313: sin vista de frente, la grande también centrada (sacada de su ficha entera)
+                c_ = _avatar_centrado(base, fp, True)
+                if c_: b = open(c_, 'rb').read(); self.send_response(200); self.send_header('Content-Type', 'image/jpeg'); self.send_header('Content-Length', str(len(b))); self.send_header('Cache-Control', 'private, max-age=600'); self.end_headers(); self.wfile.write(b); return
             if grande:   # la foto de la ficha, en grande para la galería (copia de 640 px, hecha una vez)
                 fg = os.path.join(base, '.galeria_640_' + os.path.basename(fp))
                 if not os.path.isfile(fg) or os.path.getmtime(fg) < os.path.getmtime(fp):
