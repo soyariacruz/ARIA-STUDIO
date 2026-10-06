@@ -43,7 +43,7 @@ MAX_CUERPO = 40 * 1024 * 1024    # tope de una petición en modo servidor
 MAX_BIBLIO = 200 * 1024 * 1024   # tope de un fichero de la biblioteca común al copiarlo
 KINDS = ('vestidor', 'hair', 'expr')   # las bibliotecas a las que una cuenta puede añadir lo suyo
 _UUID = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
-VERSION = 296
+VERSION = 297
 _ctx = threading.local()   # la cuenta del hilo: la pone cada petición (y, a mano, cada hilo de fondo)
 def uid(): return getattr(_ctx, 'uid', None)   # en local siempre None
 DUENOS = tuple(e.strip().lower() for e in (os.environ.get('ARIA_DUENOS') or 'mix1994max@gmail.com').split(',') if e.strip())   # cuentas que pueden cambiar a Aria Cruz (en la web, la de Max)
@@ -2156,6 +2156,26 @@ def _mu_genera(ctx_n, modelo, voces):   # en segundo plano, una a una, con la cl
             except Exception as e: _MU['error'] = str(e)[:160]
             _MU['faltan'] = max(0, _MU['faltan'] - 1)
     _MU['en_marcha'] = False; plog(f'🎙 muestras de voz {modelo}: {_MU["hechas"]} hechas' + (f' · último error: {_MU["error"]}' if _MU['error'] else ''))
+PROMPTER_LLM = os.environ.get('ARIA_PROMPTER_LLM') or 'claude-sonnet-5-5'   # v297: el asistente de prompts (rápido y barato)
+PROMPTER_SIS = {'audio': """Eres un experto en escribir prompts para Seed Audio 1.0 (ByteDance), un modelo que genera voz humana MUY natural y el ambiente sonoro a la vez.
+Escribes UN prompt listo para pegar, con esta estructura exacta:
+1) Una línea de cabecera: «<N>-sec <tipo de escena> scene, hyper-natural, casual, <idioma/acento en inglés>, organic acoustic environment.»
+2) [AESTHETIC] con 4 viñetas «• Texture:», «• Environment:», «• Voice (Woman|Man):» (en español: edad, acento, tono, cero teatralidad) y «• Palette:» (sonidos del sitio).
+3) [EXECUTION] con la secuencia: [AMBI] ambiente inicial -> [DIAL] Woman|Man (tono, idioma): "frase" -> [EVENT] respiración/pausa/risa... y la última frase termina en -> [TRANS] cómo se apaga.
+4) [ETIQUETA: idioma y acento, una sola voz, sin narrador, sin música, duración exacta N.0s]
+Reglas: las frases del diálogo, en el idioma que pida la persona (por defecto español de España) y tal cual si te las da; suena a persona real grabándose con el móvil, nunca a locutor; nada de música salvo que la pidan; la duración cuadra con lo que se dice (unas 2,5 palabras por segundo).
+Responde SOLO con un JSON: {"prompt": "…", "nota": "una frase en español explicando qué has hecho"}"""}
+def _prompter(tipo, pedido, ctx_txt=''):   # v297: el asistente de prompts, con la clave de Claude de la cuenta
+    k = _env('ANTHROPIC_API_KEY', 'anthropic.env')
+    if not k: raise RuntimeError('Falta tu clave de Claude en «Mis APIs».')
+    body = {'model': PROMPTER_LLM, 'max_tokens': 2500, 'system': PROMPTER_SIS[tipo], 'messages': [{'role': 'user', 'content': (ctx_txt + '\n\n' if ctx_txt else '') + 'Lo que quiero: ' + pedido}]}
+    rq = urllib.request.Request('https://api.anthropic.com/v1/messages', data=json.dumps(body).encode(), method='POST', headers={'x-api-key': k, 'anthropic-version': '2023-06-01', 'content-type': 'application/json', 'User-Agent': UA})
+    try: r = json.loads(urllib.request.urlopen(rq, timeout=120).read())
+    except urllib.error.HTTPError as e: raise RuntimeError(f'Claude respondió {e.code}: ' + e.read().decode('utf-8', 'replace')[:160])
+    t = ''.join(b.get('text', '') for b in r.get('content') or [] if b.get('type') == 'text')
+    try: j = json.loads(t[t.index('{'):t.rindex('}') + 1])
+    except Exception: j = {'prompt': t.strip(), 'nota': ''}
+    u = r.get('usage') or {}; j['usd'] = round((u.get('input_tokens', 0) * 3 + u.get('output_tokens', 0) * 15) / 1e6, 4); return j
 def _audios():   # mis audios, lo último primero
     d = audio_dir(); out = []
     for n in os.listdir(d):
@@ -3234,12 +3254,20 @@ class H(SimpleHTTPRequestHandler):
             d0[pid] = {k: str(body.get(k) or '').strip()[:600] for k in ('eleven', 'eleven_nombre', 'preset', 'seed', 'desc')}
             fp = _voces_fp(); open(fp + '.tmp', 'w', encoding='utf-8').write(json.dumps(d0, ensure_ascii=False)); os.replace(fp + '.tmp', fp)
             return self._json(200, {'ok': True, 'voces': _voces()})
+        if self.path == '/api/prompter':   # v297: {tipo:'audio', pedido, contexto} → {prompt, nota, usd}
+            n = int(self.headers.get('Content-Length') or 0); body = json.loads(self.rfile.read(min(n, 40000)) or b'{}')
+            if SERVIDOR and aria_fija(): return self._json(403, {'error': 'próximamente'})
+            if not _tope('prompter', 60, 3600): return self._json(429, {'error': 'Muchas peticiones seguidas: espera un rato.'})
+            tipo = body.get('tipo') if body.get('tipo') in PROMPTER_SIS else 'audio'; pedido = str(body.get('pedido') or '').strip()[:4000]
+            if not pedido: return self._json(400, {'error': 'Cuéntale al asistente lo que quieres.'})
+            try: return self._json(200, dict({'ok': True}, **_prompter(tipo, pedido, str(body.get('contexto') or '')[:2000])))
+            except Exception as e: plog('prompter ✕ ' + str(e)[:160]); return self._json(400, {'error': str(e)})
         if self.path == '/api/audio/muestras':   # v293: {modelo:'el'|'seed'} → genera una muestra de cada voz que falte (una vez; el precio lo ve antes el equipo)
             n = int(self.headers.get('Content-Length') or 0); body = json.loads(self.rfile.read(min(n, 5000)) or b'{}')
             if SERVIDOR and aria_fija(): return self._json(403, {'error': 'solo el equipo'})
             if casa_on(): return self._json(400, {'error': 'Hace falta tu propia clave de WaveSpeed.'})
             if _MU['en_marcha']: return self._json(200, {'ok': True, 'mu': _MU})
-            modelo = 'seed' if body.get('modelo') == 'seed' else 'el'; I = _audio_info(); todas = [v for v in I['voces_seed'] if '_es' in v or v.endswith('es')] if modelo == 'seed' else I['voces_el']   # v296: de Seed, solo las que hablan español + [ARIA_VOZ] + [x.get('eleven') for x in _voces().values() if isinstance(x, dict) and x.get('eleven')]; todas = list(dict.fromkeys(todas))   # + la de Aria y las de tus personajes
+            modelo = 'seed' if body.get('modelo') == 'seed' else 'el'; I = _audio_info(); todas = [v for v in I['voces_seed'] if '_es' in v or v.endswith('es')] if modelo == 'seed' else I['voces_el'] + [ARIA_VOZ] + [x.get('eleven') for x in _voces().values() if isinstance(x, dict) and x.get('eleven')]; todas = list(dict.fromkeys(todas))   # v296: de Seed, solo las que hablan español; de ElevenLabs, + la de Aria y las de tus personajes
             ya = _muestras().get(modelo) or {}; faltan = [v for v in todas if re.sub(r'[^A-Za-z0-9_-]', '_', v) not in ya]
             if not faltan: return self._json(200, {'ok': True, 'mu': _MU, 'nada': True})
             _MU.update({'en_marcha': True, 'hechas': 0, 'faltan': len(faltan), 'error': ''})
