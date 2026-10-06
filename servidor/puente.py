@@ -43,7 +43,7 @@ MAX_CUERPO = 40 * 1024 * 1024    # tope de una petición en modo servidor
 MAX_BIBLIO = 200 * 1024 * 1024   # tope de un fichero de la biblioteca común al copiarlo
 KINDS = ('vestidor', 'hair', 'expr')   # las bibliotecas a las que una cuenta puede añadir lo suyo
 _UUID = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
-VERSION = 358
+VERSION = 359
 _ctx = threading.local()   # la cuenta del hilo: la pone cada petición (y, a mano, cada hilo de fondo)
 def uid(): return getattr(_ctx, 'uid', None)   # en local siempre None
 DUENOS = tuple(e.strip().lower() for e in (os.environ.get('ARIA_DUENOS') or 'mix1994max@gmail.com').split(',') if e.strip())   # cuentas que pueden cambiar a Aria Cruz (en la web, la de Max)
@@ -638,7 +638,8 @@ def _adm_cuenta(u):
         NOM = {'WS_API_KEY': 'WaveSpeed', 'ANTHROPIC_API_KEY': 'Claude', 'ARK_API_KEY': 'BytePlus', 'ELEVENLABS_API_KEY': 'ElevenLabs', 'HF_API_KEY': 'Higgsfield', 'HF_KEY': 'Higgsfield', 'HIGGSFIELD_KEY': 'Higgsfield'}
         apis = sorted({NOM.get(k_, k_.replace('_API_KEY', '').replace('_KEY', '').title()) for k_ in K if not k_.endswith('_OFF') and k_ + '_OFF' not in K})
     except OSError: pass
-    r = {'apis': apis, 'creaciones': n, 'ultima': int(ult), 'gasto_mes': round(gasto, 4), 'regalo_mes': round(regalo, 4), 'queda_regalo': None if sin_mon else round(queda, 4), 'personajes': pj, 'clave': clave, 'espacio': esp}
+    RG_ = [h for h in (mo.get('hist') or []) if isinstance(h, dict) and h.get('que') == 'regalo']   # v359: lo que el equipo le ha regalado a mano (todo)
+    r = {'apis': apis, 'creaciones': n, 'ultima': int(ult), 'gasto_mes': round(gasto, 4), 'regalo_mes': round(regalo, 4), 'queda_regalo': None if sin_mon else round(queda, 4), 'personajes': pj, 'clave': clave, 'espacio': esp, 'regalado': round(sum(-float(h.get('usd') or 0) for h in RG_), 4), 'regalos': len(RG_), 'bienvenida_queda': None if sin_mon else round(float(mo.get('bienvenida') or 0), 4)}
     _ADM_C[u] = (time.time(), r); return r
 _ADM_P = [0.0, None]
 def _adm_panel():
@@ -905,7 +906,8 @@ def casa_info_aunque():   # v357: su monedero aunque tenga su propia clave (para
     v = getattr(_ctx, 'regalo_primero', False); _ctx.regalo_primero = True
     try: return casa_info()
     finally: _ctx.regalo_primero = v   # esta cuenta va con el saldo regalo (no tiene clave propia conectada)
-def _regalo_mes(p):   # 4 → 0,50 · 5 → 0,50 · 6 → 1 · 19 → 2 · 49 → 5 · 296 al año → 2,50
+def _regalo_mes(p):   # 4 → 0,50 · 5 → 0,50 · 6 → 1 · 19 → 2 · 49 → 5 · 296 al año → 2,50 · v359: APAGADO (Max: solo bienvenida + lo que regale a mano); se enciende con ARIA_REGALO_MENSUAL=1
+    if os.environ.get('ARIA_REGALO_MENSUAL') != '1': return 0.0
     try: p = float(p)
     except (TypeError, ValueError): p = 4.0
     if p <= 0: return 0.0
@@ -957,6 +959,7 @@ def _mon_lee():   # SIEMPRE con _cerrojo('mon') cogido. Da la bienvenida la prim
             m['extra'] = round(float(m.get('extra') or 0) + float(c.get('usd') or 0), 4); m.setdefault('camp', []).append(c['id']); m.setdefault('hist', []).append({'t': int(time.time()), 'dia': time.strftime('%Y-%m-%d', time.gmtime()), 'usd': -float(c.get('usd') or 0), 'que': 'regalo', 'nota': str(c.get('nota') or '')[:80]}); cambia = True
     p = _precio.get(uid(), m.get('precio', 4.0))
     if m.get('mes') != mes: r = _regalo_mes(p); m.update({'mes': mes, 'precio': p, 'mensual': r, 'resto': r}); cambia = True   # lo del mes pasado no se acumula
+    if float(m.get('mensual') or 0) > 0 and _regalo_mes(p) == 0: m.update({'mensual': 0.0, 'resto': 0.0}); cambia = True   # v359: sin regalo mensual
     elif p != m.get('precio'):   # ha cambiado de plan a mitad de mes: su regalo del mes pasa a ser el del plan nuevo, descontando lo ya gastado
         r = _regalo_mes(p); gastado = float(m.get('mensual', 0)) - float(m.get('resto', 0)); m.update({'precio': p, 'mensual': r, 'resto': max(0.0, round(r - gastado, 4))}); cambia = True
     if cambia: _mon_guarda(m)
