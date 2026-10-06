@@ -43,7 +43,7 @@ MAX_CUERPO = 40 * 1024 * 1024    # tope de una petición en modo servidor
 MAX_BIBLIO = 200 * 1024 * 1024   # tope de un fichero de la biblioteca común al copiarlo
 KINDS = ('vestidor', 'hair', 'expr')   # las bibliotecas a las que una cuenta puede añadir lo suyo
 _UUID = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
-VERSION = 330
+VERSION = 331
 _ctx = threading.local()   # la cuenta del hilo: la pone cada petición (y, a mano, cada hilo de fondo)
 def uid(): return getattr(_ctx, 'uid', None)   # en local siempre None
 DUENOS = tuple(e.strip().lower() for e in (os.environ.get('ARIA_DUENOS') or 'mix1994max@gmail.com').split(',') if e.strip())   # cuentas que pueden cambiar a Aria Cruz (en la web, la de Max)
@@ -2193,6 +2193,10 @@ def _prestado(rel):   # 'assets/prestamo/<cid>/<pid>/<ficha|cuerpo|foto>.jpg' �
     u, p = _prestado_p(L[2], L[3])
     if not p: return None
     base = os.path.join(DATOS, 'usuarios', u)
+    if L[4] == 'foto.jpg':   # v331: su foto de perfil = la misma que en la Comunidad (avatar.jpg / foto.jpg de su carpeta)
+        for n_ in ('avatar.jpg', 'foto.jpg'):
+            f_ = os.path.join(base, 'assets', 'personajes', L[3], n_)
+            if _dentro(base, f_) and os.path.isfile(f_): return f_
     for k in PREST_Q[L[4]]:
         r = _rel_ok(p.get(k) or '')
         if not r or not r.startswith('assets/personajes/' + L[3] + '/'): continue
