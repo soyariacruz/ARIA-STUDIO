@@ -43,7 +43,7 @@ MAX_CUERPO = 40 * 1024 * 1024    # tope de una petición en modo servidor
 MAX_BIBLIO = 200 * 1024 * 1024   # tope de un fichero de la biblioteca común al copiarlo
 KINDS = ('vestidor', 'hair', 'expr')   # las bibliotecas a las que una cuenta puede añadir lo suyo
 _UUID = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
-VERSION = 388
+VERSION = 389
 _ctx = threading.local()   # la cuenta del hilo: la pone cada petición (y, a mano, cada hilo de fondo)
 def uid(): return getattr(_ctx, 'uid', None)   # en local siempre None
 DUENOS = tuple(e.strip().lower() for e in (os.environ.get('ARIA_DUENOS') or 'mix1994max@gmail.com').split(',') if e.strip())   # cuentas que pueden cambiar a Aria Cruz (en la web, la de Max)
@@ -2315,7 +2315,7 @@ def _com_aria(d, yo):   # v304: Aria da permiso a cada cuenta para crear con ell
         k = f"{yo}:{p.get('pid')}"
         if not p.get('pid') or k in L: continue
         L.append(k); cambio = True
-        if p.get('nuevo'): M.append({'de': ARIA_CID, 'x': f"⭐ ¡Me encanta {p.get('nombre') or 'tu personaje'}! Ya le sigo. Cuando quieras, cread algo juntas.", 't': t + 0.5})   # solo los recién creados avisan; los de antes, en silencio
+        if p.get('nuevo'): M.append({'de': ARIA_CID, 'x': f"⭐ Me encanta {p.get('nombre') or 'tu personaje'}!! Ya le sigo 🫶 Cuando quieras, creamos algo juntas.", 't': t + 0.5})   # v389 (Max)   # solo los recién creados avisan; los de antes, en silencio
     if cambio: del M[:-500]; d['sig'][ARIA_CID] = L[-5000:]
     return cambio
 def _com_par(a, b): return '|'.join(sorted([a, b]))
@@ -3391,6 +3391,8 @@ class H(SimpleHTTPRequestHandler):
         if u.path == '/api/admin/avisos':   # v290: la burbuja roja de ⚙️ Admin
             if not SERVIDOR or aria_fija(): return self._json(200, {'ok': True, 'total': 0})
             fbn = 0; fbd = str((q.get('fb') or [''])[0])[:19]   # v345: feedback nuevo desde la última vez que se miró
+            try: fbd = max(fbd, str(json.load(open(os.path.join(casa(), 'fb_visto.json'))).get('t') or ''))   # v389: lo visto se recuerda en el servidor (el navegador lo olvidaba)
+            except Exception: pass
             try:
                 with open(os.path.join(DATOS, 'feedback.jsonl'), encoding='utf-8') as fh:
                     for ln in fh.readlines()[-400:]:
@@ -3414,6 +3416,9 @@ class H(SimpleHTTPRequestHandler):
                     except Exception: continue
                     L.append({k_: r_.get(k_) for k_ in ('t', 'texto', 'tipo', 'via', 'seccion', 'usuario')})
             except FileNotFoundError: pass
+            if L and L[0].get('t'):   # v389: abrir la pestaña Feedback = visto hasta el último, para esta cuenta, en el servidor
+                try: json.dump({'t': L[0]['t']}, open(os.path.join(casa(), 'fb_visto.json'), 'w'))
+                except Exception: pass
             return self._json(200, {'ok': True, 'items': L})
         if u.path == '/api/admin/panel':   # v280: ⚙️ Admin (solo el equipo)
             if not SERVIDOR or aria_fija(): return self._json(403, {'error': 'solo el equipo'})

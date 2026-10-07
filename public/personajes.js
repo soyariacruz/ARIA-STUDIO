@@ -773,7 +773,7 @@
     if (vers.length) { sd.appendChild(el('small', 'pjk', 'Versiones generadas')); const st = el('div', 'edvers'); if (pz.src) { const act = el('button', 'edv' + (!ver ? ' on' : ''), `<img src="${pz.src}" alt=""><em>actual</em>`); act.type = 'button'; act.onclick = () => { ED.ver = null; edPinta(); }; st.appendChild(act); }
       vers.slice(0, 15).forEach(v => { const b = el('button', 'edv' + (ver === v ? ' on' : ''), `<img src="${v}" alt="" loading="lazy">`); b.type = 'button'; b.onclick = () => { ED.ver = v; edPinta(); }; st.appendChild(b); }); sd.appendChild(st); }
     const ft = el('div', 'edft'); const dl = el('button', 'btn', '⬇ Descargar'); dl.disabled = !src; dl.onclick = () => { const a = document.createElement('a'); a.href = src; a.download = p.id + '_' + pz.k + '.jpg'; document.body.appendChild(a); a.click(); a.remove(); }; const x = el('button', 'btn', 'Cerrar'); x.onclick = edCierra; ft.appendChild(dl); ft.appendChild(x); sd.appendChild(ft); box.appendChild(sd); }
-  async function montarCombo(p) { const r = await fetch('/api/personaje_combo', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: p.id }) }).then(x => x.json()).catch(e => ({ error: String(e) }));
+  async function montarCombo(p) { setTimeout(() => { try { const q = pj.list.find(x => x.id === p.id); if (q && q.combo && window.setChar) setChar(p.id, true); } catch (e) {} }, 800);   /* v389 */ const r = await fetch('/api/personaje_combo', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: p.id }) }).then(x => x.json()).catch(e => ({ error: String(e) }));
     if (r.ok) { const i = pj.list.findIndex(x => x.id === p.id); pj.list[i] = r.p; syncChars(); toast(`Ficha principal de ${p.nombre} lista`); } else toast('No se pudo montar la ficha principal: ' + r.error); renderProfile(); renderSide(); }
   // ---- FICHA AUTOMÁTICA (v190): cara de cerca (4 vistas) → cuerpo completo → ficha principal, de un tirón. Una sola pregunta al empezar, con el coste total.
   //      El estado va en el propio personaje (`autoFicha`), así que sobrevive a cerrar la página; cada paso lo dispara el final del trabajo anterior (onJobDone).
@@ -803,7 +803,7 @@
     p = P(); if (p.cuerpoCand) await aprobarCuerpo(p);
     else if (!p.cuerpo) { if (!J('cuerpo')) { cuerpoGen(p, true); await new Promise(r => setTimeout(r, 50)); } return; }
     p = P(); if (p.cuerpo && !p.combo) await montarCombo(p);
-    p = P(); if (p && p.combo) { p.autoFicha = false; await persist_(p); toast(`✓ La ficha de ${p.nombre} está lista`); if (state.tab === 'perfil') { renderProfile(); renderSide(); } }
+    p = P(); if (p && p.combo) { p.autoFicha = false; await persist_(p); toast(`✓ La ficha de ${p.nombre} está lista`); try { if (window.setChar) setChar(p.id, true); } catch (e) {}   /* v389: pasa a ser el principal */ if (state.tab === 'perfil') { renderProfile(); renderSide(); } }
   }
   function fichaReco(p) { // por qué conviene crear la ficha en el formato de ARIA STUDIO, y cómo se hace
     let m0 = document.getElementById('recom'); if (m0) m0.remove(); m0 = el('div', 'fxm'); m0.id = 'recom'; document.body.appendChild(m0); m0.onclick = e => { if (e.target === m0) m0.remove(); };
