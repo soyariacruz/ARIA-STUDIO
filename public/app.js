@@ -1729,17 +1729,19 @@ function navBadges() { // contador rojo en Vestidor mientras hay fichas de prend
   const n = (TABS.vestidor.items || []).filter(i => i.pending).length; b.textContent = n; b.classList.toggle('on', n > 0); }
 setInterval(() => { if (document.querySelector('#nav button[data-tab="vestidor"] .bdv.on') || (TABS.vestidor.items || []).some(i => i.pending)) navBadges(); }, 1500);
 function isVarAux(i) { const m = i.meta || i; return !!(m.hairVar || m.variaciones || m.personaje); }
+const GALH = { on: false, salto: false };
+function galHist() { if (!GALH.on && !state._pop) { GALH.on = true; try { history.pushState({ gal: 1 }, '', location.href); } catch (e) {} } }   // v369
 function galList() { if (state.galGroup) return state.galGroup; if (galIt && galIt.meta && COMP[state.tab]) return TABS.creaciones.items.filter(i => !i.pending && !i.hidden && !isVarAux(i)); if (state.tab === 'biblio') return view().filter(i => !i.group); if (state.tab === 'videoteca' || COMP[state.tab]) return view(); return (state.tab === 'creaciones' || state.tab === 'video' || state.tab === 'crear' ? view() : TABS.creaciones.items.filter(i => !i.hidden && !isVarAux(i))).filter(i => !i.pending); }
 function openGal(it) {
   if (it && it.pub && !it.ajena) { const L = (state.tab === 'biblio' || state.tab === 'videoteca' ? view() : TABS.biblio.items).filter(i => i.pub); return galAjena(L.map(i => i.pub), L.indexOf(it), { tipo: 'pub' }); }
-  galIt = it; const g = $('#gal'), im = $('#galImg'), vd = $('#galVid'); const list = galList(); const i = list.indexOf(it);
+  galIt = it; galHist(); const g = $('#gal'), im = $('#galImg'), vd = $('#galVid'); const list = galList(); const i = list.indexOf(it);
   $('#galN').textContent = `${i + 1} / ${list.length}`; $('#galPrev').disabled = list.length < 2; $('#galNext').disabled = list.length < 2; galZoomReset();
   $('.galmedia').classList.toggle('isvideo', it.kind === 'video'); if (it.kind === 'video' && galTimer) galPlay(false);
   if (it.kind === 'video') { im.style.display = 'none'; vd.style.display = ''; vd.muted = false; if (state.tab === 'videoteca') applySound(vd); if (vd.getAttribute('src') !== it.src) vd.src = it.src; vd.play().catch(() => {}); }
   else { vd.pause(); vd.style.display = 'none'; im.style.display = ''; im.src = (COMP[state.tab] && state.tab !== 'biblio' && !it.meta) ? (state.tab === 'vestidor' ? it.ficha : (state.tab === 'hair' && state.galGroup ? it.files.main : compImage(state.tab, it))) : (it.src || it.image); hiSwap(im, im.getAttribute('src')); }
   if ((state.tab === 'biblio' || state.tab === 'videoteca' || COMP[state.tab]) && !it.meta) libMeta(it, $('#galSide')); else creationMeta(it, $('#galSide')); g.classList.add('on'); requestAnimationFrame(() => { $('.galmedia').style.setProperty('--galnw', $('#galN').offsetWidth + 'px'); });
 }
-function closeGal() { const gm_ = document.querySelector('.galmedia'); if (gm_ && gm_.classList.contains('galfs')) { gm_.classList.remove('galfs'); $('#gzReset').textContent = '⛶'; } state.galGroup = null; $('#gal').classList.remove('on', 'alto'); $('#galVid').pause(); galIt = null; galPlay(false); }
+function closeGal() { GALH.on = false;   /* v369: el Atrás del móvil cierra la imagen */ const gm_ = document.querySelector('.galmedia'); if (gm_ && gm_.classList.contains('galfs')) { gm_.classList.remove('galfs'); $('#gzReset').textContent = '⛶'; } state.galGroup = null; $('#gal').classList.remove('on', 'alto'); $('#galVid').pause(); galIt = null; galPlay(false); }
 let galTimer = 0;
 function galPlay(on) { if (on === undefined) on = !galTimer; clearInterval(galTimer); galTimer = 0; if (on) galTimer = setInterval(() => galStep(1), 4000); $('#galPlay').textContent = galTimer ? '❚❚' : '▶'; $('#galPlay').classList.toggle('on', !!galTimer); }
 $('#galPlay').onclick = e => { e.stopPropagation(); galPlay(); };
@@ -1749,6 +1751,21 @@ function galZoomApply() { const im = $('#galImg'), vd = $('#galVid');   /* v273:
   if (GZ.s > 1 && im.style.display !== 'none') { const bx = im.parentElement.getBoundingClientRect(); const W = bx.width * GZ.s, H = bx.height * GZ.s; P('width', W + 'px'); P('height', H + 'px'); P('left', ((bx.width - W) / 2 + GZ.x) + 'px'); P('top', ((bx.height - H) / 2 + GZ.y) + 'px'); P('right', 'auto'); P('bottom', 'auto'); P('transform', 'none'); P('max-width', 'none'); P('max-height', 'none'); }
   else ['width', 'height', 'left', 'top', 'right', 'bottom', 'transform', 'max-width', 'max-height', 'flex-shrink'].forEach(k => im.style.removeProperty(k));
   vd.style.transform = GZ.s > 1 ? `translate(${GZ.x}px,${GZ.y}px) scale(${GZ.s})` : ''; $('#gzRange').value = GZ.s; $('.galmedia').classList.toggle('zoomed', GZ.s > 1); }
+const GA = { modo: null, dx: 0, dy: 0, fant: null };   // v369: arrastre del visor en el móvil
+function galVecino(d) { const L = galList(); if (L.length < 2) return null; const n = L[(L.indexOf(galIt) + d + L.length) % L.length]; return n ? (n.kind === 'video' ? (n.thumb || n.poster) : (n.src || n.thumb)) : null; }
+function galArrastre(dx, dy, e) { const im = $('#galImg'), box = document.querySelector('#gal .galbox'), gm = document.querySelector('#gal .galmedia'); if (!im || !gm) return;
+  if (!GA.modo) { if (Math.abs(dx) < 8 && Math.abs(dy) < 8) return; GA.modo = Math.abs(dx) > Math.abs(dy) ? 'x' : (dy > 0 ? 'y' : 'no'); }
+  if (GA.modo === 'x') { e.preventDefault(); GA.dx = dx; const W = gm.clientWidth; im.style.transition = 'none'; im.style.transform = `translateX(${dx}px)`;
+    const d = dx < 0 ? 1 : -1; if (!GA.fant || GA.fant._d !== d) { if (GA.fant) GA.fant.remove(); const src = galVecino(d); if (src) { const f = document.createElement('img'); f.className = 'galfant'; f.src = src; f._d = d; gm.appendChild(f); GA.fant = f; } else GA.fant = null; }
+    if (GA.fant) { GA.fant.style.transition = 'none'; GA.fant.style.transform = `translateX(${dx + (GA.fant._d > 0 ? W : -W)}px)`; } }
+  else if (GA.modo === 'y') { e.preventDefault(); GA.dy = Math.max(0, dy); if (box) { box.style.transition = 'none'; box.style.transform = `translateY(${GA.dy}px)`; box.style.opacity = String(Math.max(.4, 1 - GA.dy / 600)); } } }
+function galArrastreFin() { const im = $('#galImg'), box = document.querySelector('#gal .galbox'), gm = document.querySelector('#gal .galmedia'); const modo = GA.modo; GA.modo = null; if (!im || !gm) return;
+  if (modo === 'x') { const W = gm.clientWidth, dx = GA.dx, d = dx < 0 ? 1 : -1; GA.dx = 0; const f = GA.fant; GA.fant = null;
+    if (Math.abs(dx) > W * 0.22 && f) { im.style.transition = f.style.transition = 'transform .22s ease-out'; im.style.transform = `translateX(${d > 0 ? -W : W}px)`; f.style.transform = 'translateX(0)';
+      setTimeout(() => { galStep(d); im.style.transition = 'none'; im.style.transform = ''; setTimeout(() => f.remove(), 120); try { galZoomReset(); } catch (e) {} }, 220); }
+    else { im.style.transition = 'transform .2s ease-out'; im.style.transform = 'translateX(0)'; if (f) { f.style.transition = 'transform .2s ease-out'; f.style.transform = `translateX(${d > 0 ? W : -W}px)`; setTimeout(() => f.remove(), 220); } } }
+  else if (modo === 'y' && box) { const dy = GA.dy; GA.dy = 0; if (dy > 110) { box.style.transition = 'transform .2s ease-out, opacity .2s'; box.style.transform = 'translateY(100vh)'; box.style.opacity = '0'; setTimeout(() => { closeGal(); box.style.transition = 'none'; box.style.transform = ''; box.style.opacity = ''; }, 200); }
+    else { box.style.transition = 'transform .2s ease-out, opacity .2s'; box.style.transform = ''; box.style.opacity = ''; } } }
 function galZoomReset() { GZ.s = 1; GZ.x = 0; GZ.y = 0; galZoomApply(); }
 function galZoomTo(s, cx, cy) { const box = $('.galmedia').getBoundingClientRect(); const ns = Math.max(1, Math.min(6, s)); if (cx != null) { const px = cx - box.left - box.width / 2, py = cy - box.top - box.height / 2; GZ.x = px - (px - GZ.x) * (ns / GZ.s); GZ.y = py - (py - GZ.y) * (ns / GZ.s); } GZ.s = ns; if (GZ.s === 1) { GZ.x = 0; GZ.y = 0; } galZoomApply(); }
 (function () { // v281: en el móvil — deslizar cambia de imagen; pellizcar o doble toque, zoom; con zoom, un dedo mueve la imagen
@@ -1759,7 +1776,8 @@ function galZoomTo(s, cx, cy) { const box = $('.galmedia').getBoundingClientRect
   gm.addEventListener('touchmove', e => { if (innerWidth >= 768) return; if (e.touches.length === 2 && p0) { e.preventDefault(); const [a, b] = e.touches; galZoomTo(s0 * Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY) / p0, (a.clientX + b.clientX) / 2, (a.clientY + b.clientY) / 2); }
     else if (pan && GZ.s > 1) { e.preventDefault(); GZ.x = pan.gx + e.touches[0].clientX - pan.x; GZ.y = pan.gy + e.touches[0].clientY - pan.y; galZoomApply(); } }, { passive: false });
   gm.addEventListener('touchend', e => { if (innerWidth >= 768) return; if (e.touches.length < 2) p0 = null; if (!e.touches.length) pan = null;
-    if (x0 != null && GZ.s <= 1 && !e.touches.length) { const t = e.changedTouches[0]; const dx = t.clientX - x0, dy = t.clientY - y0; x0 = null; if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy) * 1.4) galStep(dx < 0 ? 1 : -1); } }, { passive: true });
+    if (x0 != null && GZ.s <= 1 && !e.touches.length) { x0 = null; galArrastreFin(e.changedTouches[0]); } }, { passive: true });
+  gm.addEventListener('touchmove', e => { if (innerWidth >= 768 || x0 == null || GZ.s > 1 || e.touches.length !== 1) return; galArrastre(e.touches[0].clientX - x0, e.touches[0].clientY - y0, e); }, { passive: false });   /* v369 */
 })();
 swipe(document.querySelector('.mirror-wrap'), d => { if (document.body.classList.contains('mvdet')) step(d); });
 swipe(document.querySelector('aside#side'), d => { if (document.body.classList.contains('mvdet')) step(d); });   // también sobre el panel (la prenda, sus vistas…)   // v281: en la página de detalle, deslizar = siguiente / anterior
@@ -3167,8 +3185,12 @@ function modalCierra(top) { // v337: cerrar una ventana como lo haría su dueña
 new MutationObserver(M => { M.forEach(m => m.addedNodes.forEach(n => { if (!(n.nodeType === 1 && n.classList && n.classList.contains('fxm'))) return;   // v337: toda ventana nueva lleva la ✕ común (también las que se creen más adelante)
   setTimeout(() => { if (!n.isConnected || n.querySelector('.carpverx, .galx, .cpx, .fichx')) return; const box = n.firstElementChild; if (!box) return; if (getComputedStyle(box).position === 'static') box.style.position = 'relative';
     const x = el('button', 'btn carpverx mx0', '✕'); x.type = 'button'; x.title = 'Cerrar (Esc)'; x.onclick = e => { e.stopPropagation(); x.remove(); modalCierra(n); }; box.appendChild(x); }, 0); })); }).observe(document.body, { childList: true });
-window.addEventListener('popstate', () => { const h = (location.hash || '').slice(1); state._pop = true;   // v317: Atrás / Adelante del navegador
+window.addEventListener('popstate', ev => { if (GALH.salto) { GALH.salto = false; return; }   // v369: el paso de la imagen ya se cerró desde la ✕
+  if ($('#gal').classList.contains('on')) { GALH.on = false; state._pop = true; try { closeGal(); } finally { state._pop = false; } return; }   // v369: Atrás con una imagen abierta → se cierra la imagen
+  if (ev && ev.state && ev.state.base) { try { history.pushState({ app: 1 }, '', location.href); } catch (e) {} return; }   // v369: Atrás en la pantalla principal → no te saca al login
+  const h = (location.hash || '').slice(1); state._pop = true;   // v317: Atrás / Adelante del navegador
   try { if (h === 'comunidad') { if (!COM.on) comAbre('dir'); } else { if (COM && COM.on) comCierra(true); if (h && TABS[h] && h !== state.tab) setTab(h); } } catch (e) {} finally { state._pop = false; } });
+try { if (!(history.state && (history.state.base || history.state.app))) { history.replaceState({ base: 1 }, '', location.href); history.pushState({ app: 1 }, '', location.href); } } catch (e) {}   // v369: un escalón para que Atrás nunca vuelva al login
 if (location.hash === '#comunidad') { const esperaCom = setInterval(() => { if (state.ready && document.querySelector('#nav .combtn')) { clearInterval(esperaCom); COM.visto = true; comAbre(); } }, 600); }
 async function openPapelera(tipo0) { // v294: 🗑 papelera general — creaciones, personajes, prendas, fichas y audios; 30 días para recuperarlos
   let m0 = $('#papm'); if (m0) m0.remove(); m0 = el('div', 'fxm'); m0.id = 'papm'; document.body.appendChild(m0); m0.onclick = e => { if (e.target === m0) cierra(); };
