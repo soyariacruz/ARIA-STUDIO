@@ -2544,12 +2544,28 @@ function avisoNuevo() { // v367: lo último que ha llegado → sonido + notifica
   const viendo = !document.hidden && COM.on && COM.vista === 'msg' && COM.arg === con; if (viendo) return;
   avisoSuena();
   try { if ('Notification' in window && Notification.permission === 'granted') { const nt = new Notification(tit, { body: cuerpo, tag: 'aria-' + con, icon: '/portada/1.jpg' }); nt.onclick = () => { window.focus(); nt.close(); COM.visto = true; comAbre('msg', con); }; } } catch (e) {} }
-function avisoPide() { // v367: al entrar, si aún no tiene los avisos activados, se le pregunta (una vez por sesión) hasta que los acepta
+const APPI = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1), APPSOLA = matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;   // v375
+async function pushActiva() { // v375: este aparato recibe avisos aunque la web esté cerrada (si el navegador lo permite y ya dio permiso)
+  try { if (!(window.CUENTA && CUENTA.web) || !('serviceWorker' in navigator) || !('PushManager' in window) || Notification.permission !== 'granted') return false;
+    const reg = await navigator.serviceWorker.register('/sw.js'); await navigator.serviceWorker.ready; const j = await fetch('/api/push/clave').then(r => r.json()); if (!j.clave) return false;
+    let sub = await reg.pushManager.getSubscription(); if (!sub) sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: Uint8Array.from(atob(j.clave.replace(/-/g, '+').replace(/_/g, '/')), c => c.charCodeAt(0)) });
+    const r = await fetch('/api/push/alta', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(sub.toJSON()) }); return r.ok; } catch (e) { console.warn('avisos push', e); return false; } }
+if ('serviceWorker' in navigator) navigator.serviceWorker.addEventListener('message', e => { const d = e.data || {}; if (d.abre) { COM.visto = true; comAbre('msg', d.abre); } else if (d.aviso) { try { comAvisos && comAvisos(); } catch (er) {} } });
+(function () { const p = new URLSearchParams(location.search).get('aviso'); if (!p) return; let n = 0; const t = setInterval(() => { if (++n > 30) clearInterval(t); if (state.ready && COM.D) { clearInterval(t); COM.visto = true; comAbre('msg', p); } }, 700); })();
+function avisoIphone() { // v375: en el iPhone los avisos solo funcionan con ARIA STUDIO en la pantalla de inicio → se explica una vez (y se recuerda cada 7 días)
+  if (!(window.CUENTA && CUENTA.web) || !APPI || APPSOLA) return; try { if (Date.now() - Number(localStorage.getItem('am_iphone_app') || 0) < 7 * 864e5) return; localStorage.setItem('am_iphone_app', Date.now()); } catch (e) {}
+  let m0 = $('#avisom'); if (m0) m0.remove(); m0 = el('div', 'fxm'); m0.id = 'avisom'; document.body.appendChild(m0); m0.onclick = e => { if (e.target === m0) m0.remove(); };
+  const b = el('div', 'devbox avisobox'); m0.appendChild(b); b.appendChild(el('div', 'devemo', '📲')); b.appendChild(el('h3', '', 'Ponte ARIA STUDIO como app'));
+  b.appendChild(el('p', '', 'Así se abre a pantalla completa y te llegan los avisos de mensajes aunque la tengas cerrada:<br><b>1.</b> Pulsa <b>Compartir</b> (el cuadrado con la flecha, abajo).<br><b>2.</b> Elige <b>«Añadir a pantalla de inicio»</b>.<br><b>3.</b> Abre ARIA STUDIO desde su icono y activa los avisos.'));
+  const ft = el('div', 'pjacts'); const ok = el('button', 'btn acc big', 'Entendido'); ok.onclick = () => m0.remove(); ft.appendChild(ok); b.appendChild(ft); }
+function avisoPide() { // v367: al entrar, si aún no tiene los avisos activados, se le pregunta (una vez por sesión) hasta que los acepta · v375: y este aparato se suscribe a los avisos con la web cerrada
+  if (window.CUENTA && CUENTA.web && 'Notification' in window && Notification.permission === 'granted') { pushActiva(); return; }
+  if (window.CUENTA && CUENTA.web && APPI && !APPSOLA) { avisoIphone(); return; }
   if (!(window.CUENTA && CUENTA.web) || !('Notification' in window) || Notification.permission !== 'default') return; try { if (sessionStorage.getItem('am_aviso_pedido')) return; sessionStorage.setItem('am_aviso_pedido', '1'); } catch (e) {}
   let m0 = $('#avisom'); if (m0) m0.remove(); m0 = el('div', 'fxm'); m0.id = 'avisom'; document.body.appendChild(m0); m0.onclick = e => { if (e.target === m0) m0.remove(); };
   const b = el('div', 'devbox avisobox'); m0.appendChild(b); b.appendChild(el('div', 'devemo', '🔔')); b.appendChild(el('h3', '', '¿Te avisamos cuando te escriban?'));
-  b.appendChild(el('p', '', 'Cuando te llegue un mensaje o alguien quiera colaborar contigo, te saldrá una notificación en el ordenador (como un WhatsApp) mientras tengas ARIA STUDIO abierto, aunque estés en otra pestaña.'));
-  const ft = el('div', 'pjacts'); const si = el('button', 'btn acc big', 'Activar avisos'); si.onclick = async () => { let r = 'default'; try { r = await Notification.requestPermission(); } catch (e) {} m0.remove(); if (r === 'granted') { toast('🔔 Avisos activados'); avisoSuena(); } else if (r === 'denied') toast('Avisos bloqueados: puedes activarlos en los ajustes del navegador'); };
+  b.appendChild(el('p', '', 'Cuando te llegue un mensaje o alguien quiera colaborar contigo, te saldrá una notificación (como un WhatsApp), aunque tengas ARIA STUDIO cerrado.'));
+  const ft = el('div', 'pjacts'); const si = el('button', 'btn acc big', 'Activar avisos'); si.onclick = async () => { let r = 'default'; try { r = await Notification.requestPermission(); } catch (e) {} m0.remove(); if (r === 'granted') { toast('🔔 Avisos activados'); avisoSuena(); pushActiva(); } else if (r === 'denied') toast('Avisos bloqueados: puedes activarlos en los ajustes del navegador'); };
   const no = el('button', 'btn', 'Ahora no'); no.onclick = () => m0.remove(); ft.appendChild(si); ft.appendChild(no); b.appendChild(ft); }
 setTimeout(() => { if (state.ready) avisoPide(); else setTimeout(avisoPide, 6000); }, 5000);
 function comPrestSync() { // lo prestado ha cambiado: salen de la imagen los personajes para los que ya no hay permiso y Crear imagen se repinta

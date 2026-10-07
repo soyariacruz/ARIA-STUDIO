@@ -43,7 +43,7 @@ MAX_CUERPO = 40 * 1024 * 1024    # tope de una petición en modo servidor
 MAX_BIBLIO = 200 * 1024 * 1024   # tope de un fichero de la biblioteca común al copiarlo
 KINDS = ('vestidor', 'hair', 'expr')   # las bibliotecas a las que una cuenta puede añadir lo suyo
 _UUID = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
-VERSION = 374
+VERSION = 375
 _ctx = threading.local()   # la cuenta del hilo: la pone cada petición (y, a mano, cada hilo de fondo)
 def uid(): return getattr(_ctx, 'uid', None)   # en local siempre None
 DUENOS = tuple(e.strip().lower() for e in (os.environ.get('ARIA_DUENOS') or 'mix1994max@gmail.com').split(',') if e.strip())   # cuentas que pueden cambiar a Aria Cruz (en la web, la de Max)
@@ -2297,6 +2297,98 @@ def _com_aria(d, yo):   # v304: Aria da permiso a cada cuenta para crear con ell
     if cambio: del M[:-500]; d['sig'][ARIA_CID] = L[-5000:]
     return cambio
 def _com_par(a, b): return '|'.join(sorted([a, b]))
+# ---- 🔔 AVISOS PUSH (v375, solo servidor): con la web cerrada, al llegar un mensaje o una solicitud de colaboración. Web Push estándar (RFC 8291 aes128gcm + VAPID RFC 8292).
+#      Las claves VAPID nacen solas la primera vez y viven en el disco de datos (vapid.pem, 0600). Las suscripciones, por cuenta, en push.json.
+def _b64u(b): return base64.urlsafe_b64encode(b).rstrip(b'=').decode()
+def _b64ud(v): v = str(v or ''); return base64.urlsafe_b64decode(v + '=' * (-len(v) % 4))
+PUSH_F = os.path.join(DATOS or RAIZ, 'push.json'); _push_l = threading.Lock(); _VAPID = {}
+PUSH_HOSTS = ('fcm.googleapis.com', '.googleapis.com', '.push.services.mozilla.com', 'push.services.mozilla.com', 'web.push.apple.com', '.push.apple.com', '.notify.windows.com')   # solo los servicios de avisos de los navegadores
+def _vapid():
+    if _VAPID: return _VAPID['k'], _VAPID['pub']
+    from cryptography.hazmat.primitives.asymmetric import ec
+    from cryptography.hazmat.primitives import serialization as se
+    fp = os.path.join(DATOS or RAIZ, 'vapid.pem')
+    try: k = se.load_pem_private_key(open(fp, 'rb').read(), None)
+    except FileNotFoundError:
+        k = ec.generate_private_key(ec.SECP256R1())
+        try:
+            with os.fdopen(os.open(fp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600), 'wb') as f: f.write(k.private_bytes(se.Encoding.PEM, se.PrivateFormat.PKCS8, se.NoEncryption()))
+        except FileExistsError: k = se.load_pem_private_key(open(fp, 'rb').read(), None)
+    _VAPID.update(k=k, pub=_b64u(k.public_key().public_bytes(se.Encoding.X962, se.PublicFormat.UncompressedPoint))); return _VAPID['k'], _VAPID['pub']
+def _push_cifra(data, p256dh, auth, as_k=None, salt=None):   # RFC 8291: el texto del aviso cifrado para ESE navegador (solo él lo puede leer)
+    from cryptography.hazmat.primitives.asymmetric import ec
+    from cryptography.hazmat.primitives import hashes, serialization as se
+    from cryptography.hazmat.primitives.kdf.hkdf import HKDF
+    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+    ua = _b64ud(p256dh); au = _b64ud(auth); as_k = as_k or ec.generate_private_key(ec.SECP256R1()); salt = salt or os.urandom(16)
+    as_pub = as_k.public_key().public_bytes(se.Encoding.X962, se.PublicFormat.UncompressedPoint)
+    ecdh = as_k.exchange(ec.ECDH(), ec.EllipticCurvePublicKey.from_encoded_point(ec.SECP256R1(), ua))
+    ikm = HKDF(algorithm=hashes.SHA256(), length=32, salt=au, info=b'WebPush: info\x00' + ua + as_pub).derive(ecdh)
+    cek = HKDF(algorithm=hashes.SHA256(), length=16, salt=salt, info=b'Content-Encoding: aes128gcm\x00').derive(ikm)
+    nonce = HKDF(algorithm=hashes.SHA256(), length=12, salt=salt, info=b'Content-Encoding: nonce\x00').derive(ikm)
+    return salt + (4096).to_bytes(4, 'big') + bytes([len(as_pub)]) + as_pub + AESGCM(cek).encrypt(nonce, data + b'\x02', None)
+def _push_host_ok(ep):
+    u = urllib.parse.urlsplit(str(ep or '')); h = (u.hostname or '').lower()
+    return u.scheme == 'https' and not u.username and u.port in (None, 443) and any(h == x or (x.startswith('.') and h.endswith(x)) for x in PUSH_HOSTS)
+def _push_envia(sub, d):   # → código HTTP del servicio de avisos (201 = entregado; 404/410 = suscripción muerta)
+    from cryptography.hazmat.primitives.asymmetric import ec
+    from cryptography.hazmat.primitives import hashes
+    from cryptography.hazmat.primitives.asymmetric.utils import decode_dss_signature
+    if not _push_host_ok(sub.get('endpoint')): return 400
+    k, pub = _vapid(); u = urllib.parse.urlsplit(sub['endpoint'])
+    js = lambda o: _b64u(json.dumps(o, separators=(',', ':')).encode())
+    fir = f"{js({'typ': 'JWT', 'alg': 'ES256'})}.{js({'aud': f'{u.scheme}://{u.netloc}', 'exp': int(time.time()) + 12 * 3600, 'sub': 'https://studio.ariacruz.com'})}"
+    r_, s_ = decode_dss_signature(k.sign(fir.encode(), ec.ECDSA(hashes.SHA256()))); jwt = fir + '.' + _b64u(r_.to_bytes(32, 'big') + s_.to_bytes(32, 'big'))
+    body = _push_cifra(json.dumps(d, ensure_ascii=False).encode('utf-8'), sub['p256dh'], sub['auth'])
+    rq = urllib.request.Request(sub['endpoint'], data=body, method='POST', headers={'Authorization': f'vapid t={jwt}, k={pub}', 'Content-Encoding': 'aes128gcm', 'Content-Type': 'application/octet-stream', 'TTL': '86400', 'Urgency': 'high', 'User-Agent': UA})
+    try:
+        with urllib.request.urlopen(rq, timeout=20) as r: return r.status
+    except urllib.error.HTTPError as e: return e.code
+def _push_lee():
+    try: P = json.load(open(PUSH_F, encoding='utf-8'))
+    except Exception: P = {}
+    return P if isinstance(P, dict) else {}
+def _push_guarda(P):
+    with open(PUSH_F + '.tmp', 'w', encoding='utf-8') as fh: json.dump(P, fh)
+    os.replace(PUSH_F + '.tmp', PUSH_F)
+def _push_a(u, d):   # manda un aviso a todos los aparatos de una cuenta; las suscripciones muertas se borran
+    with _push_l: L = list(_push_lee().get(u) or [])
+    muertas = []
+    for sub in L:
+        try: c = _push_envia(sub, d)
+        except Exception as e: plog('aviso push ✕ ' + str(e)[:120]); continue
+        if c in (404, 410): muertas.append(sub.get('endpoint'))   # solo las que el navegador da por muertas
+        elif c >= 300: plog(f'aviso push → {c}')
+    if muertas:
+        with _push_l: P = _push_lee(); P[u] = [x for x in (P.get(u) or []) if x.get('endpoint') not in muertas]; _push_guarda(P)
+    return len(L) - len(muertas)
+def _push_vigia():   # cada 12 s: lo nuevo de la Comunidad (mensajes y solicitudes) → aviso a quien lo recibe, si tiene avisos en algún aparato
+    fp = os.path.join(DATOS, 'push_t.json')
+    try: ult = float(json.load(open(fp))['t'])
+    except Exception: ult = time.time()
+    while True:
+        time.sleep(12)
+        try:
+            S = _push_lee()
+            if not any(S.values()): continue
+            d = _com_lee(); nuevo = ult; P = {}
+            for par, M in d['msgs'].items():
+                a, _, b = par.partition('|')
+                for m in (M if isinstance(M, list) else []):
+                    t = float(m.get('t') or 0) if isinstance(m, dict) else 0
+                    if t <= ult: continue
+                    nuevo = max(nuevo, t); de = m.get('de'); para = b if de == a else a
+                    P[(para, de)] = str(m.get('x') or 'Te ha escrito')[:140]
+            for x in d['sol']:
+                t = float(x.get('t') or 0) if isinstance(x, dict) else 0
+                if t > ult and x.get('estado') == 'pendiente': nuevo = max(nuevo, t); P[(x.get('para'), x.get('de'))] = '🤝 Quiere colaborar contigo'
+            if not P: continue
+            ult = nuevo; json.dump({'t': ult}, open(fp, 'w'))
+            CU = _com_cuentas()
+            for (para, de), txt in P.items():
+                u = CU.get(para)
+                if u and S.get(u): threading.Thread(target=_push_a, args=(u, {'titulo': str(d['alias'].get(de) or 'ARIA STUDIO')[:40], 'cuerpo': txt, 'tag': 'aria-' + str(de), 'con': de}), daemon=True).start()
+        except Exception as e: plog('avisos push: vigía ✕ ' + str(e)[:160])
 # ---- el «préstamo» (v202): con una colaboración ACEPTADA, quien la pidió puede crear con el personaje del otro creador.
 #      Su ficha y su cuerpo solo los lee el servidor al generar; al navegador solo le llega su avatar. Nunca con NSFW. Un personaje oculto no se presta.
 PREST_Q = {'ficha.jpg': ('ficha360',), 'cuerpo.jpg': ('cuerpo',), 'foto.jpg': ('avatar', 'foto', 'ficha360')}
@@ -2816,6 +2908,10 @@ class H(SimpleHTTPRequestHandler):
             if not c and not _casa_base(): return self._json(200, {'ok': True, 'casa': None, 'hist': []})
             with _cerrojo('mon'): m = _mon_lee()
             return self._json(200, {'ok': True, 'casa': c, 'hist': [{k: h.get(k) for k in ('t', 'usd', 'que', 'modelo', 'n')} for h in reversed(m.get('hist') or [])][:200]})
+        if u.path == '/api/push/clave':   # v375
+            if not SERVIDOR: return self._json(200, {'ok': False})
+            try: return self._json(200, {'ok': True, 'clave': _vapid()[1]})
+            except Exception as e: return self._json(500, {'error': 'avisos no disponibles: ' + str(e)[:80]})
         if u.path == '/api/ping':
             return self._json(200, {'ok': True, **({'espacio': {'usado': espacio(), 'tope': CUOTA}, 'aria_mia': not aria_fija(), 'nsfw': nsfw_ok()} if SERVIDOR else {}), 'model': MODEL, 'default': CASA_DEF if casa_on() else 'mstudio', 'models': model_list(), 'unavailable': unavailable(), 'ws': bool(load_ws()) or casa_on(), 'casa': casa_info(), 'aspects': ASPECTS, 'key': _hf_listo(), 'ark': bool(load_ark()[0]), 'ark_usd': ARK_USD, 'interno': bool(getattr(_ctx, 'interno', False)) if SERVIDOR else os.path.isfile(os.path.expanduser('~/.claude/notion.env')), **({'servidor': True} if SERVIDOR else {})})   # interno = el ordenador de Max: enseña «Workflows» (en la web alojada, solo las cuentas autorizadas)
         if u.path == '/api/live':   # lo ya generado por la API (assets/live/<item>_<rid>.ext) → la app lo enseña sin volver a generar
@@ -4468,6 +4564,20 @@ class H(SimpleHTTPRequestHandler):
                 except Exception: meta = {}
             meta['hidden'] = bool(body.get('hidden')); meta.setdefault('file', rel); _pub_reset()
             json.dump(meta, open(full + '.json', 'w'), ensure_ascii=False, indent=1); return self._json(200, {'ok': True, 'hidden': meta['hidden']})
+        if self.path in ('/api/push/alta', '/api/push/baja', '/api/push/prueba'):   # v375: los aparatos de la cuenta que reciben avisos
+            if not SERVIDOR: return self._json(400, {'error': 'los avisos push solo existen en la web'})
+            n = int(self.headers.get('Content-Length') or 0); body = json.loads(self.rfile.read(n) or b'{}') if n else {}; u_ = uid()
+            if self.path == '/api/push/prueba':
+                ok_ = _push_a(u_, {'titulo': 'ARIA STUDIO', 'cuerpo': '🔔 Así te llegarán los avisos', 'tag': 'aria-prueba'}); return self._json(200, {'ok': True, 'aparatos': ok_})
+            ep = str((body or {}).get('endpoint') or '')[:800]; ks = (body or {}).get('keys') or {}
+            with _push_l:
+                P = _push_lee()
+                for k_ in list(P): P[k_] = [x for x in P[k_] if x.get('endpoint') != ep]   # un aparato, una sola cuenta (la última que entró en él)
+                if self.path == '/api/push/alta':
+                    if not (_push_host_ok(ep) and re.fullmatch(r'[A-Za-z0-9_-]{80,100}', str(ks.get('p256dh') or '')) and re.fullmatch(r'[A-Za-z0-9_-]{16,32}', str(ks.get('auth') or ''))): return self._json(400, {'error': 'suscripción no válida'})
+                    P[u_] = (P.get(u_) or [])[-7:] + [{'endpoint': ep, 'p256dh': ks['p256dh'], 'auth': ks['auth'], 't': int(time.time())}]
+                P = {k_: v_ for k_, v_ in P.items() if v_}; _push_guarda(P)
+            return self._json(200, {'ok': True, 'aparatos': len(P.get(u_) or [])})
         if self.path == '/api/cancelar':
             n = int(self.headers.get('Content-Length') or 0); body = json.loads(self.rfile.read(n) or b'{}'); rid = body.get('id', '')
             j = _mio(rid)
@@ -4680,6 +4790,7 @@ if __name__ == '__main__':
     _jobs_restore(); threading.Thread(target=_vigilante, daemon=True).start()
     if not SERVIDOR: threading.Thread(target=_sync_bucle, daemon=True).start()   # v350: el local, al día con la Aria de la web
     if SERVIDOR and LIGA_WEB: os.makedirs(LIGA_WEB, exist_ok=True); threading.Thread(target=_liga_vigia, daemon=True).start()   # 🥊 Workflows en la web
+    if SERVIDOR: threading.Thread(target=_push_vigia, daemon=True).start()   # v375: 🔔 avisos push
     if SERVIDOR: print(f'ARIA STUDIO v{VERSION} · modo servidor en http://{HOST}:{PORT} · datos en {DATOS} · orígenes: {", ".join(ORIGENES)}' + (' · ATAJO DE PRUEBAS X-Dev-Uid ACTIVO' if DEV else '') + (f' · 🎁 saldo regalo ACTIVO (tope {CASA_TOPE:g} $/mes)' if CASA_KEY else ' · saldo regalo apagado (falta ARIA_CASA_WS)'), flush=True)
     else: print(f'ARIA MIRROR · puente en http://localhost:{PORT} · modelo {MODEL} · clave {"OK" if _hf_listo() else "FALTA (ID:SECRET)"}')
     ThreadingHTTPServer((HOST, PORT), H).serve_forever()
