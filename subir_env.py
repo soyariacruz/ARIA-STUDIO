@@ -47,6 +47,7 @@ def main():
     for n in nombres:
         api(clave, 'PUT', f'/services/{sid}/env-vars/{n}', {'value': env[n]})
         print(f'✓ {n} → Render ({len(env[n])} caracteres)')
-    print('Hecho. Render reinicia el servicio solo; en ~40 s la web usa los valores nuevos.')
+    dep = api(clave, 'POST', f'/services/{sid}/deploys', {}) or {}   # cambiar variables por la API no redespliega solo: se pide aquí
+    print(f'Hecho. Despliegue pedido a Render ({dep.get("id", "?")}); en 1–2 min la web usa los valores nuevos.')
 
 if __name__ == '__main__': main()
