@@ -43,7 +43,7 @@ MAX_CUERPO = 40 * 1024 * 1024    # tope de una petición en modo servidor
 MAX_BIBLIO = 200 * 1024 * 1024   # tope de un fichero de la biblioteca común al copiarlo
 KINDS = ('vestidor', 'hair', 'expr')   # las bibliotecas a las que una cuenta puede añadir lo suyo
 _UUID = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
-VERSION = 377
+VERSION = 379
 _ctx = threading.local()   # la cuenta del hilo: la pone cada petición (y, a mano, cada hilo de fondo)
 def uid(): return getattr(_ctx, 'uid', None)   # en local siempre None
 DUENOS = tuple(e.strip().lower() for e in (os.environ.get('ARIA_DUENOS') or 'mix1994max@gmail.com').split(',') if e.strip())   # cuentas que pueden cambiar a Aria Cruz (en la web, la de Max)
@@ -1083,6 +1083,8 @@ def unavailable():   # v362: los modelos que esta cuenta NO puede usar, para ens
         for k_, m_ in D_.items():
             if k_ not in AM: out.append({'key': k_, 'name': m_['name'], 'why': 'conecta tu API de ' + api_})
     return out
+GJ_WEB = os.environ.get('ARIA_GENJUTSU') == '1'   # v378: 🎭 Genjutsu en la web publicada (apagado hasta que Max lo apruebe; en local, siempre)
+GJ_EP = {'mt': 'higgsfield/genjutsu/motion-transfer/v1.0', 'sw': 'higgsfield/genjutsu/object-swap/v1.0'}   # docs.higgsfield.ai · por segundo del vídeo de entrada: 480p 0,318 $ · 720p 0,681 $ · 1080p 1,632 $
 UA = 'aria-mirror/1.0 (puente local; +https://higgsfield.ai)'   # Cloudflare devuelve 403 «error code: 1010» al User-Agent por defecto de Python
 if not SERVIDOR:   # en local las carpetas de siempre existen desde el arranque; en servidor cada cuenta crea las suyas la primera vez (live_dir(), video_dir(), pers_dir(), refs_dir())
     for _d in ('live', 'video', 'personajes', 'refs'): os.makedirs(os.path.join(RAIZ, 'assets', _d), exist_ok=True)
@@ -2913,7 +2915,7 @@ class H(SimpleHTTPRequestHandler):
             try: return self._json(200, {'ok': True, 'clave': _vapid()[1]})
             except Exception as e: return self._json(500, {'error': 'avisos no disponibles: ' + str(e)[:80]})
         if u.path == '/api/ping':
-            return self._json(200, {'ok': True, **({'espacio': {'usado': espacio(), 'tope': CUOTA}, 'aria_mia': not aria_fija(), 'nsfw': nsfw_ok()} if SERVIDOR else {}), 'model': MODEL, 'default': CASA_DEF if casa_on() else 'mstudio', 'models': model_list(), 'unavailable': unavailable(), 'ws': bool(load_ws()) or casa_on(), 'casa': casa_info(), 'aspects': ASPECTS, 'key': _hf_listo(), 'ark': bool(load_ark()[0]), 'ark_usd': ARK_USD, 'interno': bool(getattr(_ctx, 'interno', False)) if SERVIDOR else os.path.isfile(os.path.expanduser('~/.claude/notion.env')), **({'servidor': True} if SERVIDOR else {})})   # interno = el ordenador de Max: enseña «Workflows» (en la web alojada, solo las cuentas autorizadas)
+            return self._json(200, {'ok': True, **({'espacio': {'usado': espacio(), 'tope': CUOTA}, 'aria_mia': not aria_fija(), 'nsfw': nsfw_ok()} if SERVIDOR else {}), 'model': MODEL, 'default': CASA_DEF if casa_on() else 'mstudio', 'models': model_list(), 'unavailable': unavailable(), 'ws': bool(load_ws()) or casa_on(), 'casa': casa_info(), 'aspects': ASPECTS, 'key': _hf_listo(), 'ark': bool(load_ark()[0]), 'ark_usd': ARK_USD, 'genjutsu': (not SERVIDOR) or GJ_WEB, 'interno': bool(getattr(_ctx, 'interno', False)) if SERVIDOR else os.path.isfile(os.path.expanduser('~/.claude/notion.env')), **({'servidor': True} if SERVIDOR else {})})   # interno = el ordenador de Max: enseña «Workflows» (en la web alojada, solo las cuentas autorizadas)
         if u.path == '/api/live':   # lo ya generado por la API (assets/live/<item>_<rid>.ext) → la app lo enseña sin volver a generar
             files = {}; allf = []; ld, vd = live_dir(), video_dir()
             for fn in sorted(os.listdir(ld), key=lambda f: os.path.getmtime(os.path.join(ld, f))):
@@ -4678,6 +4680,22 @@ class H(SimpleHTTPRequestHandler):
         try:
             mode = body.get('mode') if body.get('mode') in VIDEO_MODELS else 'i2v'; M = VIDEO_MODELS[mode]
             if body.get('provider') in ('ws', 'wsg') and casa_on(): raise RuntimeError('El vídeo todavía no entra en el saldo regalo: conecta tu propia clave en «Mis APIs».')   # v260: antes de subir nada
+            if body.get('provider') == 'gj':   # v378: 🎭 Genjutsu — un vídeo de 4-30 s + 1-8 imágenes (tu personaje, su ropa, el lugar) → el mismo vídeo con lo tuyo
+                if SERVIDOR and not GJ_WEB: raise RuntimeError('Recrear un vídeo todavía no está disponible')
+                if not _hf_listo(): raise RuntimeError('Genjutsu es de Higgsfield: conecta tu API de Higgsfield en «Mis APIs»')
+                v_ = body.get('video')
+                if not isinstance(v_, dict): raise RuntimeError('falta el vídeo a recrear')
+                vd, vct = img_bytes(v_)
+                if not str(vct).startswith('video/'): raise RuntimeError('eso no es un vídeo')
+                if len(vd) > 200 * 1024 * 1024: raise RuntimeError('el vídeo pesa demasiado (máximo 200 MB)')
+                imgs = [resolve_image(r) for r in by_kind(body.get('refs') or [], 'image')][:8]
+                if not imgs: raise RuntimeError('hace falta al menos una imagen: tu personaje')
+                modo = 'sw' if body.get('gjmodo') == 'sw' else 'mt'; res = body.get('resolution') if body.get('resolution') in ('480p', '720p', '1080p') else '720p'
+                payload = {'video_url': upload_bytes(vd, vct), 'image_urls': imgs, 'prompt': str(body.get('prompt') or '')[:10000], 'resolution': res}
+                res_ = api('POST', '/' + GJ_EP[modo], payload); rid = res_.get('request_id')
+                if not rid: raise RuntimeError('Higgsfield no devolvió id: ' + json.dumps(res_)[:200])
+                jobs[rid] = {'t0': time.time(), 'item': body.get('item', 'video'), 'kind': 'video', 'model': 'gj-' + modo, 'usd': body.get('usd'), 'credits': None, 'meta': body.get('meta') or {}}
+                return self._json(200, {'request_id': rid, 'model': GJ_EP[modo], 'usd': body.get('usd'), 'payload': {k: v for k, v in payload.items() if k not in ('video_url', 'image_urls')}})
             if body.get('provider') == 'ws':   # WaveSpeed: Seedance 2.0 (0,12 $/s a 480p; 720p ×2, 1080p ×5, 4K ×10)
                 res = body.get('resolution') if body.get('resolution') in ('480p', '720p', '1080p', '4k') else '720p'; dur = max(4, min(15, int(body.get('duration') or 5)))
                 prompt = (body.get('prompt') or '').strip() or 'Natural subtle motion, she breathes and blinks.'
