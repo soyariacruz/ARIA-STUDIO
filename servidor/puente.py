@@ -43,7 +43,7 @@ MAX_CUERPO = 40 * 1024 * 1024    # tope de una petición en modo servidor
 MAX_BIBLIO = 200 * 1024 * 1024   # tope de un fichero de la biblioteca común al copiarlo
 KINDS = ('vestidor', 'hair', 'expr')   # las bibliotecas a las que una cuenta puede añadir lo suyo
 _UUID = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
-VERSION = 384
+VERSION = 385
 _ctx = threading.local()   # la cuenta del hilo: la pone cada petición (y, a mano, cada hilo de fondo)
 def uid(): return getattr(_ctx, 'uid', None)   # en local siempre None
 DUENOS = tuple(e.strip().lower() for e in (os.environ.get('ARIA_DUENOS') or 'mix1994max@gmail.com').split(',') if e.strip())   # cuentas que pueden cambiar a Aria Cruz (en la web, la de Max)
@@ -1014,6 +1014,7 @@ def casa_cobra(usd, que, rid=None, modelo=None):   # descuenta del monedero (pri
     _casa_global(usd)
 def _casa_puerta(path, ctype=None):   # qué se puede pedir a WaveSpeed con la clave de la casa (solo POST): subir referencias, leer imágenes (se cobra) y generar con los modelos permitidos y con permiso
     if '/media/upload' in path:
+        ctype = getattr(_ctx, 'sube_ct', '') or ctype   # v385: el tipo de la FOTO (el del envío siempre es multipart)
         if not str(ctype or '').startswith('image/'): plog(f'saldo regalo: referencia rechazada · tipo {ctype!r}'); raise RuntimeError(f'Con el saldo regalo solo se pueden usar imágenes como referencia (una llegó como «{ctype or "sin tipo"}»).')   # v260: nada de alojar otros ficheros en la cuenta de la casa
         return
     if '/any-llm' in path: casa_puede(LECTURA_USD); casa_cobra(LECTURA_USD, 'lectura'); return
@@ -1076,7 +1077,9 @@ def ws_upload(data, ctype):
     if len(_ws_uploads) > 4000: _ws_uploads.clear()
     ext = {'image/png': 'png', 'image/webp': 'webp', 'video/mp4': 'mp4', 'video/quicktime': 'mov', 'video/webm': 'webm', 'audio/mpeg': 'mp3', 'audio/wav': 'wav', 'audio/x-wav': 'wav', 'audio/mp4': 'm4a', 'audio/x-m4a': 'm4a'}.get(ctype, 'jpg')
     raw = b'--WSB\r\nContent-Disposition: form-data; name="file"; filename="a.' + ext.encode() + b'"\r\nContent-Type: ' + ctype.encode() + b'\r\n\r\n' + data + b'\r\n--WSB--\r\n'
-    u = ws('POST', '/api/v3/media/upload/binary', raw=raw, ctype='multipart/form-data; boundary=WSB')
+    _ctx.sube_ct = ctype
+    try: u = ws('POST', '/api/v3/media/upload/binary', raw=raw, ctype='multipart/form-data; boundary=WSB')
+    finally: _ctx.sube_ct = ''
     _ws_uploads[h] = u['data']['download_url']; return _ws_uploads[h]
 def resolve_ws(img):
     data, ctype = img_bytes(img); return ws_upload(data, ctype)
