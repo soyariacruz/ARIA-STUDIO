@@ -1741,7 +1741,7 @@ function openGal(it) {
   else { vd.pause(); vd.style.display = 'none'; im.style.display = ''; im.src = (COMP[state.tab] && state.tab !== 'biblio' && !it.meta) ? (state.tab === 'vestidor' ? it.ficha : (state.tab === 'hair' && state.galGroup ? it.files.main : compImage(state.tab, it))) : (it.src || it.image); hiSwap(im, im.getAttribute('src')); }
   if ((state.tab === 'biblio' || state.tab === 'videoteca' || COMP[state.tab]) && !it.meta) libMeta(it, $('#galSide')); else creationMeta(it, $('#galSide')); g.classList.add('on'); requestAnimationFrame(() => { $('.galmedia').style.setProperty('--galnw', $('#galN').offsetWidth + 'px'); });
 }
-function closeGal() { GALH.on = false;   /* v369: el Atrás del móvil cierra la imagen */ const gm_ = document.querySelector('.galmedia'); if (gm_ && gm_.classList.contains('galfs')) { gm_.classList.remove('galfs'); $('#gzReset').textContent = '⛶'; } state.galGroup = null; $('#gal').classList.remove('on', 'alto'); $('#galVid').pause(); galIt = null; galPlay(false); }
+function closeGal() { GALH.on = false; { const f_ = $('#galfull'); if (f_) f_.remove(); }   /* v371 */   /* v369: el Atrás del móvil cierra la imagen */ const gm_ = document.querySelector('.galmedia'); if (gm_ && gm_.classList.contains('galfs')) { gm_.classList.remove('galfs'); $('#gzReset').textContent = '⛶'; } state.galGroup = null; $('#gal').classList.remove('on', 'alto'); $('#galVid').pause(); galIt = null; galPlay(false); }
 let galTimer = 0;
 function galPlay(on) { if (on === undefined) on = !galTimer; clearInterval(galTimer); galTimer = 0; if (on) galTimer = setInterval(() => galStep(1), 4000); $('#galPlay').textContent = galTimer ? '❚❚' : '▶'; $('#galPlay').classList.toggle('on', !!galTimer); }
 $('#galPlay').onclick = e => { e.stopPropagation(); galPlay(); };
@@ -1766,6 +1766,23 @@ function galArrastreFin() { const im = $('#galImg'), box = document.querySelecto
     else { im.style.transition = 'transform .2s ease-out'; im.style.transform = 'translateX(0)'; if (f) { f.style.transition = 'transform .2s ease-out'; f.style.transform = `translateX(${d > 0 ? W : -W}px)`; setTimeout(() => f.remove(), 220); } } }
   else if (modo === 'y' && box) { const dy = GA.dy; GA.dy = 0; if (dy > 110) { box.style.transition = 'transform .2s ease-out, opacity .2s'; box.style.transform = 'translateY(100vh)'; box.style.opacity = '0'; setTimeout(() => { closeGal(); box.style.transition = 'none'; box.style.transform = ''; box.style.opacity = ''; }, 200); }
     else { box.style.transition = 'transform .2s ease-out, opacity .2s'; box.style.transform = ''; box.style.opacity = ''; } } }
+function galCompleta() { // v371: pantalla completa en el móvil: capa propia sobre todo; ←→ cambia, dos toques/pellizco = zoom, un toque sale
+  let w = $('#galfull'); if (w) w.remove(); w = el('div', ''); w.id = 'galfull'; const im = document.createElement('img'); im.alt = ''; w.appendChild(im); const n = el('span', 'galfulln', ''); w.appendChild(n); document.body.appendChild(w);
+  const Z = { s: 1, x: 0, y: 0 }; const aplica = (an) => { im.style.transition = an ? 'transform .2s ease-out' : 'none'; im.style.transform = `translate(${Z.x}px,${Z.y}px) scale(${Z.s})`; };
+  const pinta = () => { const L = galList(); const i = L.indexOf(galIt); im.src = galIt ? (galIt.src || galIt.thumb) : ''; try { hiSwap(im, im.src); } catch (e) {} n.textContent = L.length && i >= 0 ? `${i + 1} / ${L.length}` : ''; Z.s = 1; Z.x = Z.y = 0; aplica(false); };
+  const sale = () => { w.remove(); }; pinta();
+  let t0 = null, p0 = null, s0 = 1, pan = null, ult = 0, toque = null, mov = false;
+  w.addEventListener('touchstart', e => { if (e.touches.length === 2) { const [a, b] = e.touches; p0 = Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY); s0 = Z.s; t0 = null; return; } const t = e.touches[0]; t0 = { x: t.clientX, y: t.clientY, t: Date.now() }; mov = false; pan = Z.s > 1 ? { x: t.clientX, y: t.clientY, zx: Z.x, zy: Z.y } : null; }, { passive: true });
+  w.addEventListener('touchmove', e => { e.preventDefault(); if (e.touches.length === 2 && p0) { const [a, b] = e.touches; Z.s = Math.max(1, Math.min(6, s0 * Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY) / p0)); if (Z.s === 1) { Z.x = Z.y = 0; } aplica(false); mov = true; return; }
+    if (!t0) return; const t = e.touches[0], dx = t.clientX - t0.x, dy = t.clientY - t0.y; if (Math.abs(dx) > 8 || Math.abs(dy) > 8) mov = true; if (pan) { Z.x = pan.zx + t.clientX - pan.x; Z.y = pan.zy + t.clientY - pan.y; aplica(false); } else { im.style.transition = 'none'; im.style.transform = `translateX(${dx}px)`; } }, { passive: false });
+  w.addEventListener('touchend', e => { if (e.touches.length) return; p0 = null; const t = e.changedTouches[0]; if (!t0) return; const dx = t.clientX - t0.x, dy = t.clientY - t0.y, rapido = Date.now() - t0.t < 300; t0 = null;
+    if (pan) { pan = null; if (mov) return; }
+    if (mov && Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy)) { galStep(dx < 0 ? 1 : -1); setTimeout(pinta, 60); return; }
+    if (mov) { aplica(true); return; }
+    if (!rapido) return; const ahora = Date.now();
+    if (ahora - ult < 300) { clearTimeout(toque); ult = 0; if (Z.s > 1) { Z.s = 1; Z.x = Z.y = 0; } else { Z.s = 2.5; Z.x = (innerWidth / 2 - t.clientX) * 1.5; Z.y = (innerHeight / 2 - t.clientY) * 1.5; } aplica(true); return; }
+    ult = ahora; toque = setTimeout(() => { if (Z.s <= 1) sale(); }, 300); }, { passive: true });
+  w.onclick = e => { if (innerWidth >= 768) sale(); }; }
 function galZoomReset() { GZ.s = 1; GZ.x = 0; GZ.y = 0; galZoomApply(); }
 function galZoomTo(s, cx, cy) { const box = $('.galmedia').getBoundingClientRect(); const ns = Math.max(1, Math.min(6, s)); if (cx != null) { const px = cx - box.left - box.width / 2, py = cy - box.top - box.height / 2; GZ.x = px - (px - GZ.x) * (ns / GZ.s); GZ.y = py - (py - GZ.y) * (ns / GZ.s); } GZ.s = ns; if (GZ.s === 1) { GZ.x = 0; GZ.y = 0; } galZoomApply(); }
 (function () { // v281: en el móvil — deslizar cambia de imagen; pellizcar o doble toque, zoom; con zoom, un dedo mueve la imagen
@@ -1774,7 +1791,7 @@ function galZoomTo(s, cx, cy) { const box = $('.galmedia').getBoundingClientRect
     const t = e.touches[0]; if (GZ.s > 1) { pan = { x: t.clientX, y: t.clientY, gx: GZ.x, gy: GZ.y }; x0 = null; } else { x0 = t.clientX; y0 = t.clientY; }
     const ahora = Date.now(); if (ahora - tt < 300) { clearTimeout(GA.toque); galZoomTo(GZ.s > 1 ? 1 : 2.5, t.clientX, t.clientY); x0 = null; tt = 0; } else tt = ahora; GA.t0 = { x: t.clientX, y: t.clientY, t: ahora }; }, { passive: true });
   gm.addEventListener('touchend', e => { if (innerWidth >= 768 || !GA.t0 || e.touches.length) return; const t = e.changedTouches[0], a = GA.t0; GA.t0 = null; if (Math.hypot(t.clientX - a.x, t.clientY - a.y) > 10 || Date.now() - a.t > 300 || GZ.s > 1 || e.target.closest('button')) return;   /* v370: un toque → pantalla completa (otro, vuelve) */
-    clearTimeout(GA.toque); GA.toque = setTimeout(() => { if (Date.now() - tt < 300) return; gm.classList.toggle('galfs'); const zr = $('#gzReset'); if (zr) zr.textContent = gm.classList.contains('galfs') ? '✕' : '⛶'; }, 310); }, { passive: true });
+    clearTimeout(GA.toque); GA.toque = setTimeout(() => { if (Date.now() - tt < 300) return; if (galIt && galIt.kind !== 'video') galCompleta(); }, 310); }, { passive: true });   /* v371: una capa propia */
   gm.addEventListener('touchmove', e => { if (innerWidth >= 768) return; if (e.touches.length === 2 && p0) { e.preventDefault(); const [a, b] = e.touches; galZoomTo(s0 * Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY) / p0, (a.clientX + b.clientX) / 2, (a.clientY + b.clientY) / 2); }
     else if (pan && GZ.s > 1) { e.preventDefault(); GZ.x = pan.gx + e.touches[0].clientX - pan.x; GZ.y = pan.gy + e.touches[0].clientY - pan.y; galZoomApply(); } }, { passive: false });
   gm.addEventListener('touchend', e => { if (innerWidth >= 768) return; if (e.touches.length < 2) p0 = null; if (!e.touches.length) pan = null;
@@ -3188,6 +3205,7 @@ new MutationObserver(M => { M.forEach(m => m.addedNodes.forEach(n => { if (!(n.n
   setTimeout(() => { if (!n.isConnected || n.querySelector('.carpverx, .galx, .cpx, .fichx')) return; const box = n.firstElementChild; if (!box) return; if (getComputedStyle(box).position === 'static') box.style.position = 'relative';
     const x = el('button', 'btn carpverx mx0', '✕'); x.type = 'button'; x.title = 'Cerrar (Esc)'; x.onclick = e => { e.stopPropagation(); x.remove(); modalCierra(n); }; box.appendChild(x); }, 0); })); }).observe(document.body, { childList: true });
 window.addEventListener('popstate', ev => { if (GALH.salto) { GALH.salto = false; return; }   // v369: el paso de la imagen ya se cerró desde la ✕
+  if ($('#galfull')) { $('#galfull').remove(); try { history.pushState({ gal: 1 }, '', location.href); } catch (e) {} return; }   // v371: Atrás en pantalla completa → vuelve al visor
   if ($('#gal').classList.contains('on')) { GALH.on = false; state._pop = true; try { closeGal(); } finally { state._pop = false; } return; }   // v369: Atrás con una imagen abierta → se cierra la imagen
   if (ev && ev.state && ev.state.base) { try { history.pushState({ app: 1 }, '', location.href); } catch (e) {} return; }   // v369: Atrás en la pantalla principal → no te saca al login
   const h = (location.hash || '').slice(1); state._pop = true;   // v317: Atrás / Adelante del navegador
