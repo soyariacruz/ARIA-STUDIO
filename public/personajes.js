@@ -607,7 +607,9 @@
       row.ondrop = e => { e.preventDefault(); ins.style.display = 'none'; const from = pj.dragId; pj.dragId = null; const j = slot; slot = -1; if (!from || j < 0) return;
         const fi = suyosEl().map(x => x.dataset.pid).indexOf(from); const L = pj.list.slice(); const [m] = L.splice(L.findIndex(p => p.id === from), 1); L.splice(j > fi ? j - 1 : j, 0, m); L.forEach((p, i) => { p.orden = i; }); pj.list = L; syncChars(); renderProfile();
         fetch('/api/personajes_orden', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids: L.map(p => p.id) }) }).catch(() => toast('No se pudo guardar el orden')); }; }
-    t.appendChild(row); return t;
+    t.appendChild(row);
+    if (window.CUENTA && CUENTA.web && window.COM) { const al = (COM.D && COM.D.alias) || ''; const cr = el('button', 'pjcreador' + (al ? '' : ' sin'), `<small>Creador</small><b>${esc(al || 'Ponte un nombre')}</b><i>✎</i>`); cr.title = 'Tu nombre de creador: así te ven en la Comunidad y en los mensajes'; cr.onclick = () => { if (window.comNombre) comNombre(!al); }; t.appendChild(cr); }   /* v405: el nombre de creador, junto a Mis personajes */
+    return t;
   }
   function viewAria() { const P = C.perfil; const v = el('div', 'pjview two'); const col = el('div', 'pjimgcol'); const im = el('img', 'pjbig'); im.src = P.ficha; im.onclick = () => lightbox(P.ficha, 'Ficha 360 · ' + P.name); col.appendChild(im); v.appendChild(col); return v; }
   let GRIDQ = 'high'; try { GRIDQ = localStorage.getItem('am_gridq') || 'high'; } catch (e) {}   // v386: elegible (2K por defecto: de su celda sale su foto, y a 1K la cara queda de unos 200 px)

@@ -39,7 +39,7 @@ html.gate #gate{display:flex}
 #gate h1{font-family:var(--serif);font-weight:500;font-size:32px;letter-spacing:.06em;color:var(--ink)}
 #gate h1 i{font-style:normal;color:var(--acc);margin-left:.3em}
 #gate p{color:var(--mut);font-size:14px;line-height:1.55}
-#gate.entrar #gateMsg{white-space:nowrap;font-size:13.5px}
+#gate.entrar #gateMsg{white-space:normal;font-size:13.5px;text-align:center}
 #gate .gnota a{color:inherit;text-decoration:underline;text-underline-offset:2px}
 #gate .gnota a:hover{color:var(--acc)}
 #gate button{font-family:inherit;font-size:15px;font-weight:700;border-radius:999px;padding:14px 20px;cursor:pointer;border:1px solid var(--line);background:var(--bg);color:var(--ink);transition:transform .1s,filter .15s}
@@ -175,7 +175,7 @@ html.sinapi #livedot,html.sinapi .meter{display:none!important}
     if (!renovando) renovando = (async () => { try { const { data, error } = await CU.sb.auth.refreshSession(); if (error || !data || !data.session) return false; sesion(data.session); return true; } catch (e) { return false; } })().finally(() => { setTimeout(() => { renovando = null; }, 3000); });
     return renovando;
   }
-  function caducada() { dentro = null; cara('Tu sesión ha caducado. Vuelve a entrar y sigues donde estabas.', { entrar: true }); }
+  function caducada() { dentro = null; cara('Tu sesión ha caducado: entra otra vez y sigues donde estabas.', { entrar: true }); }
   async function conReintento(input, init) {
     const lectura = !init.method || init.method === 'GET';
     const esperas = lectura ? [2000, 4000, 8000, 12000, 16000, 20000] : [];
