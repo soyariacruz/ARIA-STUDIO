@@ -43,7 +43,7 @@ MAX_CUERPO = 40 * 1024 * 1024    # tope de una petición en modo servidor
 MAX_BIBLIO = 200 * 1024 * 1024   # tope de un fichero de la biblioteca común al copiarlo
 KINDS = ('vestidor', 'hair', 'expr')   # las bibliotecas a las que una cuenta puede añadir lo suyo
 _UUID = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
-VERSION = 390
+VERSION = 391
 _ctx = threading.local()   # la cuenta del hilo: la pone cada petición (y, a mano, cada hilo de fondo)
 def uid(): return getattr(_ctx, 'uid', None)   # en local siempre None
 DUENOS = tuple(e.strip().lower() for e in (os.environ.get('ARIA_DUENOS') or 'mix1994max@gmail.com').split(',') if e.strip())   # cuentas que pueden cambiar a Aria Cruz (en la web, la de Max)
@@ -2632,10 +2632,9 @@ def _montar_gasto(usd=0.0, quien=None):   # lo que lleva hoy la clave de la casa
             g['usd'] = round(float(g.get('usd') or 0) + usd, 5); g['por'][quien] = int(g['por'].get(quien, 0)) + 1
             tmp = fp + '.tmp'; open(tmp, 'w', encoding='utf-8').write(json.dumps(g)); os.replace(tmp, fp)
         return g
-def _montar(idea, auto, tipo='imagen'):   # v307 → {'prompt', 'usd', 'casa'}: paga la casa (ARIA_CLAUDE_CASA o la clave de Claude de la cuenta de Aria) hasta el tope del día; si no, la clave de la cuenta
-    idea = re.sub(r'@IMG(\d+)', r'@Image\1', idea or '', flags=re.I); auto = re.sub(r'@IMG(\d+)', r'@Image\1', auto or '', flags=re.I)   # v316: en la web se ven como @IMG1
-    yo = uid() or 'local'; casa_ = False; g = _montar_gasto(); prov = 'claude'
-    k = _env('ANTHROPIC_API_KEY', 'anthropic.env')   # v326: si el miembro tiene su Claude (o su ChatGPT), usa la suya; si no, paga la casa
+def _llm_clave(yo):   # v391 → (clave, 'claude'|'oai', paga_la_casa): la del miembro (Claude, si no ChatGPT); si no, la de la casa hasta el tope del día
+    casa_ = False; g = _montar_gasto(); prov = 'claude'
+    k = _env('ANTHROPIC_API_KEY', 'anthropic.env')
     if not k:
         k = _env('OPENAI_API_KEY', 'openai.env'); prov = 'oai' if k else 'claude'
     if not k and float(g.get('usd') or 0) < MONTAR_TOPE and int(g['por'].get(yo, 0)) < 300:
@@ -2644,6 +2643,30 @@ def _montar(idea, auto, tipo='imagen'):   # v307 → {'prompt', 'usd', 'casa'}: 
             with como(ARIA_UID): k = _env('ANTHROPIC_API_KEY', 'anthropic.env')
         casa_ = bool(k)
     if not k: raise RuntimeError('sin_clave')
+    return k, prov, casa_
+def _llm_json(k, prov, sistema, usuario, max_tokens=1800):   # v391: una llamada que devuelve JSON → (dict, usd)
+    if prov == 'oai':
+        body = {'model': os.environ.get('ARIA_MONTAR_OAI') or 'gpt-5-mini', 'max_completion_tokens': max_tokens, 'response_format': {'type': 'json_object'}, 'messages': [{'role': 'system', 'content': sistema}, {'role': 'user', 'content': usuario}]}
+        rq = urllib.request.Request('https://api.openai.com/v1/chat/completions', data=json.dumps(body).encode(), method='POST', headers={'Authorization': 'Bearer ' + k, 'content-type': 'application/json', 'User-Agent': UA})
+        try: r = json.loads(urllib.request.urlopen(rq, timeout=90).read())
+        except urllib.error.HTTPError as e: raise RuntimeError(f'ChatGPT respondió {e.code}: ' + e.read().decode('utf-8', 'replace')[:160])
+        t_ = (((r.get('choices') or [{}])[0].get('message') or {}).get('content') or '').strip(); u = r.get('usage') or {}; usd = (u.get('prompt_tokens', 0) * 0.25 + u.get('completion_tokens', 0) * 2) / 1e6
+    else:
+        body = {'model': MONTAR_LLM, 'max_tokens': max_tokens, 'system': sistema, 'messages': [{'role': 'user', 'content': usuario}, {'role': 'assistant', 'content': '{'}]}
+        rq = urllib.request.Request('https://api.anthropic.com/v1/messages', data=json.dumps(body).encode(), method='POST', headers={'x-api-key': k, 'anthropic-version': '2023-06-01', 'content-type': 'application/json', 'User-Agent': UA})
+        try: r = json.loads(urllib.request.urlopen(rq, timeout=60).read())
+        except urllib.error.HTTPError as e: raise RuntimeError(f'Claude respondió {e.code}: ' + e.read().decode('utf-8', 'replace')[:160])
+        t_ = '{' + ''.join(b.get('text', '') for b in r.get('content') or [] if b.get('type') == 'text'); u = r.get('usage') or {}; usd = (u.get('input_tokens', 0) * 1 + u.get('output_tokens', 0) * 5) / 1e6
+    m = re.search(r'\{.*\}', t_, re.S)
+    try: return json.loads(m.group(0) if m else t_), round(usd, 5)
+    except Exception: raise RuntimeError('el asistente no ha devuelto una respuesta válida; prueba a decirlo de otra forma')
+ASIS_SIS = """Eres el asistente del Constructor de Ficha de ARIA STUDIO (web española): ayudas a perfeccionar la FICHA 360 de un personaje (una influencer virtual) que luego se usa en todas sus fotos y vídeos. Es un trabajo que se hace una vez y bien: sé preciso y profesional.
+Recibes: los DATOS actuales del personaje (campos con valores permitidos), su PROMPT BASE actual (en inglés) y la PETICIÓN del usuario (en español o en cualquier idioma).
+Devuelve SOLO un JSON con: {"cambios": {campo: valor_permitido, ...}, "libre": "frase corta en inglés con lo que no cabe en los campos (o cadena vacía)", "prompt": "el prompt base COMPLETO reescrito en inglés", "resumen": "una frase en español, en segunda persona, con lo que has entendido y vas a cambiar", "rehacer": true|false, "aviso": "cadena vacía o un aviso corto en español"}.
+Reglas: solo usa campos y valores de la lista de permitidos; si el usuario pide «más» de algo, sube un escalón respecto al valor actual (p. ej. pecho medio → grande); «mucho más» = dos escalones; «menos» baja uno. NUNCA cambies la cara ni la identidad (forma de la cara, nariz, ojos, labios, piel) salvo que lo pidan explícitamente; el pelo (color, peinado) y el cuerpo sí se pueden cambiar si lo piden. El prompt base mantiene la estructura del original (una frase por rasgo, en inglés) y refleja TODOS los datos tras el cambio, sin inventar rasgos nuevos. "rehacer": true cuando el cambio afecta a cómo se ve en todas las vistas (cuerpo, pecho, cadera, pelo, piel, altura, complexión, labios, nariz, ojos); false si es solo expresión o algo de una vista. Nada de contenido sexual explícito: las fichas van en ropa interior neutra. Si la petición no tiene que ver con el personaje, responde con "cambios": {} y explica en "resumen"."""
+def _montar(idea, auto, tipo='imagen'):   # v307 → {'prompt', 'usd', 'casa'}: paga la casa (ARIA_CLAUDE_CASA o la clave de Claude de la cuenta de Aria) hasta el tope del día; si no, la clave de la cuenta
+    idea = re.sub(r'@IMG(\d+)', r'@Image\1', idea or '', flags=re.I); auto = re.sub(r'@IMG(\d+)', r'@Image\1', auto or '', flags=re.I)   # v316: en la web se ven como @IMG1
+    yo = uid() or 'local'; k, prov, casa_ = _llm_clave(yo)   # v391: la misma elección de clave la usa el asistente de la ficha
     msg = f"LA IDEA DEL USUARIO:\n{idea.strip() or '(no ha escrito nada: monta el prompt solo con lo elegido, en español)'}\n\nLO ELEGIDO:\n{auto.strip()}"
     vid = tipo == 'video'; tags = list(dict.fromkeys(re.findall(r'@Image\d+', auto)))
     def pide(extra=''):
@@ -3522,6 +3545,21 @@ class H(SimpleHTTPRequestHandler):
         if SERVIDOR and self.path in ('/api/describir', '/api/personas_img', '/api/acc_cajas', '/api/pj_analizar') and not _tope('lectura', 120, 3600): return self._json(429, {'error': 'Demasiadas lecturas seguidas: espera unos minutos.'})
         if self.path in ('/api/perfil', '/api/ficha_panel', '/api/fichas360') and aria_fija(): return self._json(403, {'error': FIJA, 'fija': True})   # todo esto escribe en la ficha de Aria
         if self.path == '/api/video': return self.do_video()
+        if self.path == '/api/pj/asistente':   # v391: {id, peticion, datos:{campo: valor}, permitidos:{campo:[valores]}, prompt} → {cambios, libre, prompt, resumen, rehacer, aviso, usd, casa}
+            n = int(self.headers.get('Content-Length') or 0); body = json.loads(self.rfile.read(n) or b'{}')
+            pet = str(body.get('peticion') or '').strip()[:1500]
+            if not pet: return self._json(400, {'error': 'dime qué quieres cambiar'})
+            if _es_nsfw(pet): return self._json(400, {'error': 'Las fichas van en ropa interior neutra: eso no se puede pedir aquí.'})
+            try: k, prov, casa_ = _llm_clave(uid() or 'local')
+            except RuntimeError: return self._json(400, {'error': 'sin_clave', 'msg': 'Para usar el asistente conecta tu clave de Claude o de ChatGPT en Mis APIs.'})
+            datos = body.get('datos') if isinstance(body.get('datos'), dict) else {}; perm = body.get('permitidos') if isinstance(body.get('permitidos'), dict) else {}
+            usuario = 'DATOS ACTUALES:\n' + json.dumps(datos, ensure_ascii=False) + '\n\nVALORES PERMITIDOS POR CAMPO (clave = valor, texto = lo que significa):\n' + json.dumps(perm, ensure_ascii=False) + '\n\nPROMPT BASE ACTUAL:\n' + str(body.get('prompt') or '')[:4000] + '\n\nPETICIÓN DEL USUARIO:\n' + pet
+            try: out, usd = _llm_json(k, prov, ASIS_SIS, usuario)
+            except RuntimeError as e: return self._json(400, {'error': str(e)[:200]})
+            if casa_: _montar_gasto(usd, uid() or 'local')
+            cam = out.get('cambios') if isinstance(out.get('cambios'), dict) else {}
+            cam = {c: v for c, v in cam.items() if c in perm and (v in [x[0] for x in perm[c]] if isinstance(perm[c], list) else True)}   # solo lo permitido
+            return self._json(200, {'ok': True, 'cambios': cam, 'libre': str(out.get('libre') or '')[:300], 'prompt': str(out.get('prompt') or '')[:4000], 'resumen': str(out.get('resumen') or '')[:400], 'rehacer': bool(out.get('rehacer')), 'aviso': str(out.get('aviso') or '')[:200], 'usd': usd, 'casa': casa_})
         if self.path == '/mcp': return self._mcp()   # v387
         if self.path == '/api/mcp':   # v387: {accion: 'crear'|'anular'} → la clave solo se devuelve al crearla
             n = int(self.headers.get('Content-Length') or 0); body = json.loads(self.rfile.read(n) or b'{}')
@@ -3959,7 +3997,7 @@ class H(SimpleHTTPRequestHandler):
                 if key == 'foto' or (key in ('retrato', 'vista_frente') and not P.get('foto')):   # avatar = cuadrado centrado arriba (la cara)
                     w, h = im.size; sz = min(w, int(h * 0.62)); x0 = (w - sz) // 2; y0 = max(0, int(h * 0.06))
                     im.crop((x0, y0, x0 + sz, y0 + sz)).resize((256, 256)).save(os.path.join(d, 'avatar.jpg'), quality=90); P['avatar'] = f'assets/personajes/{pid}/avatar.jpg?v={int(time.time())}'
-            OKF = ('foto', 'ficha360', 'importada', 'retrato', 'vista_frente', 'vista_perfil', 'vista_tres', 'vista_espalda', 'cuerpo', 'peloRef', 'detImg', 'estiloRef', 'avatar', 'avatarSrc')
+            OKF = ('foto', 'ficha360', 'importada', 'retrato', 'vista_frente', 'vista_perfil', 'vista_tres', 'vista_espalda', 'cuerpo', 'peloRef', 'detImg', 'estiloRef', 'avatar', 'avatarSrc', 'prev_vista_frente', 'prev_vista_perfil', 'prev_vista_tres', 'prev_vista_espalda', 'prev_cuerpo', 'prev_combo')   # v391: la ficha anterior
             okk = lambda k: k in OKF or bool(_re.fullmatch(r'inspo_\d{1,2}', k))
             for key, du in (body.get('files') or {}).items():
                 if okk(key) and du and ',' in du: _save(key, base64.b64decode(du.split(',', 1)[1]))
