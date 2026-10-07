@@ -1,6 +1,14 @@
 {
   "rewrites": [
     {
+      "source": "/mcp",
+      "destination": "https://aria-studio.onrender.com/mcp"
+    },
+    {
+      "source": "/mcp/img",
+      "destination": "https://aria-studio.onrender.com/mcp/img"
+    },
+    {
       "source": "/assets/:carpeta(live|video|videoteca|audio|muestras|personajes|refs|perfil|mio|papelera|prestamo|compartida|publica|liga)/:path*",
       "destination": "https://aria-studio.onrender.com/assets/:carpeta/:path*"
     },

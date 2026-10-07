@@ -3382,7 +3382,22 @@ async function openClaves() { // v324: «Mis APIs» = la misma lista que cuando 
   const cc = el('div', 'apilist'); b.appendChild(cc); const L = el('div', 'apilist'); L.appendChild(el('small', 'apisub', 'Mirando tus conexiones…')); b.appendChild(L);
   let st = {}; try { st = await fetch('/api/claves').then(y => y.json()); } catch (e) {} const casa = st.casa !== undefined ? st.casa : CASA; if (st.casa !== undefined) casaPon(st.casa);
   if (casa) { const r = el('div', 'apir on casa', `<div class="apirow1"><i class="apid"></i><div class="apin"><b>🎁 Saldo regalo</b><small>Se gasta primero en tus imágenes (sin NSFW) · se repone el día 1</small></div><span class="apist">${casa.pausa ? 'en pausa' : dolar(casa.saldo)}</span></div>`); r.title = 'Ver en qué se ha gastado'; r.onclick = () => { m0.remove(); openMonedero(); }; cc.appendChild(r); }
-  apiLista(L, st.apis || [], { hecho: r => { dirty = true; APIS_ON = new Set((r.apis || []).filter(z => z.on).map(z => z.id)); } }); }
+  apiLista(L, st.apis || [], { hecho: r => { dirty = true; APIS_ON = new Set((r.apis || []).filter(z => z.on).map(z => z.id)); } });
+  if (window.CUENTA && CUENTA.web) b.appendChild(mcpBloque(st.mcp || {}, st.mcp_url || '')); }   /* v387 */
+function mcpConfig(url, clave) { return JSON.stringify({ mcpServers: { 'aria-studio': { url, headers: { Authorization: 'Bearer ' + clave } } } }, null, 2); }
+function mcpBloque(mcp, url) { // v387: 🔌 tu Claude / ChatGPT / Cursor dentro de ARIA STUDIO. La clave solo se enseña al crearla
+  const w = el('div', 'mcpbox'); const pinta = (m, clave) => { w.innerHTML = ''; w.appendChild(el('h4', '', '🔌 Tu Claude, ChatGPT o Cursor'));
+    w.appendChild(el('p', 'apisub', 'Conecta ARIA STUDIO a tu asistente y pídele imágenes de tu influencer desde allí. Gasta igual que desde aquí (tus APIs o tu saldo regalo).'));
+    if (clave) { w.appendChild(el('p', 'mcpaviso', '<b>Guarda esta clave ahora:</b> no se vuelve a enseñar. Si la pierdes, crea otra (la vieja deja de valer).'));
+      const kb = el('div', 'mcpclave'); kb.appendChild(el('code', '', esc(clave))); const ck = el('button', 'btn', 'Copiar'); ck.onclick = () => { navigator.clipboard.writeText(clave).then(() => toast('Clave copiada')); }; kb.appendChild(ck); w.appendChild(kb);
+      const cfg = mcpConfig(url, clave); const cb = el('button', 'btn acc', 'Copiar la configuración (Claude Desktop · Cursor · Codex)'); cb.onclick = () => { navigator.clipboard.writeText(cfg).then(() => toast('Configuración copiada: pégala en el fichero de MCP de tu asistente')); }; w.appendChild(cb);
+      w.appendChild(el('pre', 'mcpcfg', esc(cfg)));
+      w.appendChild(el('small', 'apisub', 'Claude Code: <code>claude mcp add --transport http aria-studio ' + esc(url) + ' --header "Authorization: Bearer ' + esc(clave) + '"</code>')); }
+    else if (m.on) { w.appendChild(el('p', '', `Conectado · tu clave termina en <b>…${esc(m.fin)}</b>`)); const r = el('div', 'pjacts'); const nb = el('button', 'btn', 'Crear otra clave'); nb.onclick = async () => { if (!(await pregunta('¿Crear otra clave? La actual dejará de funcionar en tu asistente.'))) return; const j = await fetch('/api/mcp', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{"accion":"crear"}' }).then(x => x.json()).catch(() => null); if (j && j.ok) pinta(j.mcp, j.clave); else toast('No se pudo: ' + ((j && j.error) || 'sin respuesta')); }; r.appendChild(nb);
+      const an = el('button', 'btn', 'Anular'); an.onclick = async () => { if (!(await pregunta('¿Anular la clave? Tu asistente dejará de poder usar ARIA STUDIO.'))) return; const j = await fetch('/api/mcp', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{"accion":"anular"}' }).then(x => x.json()).catch(() => null); if (j && j.ok) { toast('Clave anulada'); pinta(j.mcp, null); } }; r.appendChild(an); w.appendChild(r); }
+    else { const nb = el('button', 'btn acc', '＋ Crear mi clave'); nb.onclick = async () => { nb.disabled = true; const j = await fetch('/api/mcp', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{"accion":"crear"}' }).then(x => x.json()).catch(() => null); if (j && j.ok) pinta(j.mcp, j.clave); else { nb.disabled = false; toast('No se pudo: ' + ((j && j.error) || 'sin respuesta')); } }; w.appendChild(nb); }
+    w.appendChild(el('small', 'apisub', `Dirección del servidor: <code>${esc(url)}</code> · herramientas: mis_personajes, modelos, saldo, generar_imagen, estado_imagen, mis_creaciones.`)); };
+  pinta(mcp, null); return w; }
 window.openClaves = openClaves;
 function basePhoto(kind) { // imagen 1 para las ediciones: la foto del usuario si la hay; si no, Aria
   if (userPhoto) return { data: userPhoto };

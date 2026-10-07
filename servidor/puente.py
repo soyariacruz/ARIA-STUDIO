@@ -43,7 +43,7 @@ MAX_CUERPO = 40 * 1024 * 1024    # tope de una petición en modo servidor
 MAX_BIBLIO = 200 * 1024 * 1024   # tope de un fichero de la biblioteca común al copiarlo
 KINDS = ('vestidor', 'hair', 'expr')   # las bibliotecas a las que una cuenta puede añadir lo suyo
 _UUID = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
-VERSION = 386
+VERSION = 387
 _ctx = threading.local()   # la cuenta del hilo: la pone cada petición (y, a mano, cada hilo de fondo)
 def uid(): return getattr(_ctx, 'uid', None)   # en local siempre None
 DUENOS = tuple(e.strip().lower() for e in (os.environ.get('ARIA_DUENOS') or 'mix1994max@gmail.com').split(',') if e.strip())   # cuentas que pueden cambiar a Aria Cruz (en la web, la de Max)
@@ -722,6 +722,7 @@ def _quien(h):   # petición → (uid, email, interno), o _NoEntra(401|403|503)
             k, _, v = par.strip().partition('=')
             if k == 'aria_token': tok = v.strip()
     if not tok: raise _NoEntra(401, 'falta la sesión')
+    if tok.startswith('ask_'): return _mcp_quien(tok)   # v387: clave personal de MCP
     return _sesion(tok)
 # ---- /api/fetch en modo servidor: solo https, solo sitios de la lista, nunca direcciones internas (tampoco por redirección)
 def _host_ok(host): return '*' in FETCH_HOSTS or any(host == x or (x.startswith('.') and host.endswith(x)) for x in FETCH_HOSTS)
@@ -2703,6 +2704,222 @@ def _adm_avisos():   # v290: lo pendiente del equipo (la burbuja roja de ⚙️ 
     except Exception: us = []
     ig = _ign_lee(); sin = sum(1 for x in us if isinstance(x, dict) and str(x.get('email') or '').lower() not in L and str(x.get('email') or '').lower() not in ig)
     r = {'sin_acceso': sin, 'total': sin}; _AV[0], _AV[1] = time.time(), r; return r
+# ---- 🔌 MCP (v387): ARIA STUDIO como servidor MCP para Claude, ChatGPT/Codex, Cursor… Cada cuenta crea su clave «ask_…» en Mis APIs.
+MCP_F = os.path.join(DATOS or RAIZ, 'mcp.json'); _mcp_l = threading.Lock()
+def _mcp_lee():
+    try: d = json.load(open(MCP_F, encoding='utf-8'))
+    except Exception: d = {}
+    return d if isinstance(d, dict) else {}
+def _mcp_guarda(d):
+    with open(MCP_F + '.tmp', 'w', encoding='utf-8') as fh: json.dump(d, fh)
+    os.replace(MCP_F + '.tmp', MCP_F)
+def _mcp_h(k): return hashlib.sha256(k.encode()).hexdigest()
+def _mcp_crea():   # → la clave (solo se enseña una vez); la anterior deja de valer
+    k = 'ask_' + base64.urlsafe_b64encode(os.urandom(30)).decode().rstrip('=')
+    with _mcp_l:
+        d = _mcp_lee(); u = uid()
+        for h_ in [h for h, v in d.items() if isinstance(v, dict) and v.get('uid') == u]: d.pop(h_, None)
+        d[_mcp_h(k)] = {'uid': u, 'email': getattr(_ctx, 'email', '') or '', 'interno': bool(getattr(_ctx, 'interno', False)), 't': int(time.time())}; _mcp_guarda(d)
+    _claves_set('ARIA_MCP_FIN', k[-4:]); return k
+def _mcp_anula():
+    with _mcp_l:
+        d = _mcp_lee(); u = uid()
+        for h_ in [h for h, v in d.items() if isinstance(v, dict) and v.get('uid') == u]: d.pop(h_, None)
+        _mcp_guarda(d)
+    _claves_set('ARIA_MCP_FIN', '')
+def _mcp_estado(): fin = _env('ARIA_MCP_FIN', '', True); return {'on': bool(fin), 'fin': fin or ''}
+def _mcp_quien(tok):   # clave ask_… → (uid, email, interno); si la cuenta ya no está en la lista de miembros, no entra
+    if not re.fullmatch(r'ask_[A-Za-z0-9_-]{30,60}', tok): raise _NoEntra(401, 'clave MCP no válida')
+    v = _mcp_lee().get(_mcp_h(tok))
+    if not isinstance(v, dict) or not _UUID.fullmatch(str(v.get('uid') or '')): raise _NoEntra(401, 'clave MCP no válida o anulada')
+    em = str(v.get('email') or '').lower()
+    if SERVIDOR:
+        try: L = {m['email'] for m in _mi_lista()}
+        except Exception: L = None
+        if L is not None and em not in L: raise _NoEntra(403, 'esta cuenta ya no tiene acceso')
+    return v['uid'], em, bool(v.get('interno'))
+def _mcp_firma(rel, hasta):   # enlace de 24 h a una creación, sin sesión: /mcp/img?t=<uid>.<hasta>.<rel b64>.<hmac>
+    sec = SECRETO or (os.environ.get('ARIA_ADMIN') or 'local').encode()
+    cuerpo = f'{uid()}.{hasta}.' + base64.urlsafe_b64encode(rel.encode()).decode().rstrip('=')
+    return cuerpo + '.' + hmac.new(sec, cuerpo.encode(), hashlib.sha256).hexdigest()[:32]
+def _mcp_firma_ok(t):
+    try:
+        u, hasta, relb, mac = t.split('.'); sec = SECRETO or (os.environ.get('ARIA_ADMIN') or 'local').encode()
+        if not hmac.compare_digest(mac, hmac.new(sec, f'{u}.{hasta}.{relb}'.encode(), hashlib.sha256).hexdigest()[:32]) or int(hasta) < time.time(): return None
+        return u, base64.urlsafe_b64decode(relb + '=' * (-len(relb) % 4)).decode()
+    except Exception: return None
+MCP_BASE = (os.environ.get('ARIA_MCP_URL') or 'https://aria-studio.onrender.com').rstrip('/')
+def _mcp_pj_lista():   # los personajes con ficha 360 de la cuenta (+ Aria, de ejemplo)
+    out = []
+    try:
+        pd = pers_dir()
+        for d in sorted(os.listdir(pd)):
+            f = os.path.join(pd, d, 'personaje.json')
+            if d.startswith(('_', '.')) or not os.path.isfile(f): continue
+            try: p = json.load(open(f, encoding='utf-8'))
+            except Exception: continue
+            if not p.get('ficha360'): continue
+            out.append({'id': p.get('id') or d, 'nombre': p.get('nombre') or d, 'usuario': p.get('usuario') or '', 'edad': p.get('edad'), 'ficha': str(p.get('ficha360')).split('?')[0], 'combo': str(p.get('combo') or '').split('?')[0], 'ident': str(p.get('prompt') or '')[:600]})
+    except Exception as e: plog('mcp personajes ✕ ' + str(e)[:120])
+    P = (_comun().get('perfil') or {})
+    if P.get('ficha'): out.append({'id': 'aria', 'nombre': P.get('name') or 'Aria Cruz', 'usuario': '@soy_aria_cruz', 'edad': 25, 'ficha': str(P['ficha']).split('?')[0], 'combo': str(P.get('combo') or '').split('?')[0], 'ident': 'same face, green eyes, thin round metal glasses, silver hoop earrings', 'ejemplo': True})
+    return out
+MCP_TOOLS = [
+    {'name': 'mis_personajes', 'description': 'Lista tus influencers IA de ARIA STUDIO (los que tienen ficha 360) y Aria Cruz, de ejemplo. Devuelve el id que piden las demás herramientas.', 'inputSchema': {'type': 'object', 'properties': {}}},
+    {'name': 'modelos', 'description': 'Los modelos de imagen que puedes usar ahora mismo (con tus APIs o con el saldo regalo) y su precio por imagen en dólares.', 'inputSchema': {'type': 'object', 'properties': {}}},
+    {'name': 'saldo', 'description': 'Tu saldo regalo, lo gastado este mes y qué APIs tienes conectadas (nunca las claves).', 'inputSchema': {'type': 'object', 'properties': {}}},
+    {'name': 'generar_imagen', 'description': 'Genera UNA imagen de tu influencer en la escena que describas (igual que «Crear imagen» en la web). Cuesta dinero: el precio sale en la respuesta. Devuelve un id; luego pide estado_imagen con ese id hasta que esté lista (suele tardar 20-60 s).', 'inputSchema': {'type': 'object', 'required': ['personaje', 'escena'], 'properties': {'personaje': {'type': 'string', 'description': 'id del personaje (de mis_personajes)'}, 'escena': {'type': 'string', 'description': 'qué pasa, dónde, cómo va vestida, luz… en el idioma que quieras'}, 'modelo': {'type': 'string', 'description': 'key de un modelo (de modelos). Si no, el que esté por defecto en tu cuenta'}, 'formato': {'type': 'string', 'enum': ['3:4', '1:1', '4:3', '9:16', '16:9', '2:3', '3:2'], 'description': 'por defecto 3:4'}, 'calidad': {'type': 'string', 'enum': ['std', 'high'], 'description': 'std (1K) o high (2K). Por defecto std'}, 'nsfw': {'type': 'boolean', 'description': 'contenido adulto. Solo con tu propia clave de WaveSpeed, con Seedream, y nunca con Aria Cruz'}}}},
+    {'name': 'estado_imagen', 'description': 'Cómo va una imagen pedida con generar_imagen. Cuando está lista devuelve la imagen y un enlace de 24 h.', 'inputSchema': {'type': 'object', 'required': ['id'], 'properties': {'id': {'type': 'string'}}}},
+    {'name': 'mis_creaciones', 'description': 'Tus últimas creaciones (imágenes y vídeos) con su prompt, modelo y un enlace de 24 h a cada una.', 'inputSchema': {'type': 'object', 'properties': {'n': {'type': 'integer', 'description': 'cuántas (por defecto 12, máximo 40)'}, 'con_imagen': {'type': 'boolean', 'description': 'devolver también las imágenes dentro de la respuesta (más pesado). Por defecto no'}}}},
+]
+def _mcp_texto(o): return {'content': [{'type': 'text', 'text': json.dumps(o, ensure_ascii=False, indent=1)}]}
+def _mcp_imagen_contenido(rel):   # → (bloque image MCP, enlace 24 h)
+    full = busca(rel, propio=True); hasta = int(time.time()) + 86400; link = f'{MCP_BASE}/mcp/img?t={_mcp_firma(rel, hasta)}'
+    if not full: return None, link
+    data = open(full, 'rb').read(); ct = mimetypes.guess_type(full)[0] or 'image/jpeg'
+    if len(data) > 6 * 1024 * 1024 or not ct.startswith('image/'): return None, link
+    try:   # para que quepa: a 1280 de lado largo
+        from PIL import Image; import io as _io
+        im = Image.open(_io.BytesIO(data)); im.thumbnail((1280, 1280)); b = _io.BytesIO(); im.convert('RGB').save(b, 'JPEG', quality=86); data = b.getvalue(); ct = 'image/jpeg'
+    except Exception: pass
+    return {'type': 'image', 'data': base64.b64encode(data).decode(), 'mimeType': ct}, link
+def _mcp_llama(h, nombre, a):   # una herramienta → resultado MCP (content). Lanza RuntimeError con el texto para el usuario
+    a = a if isinstance(a, dict) else {}
+    if nombre == 'mis_personajes': return _mcp_texto({'personajes': _mcp_pj_lista(), 'nota': 'Pasa el id a generar_imagen. Aria Cruz es de ejemplo: con ella no hay NSFW.'})
+    if nombre == 'modelos':
+        c = casa_info(); L = [{'key': k, 'nombre': m['name'], 'usd_std': m['usd']['std'], 'usd_high': m['usd']['high'], 'referencias_max': m['refs'], 'proveedor': m.get('prov', 'hf'), 'nota': m.get('nota', '')} for k, m in all_models().items()]
+        return _mcp_texto({'modelos': L, 'por_defecto': CASA_DEF if c else 'qwen', 'saldo_regalo': bool(c), 'no_disponibles': unavailable()})
+    if nombre == 'saldo':
+        c = casa_info() or casa_info_aunque(); A = [{'api': x['nombre'], 'conectada': x['on'], 'termina_en': x['fin']} for x in _apis_estado()]
+        return _mcp_texto({'saldo_regalo': c, 'apis': A})
+    if nombre == 'generar_imagen':
+        pid = str(a.get('personaje') or '').strip(); esc_ = str(a.get('escena') or '').strip()
+        if not esc_: raise RuntimeError('Dime la escena: qué pasa, dónde, cómo va vestida…')
+        P = next((p for p in _mcp_pj_lista() if p['id'] == pid), None)
+        if not P: raise RuntimeError(f'No encuentro el personaje «{pid}». Pide mis_personajes para ver los ids.')
+        AM = all_models()
+        if not AM: raise RuntimeError('No tienes ninguna API conectada ni saldo regalo: conecta tu clave de WaveSpeed (o fal, Higgsfield…) en Mis APIs de ARIA STUDIO.')
+        mk = str(a.get('modelo') or '').strip() or (CASA_DEF if casa_on() and CASA_DEF in AM else ('seedream' if 'seedream' in AM else next(iter(AM))))
+        if mk not in AM: raise RuntimeError(f'El modelo «{mk}» no está disponible en tu cuenta. Pide modelos.')
+        nsfw = bool(a.get('nsfw'))
+        if nsfw:
+            if P['id'] == 'aria': raise RuntimeError('Con Aria Cruz no hay contenido NSFW.')
+            if casa_on() or not load_ws(): raise RuntimeError('El NSFW solo va con tu propia clave de WaveSpeed (conéctala en Mis APIs de ARIA STUDIO).')
+            if mk != 'seedream': mk = 'seedream' if 'seedream' in AM else mk
+        ar = aspect_ok(str(a.get('formato') or '3:4')); q = 'high' if a.get('calidad') == 'high' else 'std'
+        ficha = P.get('combo') or P['ficha']; comboSi = bool(P.get('combo'))
+        prompt = (f"Create one new photograph (a single photo, never a collage or a character sheet) of the woman of image 1 ({'her character sheet: her face and her full body' if comboSi else 'her 360 character sheet'}): {P['ident'] if P['id'] == 'aria' else 'same face and identity, exactly the person described: ' + P['ident']}. "
+                  f"Scene: {esc_.rstrip('.')}. Natural pose, photoreal, no text, no logos." + ('' if nsfw or not comboSi else ' The underwear in image 1 is ONLY a body reference: she wears what the scene says, or a simple black tank top and black leggings.'))
+        body = {'item': 'mcp', 'prompt': prompt, 'images': [{'path': ficha}], 'aspect': ar, 'quality': q, 'model': mk, 'nsfw': nsfw, 'meta': {'name': 'Desde MCP · ' + P['nombre'], 'tab': 'crear', 'char': P['id'], 'charName': P['nombre'], 'nsfw': nsfw or None, 'model': AM[mk]['name'], 'ep': AM[mk]['ep'], 'quality': q, 'aspect': ar, 'prompt': prompt, 'mcp': True, 'idea': esc_}}
+        r = _generar(h, body)
+        if r.get('error'): raise RuntimeError(r['error'])
+        return _mcp_texto({'id': r.get('request_id'), 'modelo': AM[mk]['name'], 'precio_usd': r.get('usd'), 'saldo_regalo': r.get('casa'), 'siguiente': 'pide estado_imagen con este id dentro de unos 20 s'})
+    if nombre == 'estado_imagen':
+        rid = str(a.get('id') or '').strip(); code, st = _estado(rid)
+        if code == 404: raise RuntimeError('No conozco esa imagen (o no es tuya).')
+        if code != 200: return _mcp_texto({'estado': 'esperando', 'detalle': st.get('error')})
+        if st.get('status') == 'completed' and st.get('file'):
+            im, link = _mcp_imagen_contenido(st['file']); out = {'estado': 'lista', 'archivo': st['file'], 'enlace_24h': link, 'precio_usd': st.get('usd')}
+            return {'content': [{'type': 'text', 'text': json.dumps(out, ensure_ascii=False)}] + ([im] if im else [])}
+        if st.get('status') in ('failed', 'nsfw', 'canceled'): return _mcp_texto({'estado': 'fallida', 'motivo': st.get('error') or st.get('status')})
+        return _mcp_texto({'estado': 'generando', 'segundos': st.get('elapsed')})
+    if nombre == 'mis_creaciones':
+        n = max(1, min(40, int(a.get('n') or 12))); con = bool(a.get('con_imagen')); C = creations()[:n]; L = []; imgs = []
+        for c in C:
+            m = c.get('meta') or {}; rel = c.get('file') or c.get('src') or ''; hasta = int(time.time()) + 86400
+            L.append({'archivo': rel, 'tipo': c.get('kind', 'image'), 'modelo': m.get('model') or m.get('model_key') or '', 'prompt': str(m.get('prompt') or '')[:1200], 'personaje': m.get('charName') or '', 'fecha': m.get('t'), 'enlace_24h': f'{MCP_BASE}/mcp/img?t={_mcp_firma(rel, hasta)}' if rel else ''})
+            if con and c.get('kind', 'image') == 'image' and rel and len(imgs) < 6:
+                im, _ = _mcp_imagen_contenido(rel)
+                if im: imgs.append(im)
+        return {'content': [{'type': 'text', 'text': json.dumps({'creaciones': L}, ensure_ascii=False, indent=1)}] + imgs}
+    raise RuntimeError(f'No existe la herramienta «{nombre}»')
+def _mcp_rpc(h, m):   # un mensaje JSON-RPC → respuesta (o None si es una notificación)
+    mid = m.get('id'); met = m.get('method') or ''; pa = m.get('params') or {}
+    if met.startswith('notifications/'): return None
+    if met == 'initialize': return {'jsonrpc': '2.0', 'id': mid, 'result': {'protocolVersion': pa.get('protocolVersion') or '2025-03-26', 'capabilities': {'tools': {'listChanged': False}}, 'serverInfo': {'name': 'ARIA STUDIO', 'version': str(VERSION)}, 'instructions': 'Eres el puente con ARIA STUDIO, el estudio de influencers IA del usuario. Empieza por mis_personajes. Generar cuesta dinero: di siempre el precio que devuelve generar_imagen. Tras generar, consulta estado_imagen cada 15-20 s hasta que esté lista. Contesta en el idioma del usuario.'}}
+    if met == 'ping': return {'jsonrpc': '2.0', 'id': mid, 'result': {}}
+    if met == 'tools/list': return {'jsonrpc': '2.0', 'id': mid, 'result': {'tools': MCP_TOOLS}}
+    if met == 'tools/call':
+        try: res = _mcp_llama(h, str(pa.get('name') or ''), pa.get('arguments') or {})
+        except RuntimeError as e: res = {'content': [{'type': 'text', 'text': str(e)}], 'isError': True}
+        except Exception as e: plog('mcp ✕ ' + str(e)[:200]); res = {'content': [{'type': 'text', 'text': 'Error interno en ARIA STUDIO: ' + str(e)[:160]}], 'isError': True}
+        return {'jsonrpc': '2.0', 'id': mid, 'result': res}
+    return {'jsonrpc': '2.0', 'id': mid, 'error': {'code': -32601, 'message': f'método desconocido: {met}'}}
+def _generar(h, body):   # v387: → dict (con 'error' si falla)
+    return _generar_r(h, body)[1]
+def _generar_r(self, body):   # v387: lo que era el cuerpo de /api/generar → (código, respuesta). self = el handler (solo para _json no se usa ya: devolvemos tuplas)
+    _js = lambda code, obj: (code, obj)
+    if not nsfw_ok() and _con_aria(body) and ((body.get('meta') or {}).get('nsfw') or body.get('nsfw') or _es_nsfw(body.get('prompt'))): return _js(400, {'error': 'El contenido NSFW con Aria Cruz no está disponible en esta cuenta.'})
+    prest = sorted({tuple(str(i.get('path')).split('?')[0].split('/')[2:4]) for i in (body.get('images') or []) if isinstance(i, dict) and str(i.get('path') or '').startswith('assets/prestamo/')})
+    if prest and ((body.get('meta') or {}).get('nsfw') or body.get('nsfw') or _es_nsfw(body.get('prompt'))):   # v223: solo si en ESA colaboración el modo NSFW lo han activado los dos (y no ha vencido)
+        d_ = _com_lee(); yo_ = _cid()
+        if not all(len(p) == 2 and any(x.get('de') == yo_ and x.get('para') == p[0] and x.get('pid') in (None, p[1]) and _sol_nsfw(x) for x in d_['sol']) for p in prest): return _js(400, {'error': 'Con ese personaje el modo NSFW no está activado: tenéis que activarlo los dos en vuestra conversación de la Comunidad.'})
+    _ctx.prestamo_ok = bool(prest); _ctx.prest = [p for p in prest if len(p) == 2]
+    save_inputs(body)
+    try:
+        AM = all_models(); regalo = casa_on(); mkey = body.get('model') if body.get('model') in AM else (CASA_DEF if regalo else 'qwen'); M = AM[mkey]
+        if M.get('prov') == 'fal':   # v374: fal (la clave del miembro)
+            urls = [_fal_sube(*img_bytes(i)) for i in (body.get('images') or [])[:M['refs']]]
+            if not urls: raise RuntimeError('hacen falta imágenes de referencia')
+            usd = round(M['usd']['high' if body.get('quality') == 'high' else 'std'] + M.get('per', 0) * max(0, len(urls) - 1), 4)
+            payload = M['body'](body.get('prompt', ''), urls, aspect_ok(body.get('aspect')), 'high' if body.get('quality') == 'high' else 'std')
+            r = _fal('POST', 'https://queue.fal.run/' + M['ep'], payload); rid = r.get('request_id')
+            if not rid: raise RuntimeError('fal no devolvió id: ' + json.dumps(r)[:200])
+            base_ = 'https://queue.fal.run/' + M['ep'] + '/requests/' + rid
+            jobs[rid] = {'t0': time.time(), 'item': body.get('item', 'img'), 'model': mkey, 'prov': 'fal', 'fst': r.get('status_url') or base_ + '/status', 'fres': r.get('response_url') or base_, 'fcan': r.get('cancel_url') or base_ + '/cancel', 'usd': usd, 'credits': None, 'meta': body.get('meta') or {}}
+            return _js(200, {'request_id': rid, 'usd': usd, 'credits': None, 'model': M['ep'], 'model_key': mkey, 'image_urls': [u if not u.startswith('data:') else '(imagen)' for u in urls], 'payload': {k_: v_ for k_, v_ in payload.items() if k_ not in ('image_urls', 'image_url', 'reference_image_urls')}})
+        if M.get('prov') == 'mg':   # v328: Magnific (créditos de la cuenta del miembro)
+            urls = [_mg_sube(*img_bytes(i)) for i in (body.get('images') or [])[:M['refs']]]
+            if not urls: raise RuntimeError('hacen falta imágenes de referencia')
+            payload = M['body'](body.get('prompt', ''), urls, aspect_ok(body.get('aspect')), 'high' if body.get('quality') == 'high' else 'std'); path = '/v1/ai/text-to-image/' + M['ep']
+            r = _mg('POST', path, payload); rid = (r.get('data') or {}).get('task_id')
+            if not rid: raise RuntimeError('Magnific no devolvió id: ' + json.dumps(r)[:200])
+            jobs[rid] = {'t0': time.time(), 'item': body.get('item', 'img'), 'model': mkey, 'prov': 'mg', 'mgp': path, 'usd': 0, 'credits': None, 'meta': body.get('meta') or {}}
+            return _js(200, {'request_id': rid, 'usd': 0, 'credits': None, 'model': M['ep'], 'model_key': mkey, 'image_urls': urls, 'payload': {k_: v_ for k_, v_ in payload.items() if k_ != 'reference_images'}})
+        if M.get('prov') == 'ws':
+            usd = round(M['usd']['high' if body.get('quality') == 'high' else 'std'] + M.get('per', 0) * max(0, min(len(body.get('images', [])), M['refs']) - 1), 4)   # precio de tarifa con sus referencias
+            if not regalo and _casa_base() and load_ws() and mkey in CASA_MODELOS and not ((body.get('meta') or {}).get('nsfw') or body.get('nsfw') or _es_nsfw(body.get('prompt'))):   # v357: con su clave, el regalo se gasta PRIMERO (si entra y le llega)
+                _ctx.regalo_primero = True
+                try: c_ = casa_info(); regalo = bool(c_ and c_['saldo'] + 1e-6 >= usd and _casa_global() < CASA_TOPE)
+                except Exception: regalo = False
+                if not regalo: _ctx.regalo_primero = False
+                else: _ctx.ws_modo = 'casa'   # se lanza con la clave de la casa
+            if regalo:   # 🎁 paga el saldo regalo: nunca NSFW (la clave es la de la casa) y solo si le llega
+                if (body.get('meta') or {}).get('nsfw') or body.get('nsfw') or _es_nsfw(body.get('prompt')): raise RuntimeError('El saldo regalo no vale para contenido NSFW. Para eso, conecta tu propia clave en «Mis APIs».')
+                if mkey not in CASA_MODELOS: raise RuntimeError('Ese modelo no entra en el saldo regalo: conecta tu propia clave en «Mis APIs».')   # v260: antes de subir nada
+                casa_puede(usd)
+            urls = [resolve_ws(i) for i in (body.get('images') or [])[:M['refs']]]
+            if not urls: raise RuntimeError('hacen falta imágenes de referencia')
+            payload = M['body'](body.get('prompt', ''), urls, aspect_ok(body.get('aspect')), 'high' if body.get('quality') == 'high' else 'std')
+            bal0 = None
+            if regalo:
+                if 'seedream' in M['ep']: payload['enable_safety_checker'] = True
+                with _cerrojo('gen'):   # de una en una: dos peticiones a la vez no pueden gastar el mismo saldo
+                    casa_puede(usd); _ctx.casa_ok = True
+                    try: r = ws('POST', '/api/v3/' + M['ep'], payload)
+                    finally: _ctx.casa_ok = False
+                    rid = (r.get('data') or {}).get('id')
+                    if not rid: raise RuntimeError('WaveSpeed no devolvió id: ' + json.dumps(r)[:200])
+                    jobs[rid] = {'t0': time.time(), 'item': body.get('item', 'img'), 'model': mkey, 'prov': 'ws', 'usd': usd, 'bal0': None, 'casa': True, 'credits': None, 'meta': body.get('meta') or {}}
+                return _js(200, {'request_id': rid, 'usd': usd, 'credits': None, 'model': M['ep'], 'model_key': mkey, 'image_urls': urls, 'casa': casa_info(), 'payload': {k: v for k, v in payload.items() if k != 'images'}})
+            try: bal0 = float((ws('GET', '/api/v3/balance').get('data') or {}).get('balance'))
+            except Exception: bal0 = None
+            r = ws('POST', '/api/v3/' + M['ep'], payload); rid = (r.get('data') or {}).get('id')
+            if not rid: raise RuntimeError('WaveSpeed no devolvió id: ' + json.dumps(r)[:200])
+            jobs[rid] = {'t0': time.time(), 'item': body.get('item', 'img'), 'model': mkey, 'prov': 'ws', 'usd': usd, 'bal0': bal0, 'credits': None, 'meta': body.get('meta') or {}}
+            return _js(200, {'request_id': rid, 'usd': usd, 'credits': None, 'model': M['ep'], 'model_key': mkey, 'image_urls': urls, 'payload': {k: v for k, v in payload.items() if k != 'images'}})
+        if not _hf_listo(): raise RuntimeError('Higgsfield no está conectado: conéctalo en «Mis APIs»' if SERVIDOR else 'falta la clave ID:SECRET en ~/.claude/higgsfield.env')
+        urls = [resolve_image(i) for i in body.get('images', [])][:M['refs']]
+        if not urls: raise RuntimeError('hacen falta imágenes de referencia')
+        payload = M['body'](body.get('prompt', ''), urls, aspect_ok(body.get('aspect')), 'high' if body.get('quality') == 'high' else 'std')
+        est = {}
+        try: est = api('POST', f"/estimate/{M['ep']}", payload)
+        except RuntimeError: pass
+        res = api('POST', '/' + M['ep'], payload)
+        rid = res.get('request_id'); jobs[rid] = {'t0': time.time(), 'item': body.get('item', 'img'), 'model': mkey, 'usd': est.get('usd'), 'credits': est.get('credits'), 'meta': body.get('meta') or {}}
+        return _js(200, {'request_id': rid, 'usd': est.get('usd'), 'credits': est.get('credits'), 'model': M['ep'], 'model_key': mkey, 'status_url': res.get('status_url'), 'image_urls': urls, 'payload': {k: v for k, v in payload.items() if k not in ('image_urls', 'image_url')}})
+    except Exception as e:
+        plog('generar ✕ ' + str(e)); fallida_apunta((locals().get('body') or {}).get('meta') if isinstance(locals().get('body'), dict) else None, str(e)); return _js(400, {'error': str(e)})
 class H(SimpleHTTPRequestHandler):
     timeout = 120 if SERVIDOR else None   # en servidor, una conexión que no dice nada se corta
     def __init__(self, *a, **k): super().__init__(*a, directory=ROOT, **k)
@@ -2767,6 +2984,8 @@ class H(SimpleHTTPRequestHandler):
                 if _dentro(b_, f_) and os.path.isfile(f_):
                     b = open(f_, 'rb').read(); self.send_response(200); self.send_header('Content-Type', mimetypes.guess_type(f_)[0] or 'application/octet-stream'); self.send_header('Content-Length', str(len(b))); self.end_headers(); self.wfile.write(b); return
             return self._corta(404)
+        if self.command == 'GET' and self.path.startswith('/mcp/img?'): return self._mcp_img()   # v387: una creación, con enlace firmado de 24 h
+        if self.command == 'GET' and self.path == '/mcp': return self._json(405, {'error': 'MCP: usa POST con JSON-RPC (Streamable HTTP)'})
         if self.command in ('GET', 'HEAD') and self.path == '/salud': return self._json(200, {'ok': True, 'v': VERSION, 'regalo': bool(CASA_KEY)}) if self.command == 'GET' else self._corta(200)   # el alojamiento pregunta aquí si el servidor está vivo (sin sesión, sin datos)
         if self.command == 'POST':
             try: n = int(self.headers.get('Content-Length') or 0)
@@ -2828,6 +3047,21 @@ class H(SimpleHTTPRequestHandler):
                 if os.path.isfile(fp) and os.path.getmtime(fp) > desde: t.add(fp, arcname=f)
     def do_GET(self): return self._pasa(self._get)
     def do_POST(self): return self._pasa(self._post)
+    def _mcp_img(self):   # v387
+        t = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query).get('t', [''])[0]; ok = _mcp_firma_ok(t)
+        if not ok: return self._corta(404)
+        u, rel = ok
+        with como(u if SERVIDOR else None):
+            full = busca(rel, propio=True)
+            if not full: return self._corta(404)
+            data = open(full, 'rb').read(); self.send_response(200); self.send_header('Content-Type', mimetypes.guess_type(full)[0] or 'application/octet-stream'); self.send_header('Content-Length', str(len(data))); self.send_header('Cache-Control', 'private, max-age=3600'); self.end_headers(); self.wfile.write(data)
+    def _mcp(self):   # v387: POST /mcp · JSON-RPC 2.0 (un mensaje o una lista)
+        n = int(self.headers.get('Content-Length') or 0)
+        try: m = json.loads(self.rfile.read(n) or b'{}')
+        except Exception: return self._json(400, {'jsonrpc': '2.0', 'id': None, 'error': {'code': -32700, 'message': 'JSON no válido'}})
+        L = m if isinstance(m, list) else [m]; R = [r for r in (_mcp_rpc(self, x) for x in L if isinstance(x, dict)) if r]
+        if not R: self.send_response(202); self.send_header('Content-Length', '0'); self.end_headers(); return
+        b = json.dumps(R[0] if not isinstance(m, list) else R, ensure_ascii=False).encode(); self.send_response(200); self.send_header('Content-Type', 'application/json; charset=utf-8'); self.send_header('Content-Length', str(len(b))); self.send_header('Mcp-Session-Id', hashlib.sha256((uid() or 'local').encode()).hexdigest()[:24]); self.end_headers(); self.wfile.write(b)
     def do_HEAD(self): return self._pasa(self._head)   # antes HEAD se saltaba la guarda
     def _head(self): return self._estatico(True) if SERVIDOR else super().do_HEAD()
     if SERVIDOR:
@@ -2897,6 +3131,7 @@ class H(SimpleHTTPRequestHandler):
         b = json.dumps(obj, ensure_ascii=False).encode(); self.send_response(code)
         self.send_header('Content-Type', 'application/json; charset=utf-8'); self.send_header('Content-Length', str(len(b))); self.end_headers(); self.wfile.write(b)
     def _guard(self):   # solo el propio navegador en localhost: ni otra web (CSRF) ni un dominio que apunte a 127.0.0.1 (DNS rebinding)
+        if self.path == '/mcp' or self.path.startswith('/mcp/img?'): return True   # v387: los clientes MCP no mandan Origin; /mcp/img va con enlace firmado
         if SERVIDOR:   # en servidor no se exige localhost: el origen, si viene, tiene que estar en la lista (ARIA_ORIGENES), y los POST son siempre JSON
             origin = (self.headers.get('Origin') or '').lower().rstrip('/')
             if origin and origin not in ORIGENES: return False
@@ -2915,7 +3150,7 @@ class H(SimpleHTTPRequestHandler):
             if u.path == '/api/catalogo': return self._json(200, _cat_load()[1])   # el catálogo que ve esta cuenta: el común + su capa
         if u.path == '/api/claves':   # estado de las APIs, sin enseñar nunca las claves
             A = _apis_estado(); w = A[0]
-            return self._json(200, {'ok': True, 'apis': A, 'ws': w['on'], 'ws_fin': w['fin'], 'saldo': w['saldo'], 'casa': casa_info() or casa_info_aunque()})   # v357: también con su clave (se gasta primero)
+            return self._json(200, {'ok': True, 'apis': A, 'ws': w['on'], 'ws_fin': w['fin'], 'saldo': w['saldo'], 'casa': casa_info() or casa_info_aunque(), 'mcp': _mcp_estado(), 'mcp_url': MCP_BASE + '/mcp'})   # v357: también con su clave (se gasta primero) · v387: + MCP
         if u.path == '/api/aria/estado':   # Aria de equipo: ¿puedo editarla, puedo publicarla, hay cambios sin publicar?
             if aria_fija(): return self._json(200, {'ok': True, 'editor': False})
             P = _aria_perfil()
@@ -3282,6 +3517,12 @@ class H(SimpleHTTPRequestHandler):
         if SERVIDOR and self.path in ('/api/describir', '/api/personas_img', '/api/acc_cajas', '/api/pj_analizar') and not _tope('lectura', 120, 3600): return self._json(429, {'error': 'Demasiadas lecturas seguidas: espera unos minutos.'})
         if self.path in ('/api/perfil', '/api/ficha_panel', '/api/fichas360') and aria_fija(): return self._json(403, {'error': FIJA, 'fija': True})   # todo esto escribe en la ficha de Aria
         if self.path == '/api/video': return self.do_video()
+        if self.path == '/mcp': return self._mcp()   # v387
+        if self.path == '/api/mcp':   # v387: {accion: 'crear'|'anular'} → la clave solo se devuelve al crearla
+            n = int(self.headers.get('Content-Length') or 0); body = json.loads(self.rfile.read(n) or b'{}')
+            if body.get('accion') == 'crear': k = _mcp_crea(); plog('clave MCP creada'); return self._json(200, {'ok': True, 'clave': k, 'url': MCP_BASE + '/mcp', 'mcp': _mcp_estado()})
+            if body.get('accion') == 'anular': _mcp_anula(); plog('clave MCP anulada'); return self._json(200, {'ok': True, 'mcp': _mcp_estado()})
+            return self._json(400, {'error': 'acción desconocida'})
         if SERVIDOR and self.path == '/api/sesion':   # deja la sesión en una cookie HttpOnly para que las imágenes de la cuenta se puedan pedir con <img>; {salir:true} la borra
             n = int(self.headers.get('Content-Length') or 0); body = json.loads(self.rfile.read(n) or b'{}'); a = self.headers.get('Authorization') or ''; tok = a[7:].strip() if a[:7].lower() == 'bearer ' else ''
             if body.get('salir'): ck = 'aria_token=; Path=/; HttpOnly; Secure; SameSite=None; Max-Age=0'
@@ -4621,78 +4862,7 @@ class H(SimpleHTTPRequestHandler):
             return self._json(200, {'ok': True, 'raw': r})
         if self.path != '/api/generar': return self._json(404, {'error': 'no'})
         n = int(self.headers.get('Content-Length') or 0); body = json.loads(self.rfile.read(n) or b'{}')
-        if not nsfw_ok() and _con_aria(body) and ((body.get('meta') or {}).get('nsfw') or body.get('nsfw') or _es_nsfw(body.get('prompt'))): return self._json(400, {'error': 'El contenido NSFW con Aria Cruz no está disponible en esta cuenta.'})
-        prest = sorted({tuple(str(i.get('path')).split('?')[0].split('/')[2:4]) for i in (body.get('images') or []) if isinstance(i, dict) and str(i.get('path') or '').startswith('assets/prestamo/')})
-        if prest and ((body.get('meta') or {}).get('nsfw') or body.get('nsfw') or _es_nsfw(body.get('prompt'))):   # v223: solo si en ESA colaboración el modo NSFW lo han activado los dos (y no ha vencido)
-            d_ = _com_lee(); yo_ = _cid()
-            if not all(len(p) == 2 and any(x.get('de') == yo_ and x.get('para') == p[0] and x.get('pid') in (None, p[1]) and _sol_nsfw(x) for x in d_['sol']) for p in prest): return self._json(400, {'error': 'Con ese personaje el modo NSFW no está activado: tenéis que activarlo los dos en vuestra conversación de la Comunidad.'})
-        _ctx.prestamo_ok = bool(prest); _ctx.prest = [p for p in prest if len(p) == 2]
-        save_inputs(body)
-        try:
-            AM = all_models(); regalo = casa_on(); mkey = body.get('model') if body.get('model') in AM else (CASA_DEF if regalo else 'qwen'); M = AM[mkey]
-            if M.get('prov') == 'fal':   # v374: fal (la clave del miembro)
-                urls = [_fal_sube(*img_bytes(i)) for i in (body.get('images') or [])[:M['refs']]]
-                if not urls: raise RuntimeError('hacen falta imágenes de referencia')
-                usd = round(M['usd']['high' if body.get('quality') == 'high' else 'std'] + M.get('per', 0) * max(0, len(urls) - 1), 4)
-                payload = M['body'](body.get('prompt', ''), urls, aspect_ok(body.get('aspect')), 'high' if body.get('quality') == 'high' else 'std')
-                r = _fal('POST', 'https://queue.fal.run/' + M['ep'], payload); rid = r.get('request_id')
-                if not rid: raise RuntimeError('fal no devolvió id: ' + json.dumps(r)[:200])
-                base_ = 'https://queue.fal.run/' + M['ep'] + '/requests/' + rid
-                jobs[rid] = {'t0': time.time(), 'item': body.get('item', 'img'), 'model': mkey, 'prov': 'fal', 'fst': r.get('status_url') or base_ + '/status', 'fres': r.get('response_url') or base_, 'fcan': r.get('cancel_url') or base_ + '/cancel', 'usd': usd, 'credits': None, 'meta': body.get('meta') or {}}
-                return self._json(200, {'request_id': rid, 'usd': usd, 'credits': None, 'model': M['ep'], 'model_key': mkey, 'image_urls': [u if not u.startswith('data:') else '(imagen)' for u in urls], 'payload': {k_: v_ for k_, v_ in payload.items() if k_ not in ('image_urls', 'image_url', 'reference_image_urls')}})
-            if M.get('prov') == 'mg':   # v328: Magnific (créditos de la cuenta del miembro)
-                urls = [_mg_sube(*img_bytes(i)) for i in (body.get('images') or [])[:M['refs']]]
-                if not urls: raise RuntimeError('hacen falta imágenes de referencia')
-                payload = M['body'](body.get('prompt', ''), urls, aspect_ok(body.get('aspect')), 'high' if body.get('quality') == 'high' else 'std'); path = '/v1/ai/text-to-image/' + M['ep']
-                r = _mg('POST', path, payload); rid = (r.get('data') or {}).get('task_id')
-                if not rid: raise RuntimeError('Magnific no devolvió id: ' + json.dumps(r)[:200])
-                jobs[rid] = {'t0': time.time(), 'item': body.get('item', 'img'), 'model': mkey, 'prov': 'mg', 'mgp': path, 'usd': 0, 'credits': None, 'meta': body.get('meta') or {}}
-                return self._json(200, {'request_id': rid, 'usd': 0, 'credits': None, 'model': M['ep'], 'model_key': mkey, 'image_urls': urls, 'payload': {k_: v_ for k_, v_ in payload.items() if k_ != 'reference_images'}})
-            if M.get('prov') == 'ws':
-                usd = round(M['usd']['high' if body.get('quality') == 'high' else 'std'] + M.get('per', 0) * max(0, min(len(body.get('images', [])), M['refs']) - 1), 4)   # precio de tarifa con sus referencias
-                if not regalo and _casa_base() and load_ws() and mkey in CASA_MODELOS and not ((body.get('meta') or {}).get('nsfw') or body.get('nsfw') or _es_nsfw(body.get('prompt'))):   # v357: con su clave, el regalo se gasta PRIMERO (si entra y le llega)
-                    _ctx.regalo_primero = True
-                    try: c_ = casa_info(); regalo = bool(c_ and c_['saldo'] + 1e-6 >= usd and _casa_global() < CASA_TOPE)
-                    except Exception: regalo = False
-                    if not regalo: _ctx.regalo_primero = False
-                    else: _ctx.ws_modo = 'casa'   # se lanza con la clave de la casa
-                if regalo:   # 🎁 paga el saldo regalo: nunca NSFW (la clave es la de la casa) y solo si le llega
-                    if (body.get('meta') or {}).get('nsfw') or body.get('nsfw') or _es_nsfw(body.get('prompt')): raise RuntimeError('El saldo regalo no vale para contenido NSFW. Para eso, conecta tu propia clave en «Mis APIs».')
-                    if mkey not in CASA_MODELOS: raise RuntimeError('Ese modelo no entra en el saldo regalo: conecta tu propia clave en «Mis APIs».')   # v260: antes de subir nada
-                    casa_puede(usd)
-                urls = [resolve_ws(i) for i in (body.get('images') or [])[:M['refs']]]
-                if not urls: raise RuntimeError('hacen falta imágenes de referencia')
-                payload = M['body'](body.get('prompt', ''), urls, aspect_ok(body.get('aspect')), 'high' if body.get('quality') == 'high' else 'std')
-                bal0 = None
-                if regalo:
-                    if 'seedream' in M['ep']: payload['enable_safety_checker'] = True
-                    with _cerrojo('gen'):   # de una en una: dos peticiones a la vez no pueden gastar el mismo saldo
-                        casa_puede(usd); _ctx.casa_ok = True
-                        try: r = ws('POST', '/api/v3/' + M['ep'], payload)
-                        finally: _ctx.casa_ok = False
-                        rid = (r.get('data') or {}).get('id')
-                        if not rid: raise RuntimeError('WaveSpeed no devolvió id: ' + json.dumps(r)[:200])
-                        jobs[rid] = {'t0': time.time(), 'item': body.get('item', 'img'), 'model': mkey, 'prov': 'ws', 'usd': usd, 'bal0': None, 'casa': True, 'credits': None, 'meta': body.get('meta') or {}}
-                    return self._json(200, {'request_id': rid, 'usd': usd, 'credits': None, 'model': M['ep'], 'model_key': mkey, 'image_urls': urls, 'casa': casa_info(), 'payload': {k: v for k, v in payload.items() if k != 'images'}})
-                try: bal0 = float((ws('GET', '/api/v3/balance').get('data') or {}).get('balance'))
-                except Exception: bal0 = None
-                r = ws('POST', '/api/v3/' + M['ep'], payload); rid = (r.get('data') or {}).get('id')
-                if not rid: raise RuntimeError('WaveSpeed no devolvió id: ' + json.dumps(r)[:200])
-                jobs[rid] = {'t0': time.time(), 'item': body.get('item', 'img'), 'model': mkey, 'prov': 'ws', 'usd': usd, 'bal0': bal0, 'credits': None, 'meta': body.get('meta') or {}}
-                return self._json(200, {'request_id': rid, 'usd': usd, 'credits': None, 'model': M['ep'], 'model_key': mkey, 'image_urls': urls, 'payload': {k: v for k, v in payload.items() if k != 'images'}})
-            if not _hf_listo(): raise RuntimeError('Higgsfield no está conectado: conéctalo en «Mis APIs»' if SERVIDOR else 'falta la clave ID:SECRET en ~/.claude/higgsfield.env')
-            urls = [resolve_image(i) for i in body.get('images', [])][:M['refs']]
-            if not urls: raise RuntimeError('hacen falta imágenes de referencia')
-            payload = M['body'](body.get('prompt', ''), urls, aspect_ok(body.get('aspect')), 'high' if body.get('quality') == 'high' else 'std')
-            est = {}
-            try: est = api('POST', f"/estimate/{M['ep']}", payload)
-            except RuntimeError: pass
-            res = api('POST', '/' + M['ep'], payload)
-            rid = res.get('request_id'); jobs[rid] = {'t0': time.time(), 'item': body.get('item', 'img'), 'model': mkey, 'usd': est.get('usd'), 'credits': est.get('credits'), 'meta': body.get('meta') or {}}
-            return self._json(200, {'request_id': rid, 'usd': est.get('usd'), 'credits': est.get('credits'), 'model': M['ep'], 'model_key': mkey, 'status_url': res.get('status_url'), 'image_urls': urls, 'payload': {k: v for k, v in payload.items() if k not in ('image_urls', 'image_url')}})
-        except Exception as e:
-            plog('generar ✕ ' + str(e)); fallida_apunta((locals().get('body') or {}).get('meta') if isinstance(locals().get('body'), dict) else None, str(e)); return self._json(400, {'error': str(e)})
-
+        return self._json(*_generar_r(self, body))   # v387: la misma generación la usa el MCP
     def do_video(self):   # {mode:i2v|r2v, prompt, image:{path|data}, refs:[{path}], duration, resolution, aspect, audio, item, usd}
         n = int(self.headers.get('Content-Length') or 0); body = json.loads(self.rfile.read(n) or b'{}')
         if not nsfw_ok() and _con_aria(body) and ((body.get('meta') or {}).get('nsfw') or body.get('nsfw') or _es_nsfw(body.get('prompt'))): return self._json(400, {'error': 'El contenido NSFW con Aria Cruz no está disponible en esta cuenta.'})
