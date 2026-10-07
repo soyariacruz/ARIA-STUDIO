@@ -93,7 +93,7 @@
   }
   function visual(code) {
     if (!code) return '';
-    if (code.startsWith('img:')) return `<img src="${CUR}${code.slice(4)}.jpg" alt="" loading="lazy">`;
+    if (code.startsWith('img:')) return `<img src="${CUR}${code.slice(4)}.jpg?v=392" alt="" loading="lazy">`;   /* v392: versión para que un cambio de foto se vea al momento */
     if (code.startsWith('sw:')) return `<span class="pjsw" style="background:${code.slice(3)}"></span>`;
     if (code.startsWith('svg:')) return svg(code.slice(4));
     if (code.startsWith('body:')) { const [a, b, c, d] = code.slice(5).split(',').map(Number); return body(a, b, c, d); }
@@ -780,15 +780,28 @@
   async function cbVolver(p) { if (!(await pregunta(`¿Volver a la ficha anterior de ${p.nombre}?\n\nLa de ahora se pierde.`))) return; const copy = {}; ['vista_frente', 'vista_perfil', 'vista_tres', 'vista_espalda', 'cuerpo', 'combo'].forEach(k => { if (p['prev_' + k]) copy[k] = clean(p['prev_' + k]); });
     const q = Object.assign({}, p, { vistasOk: { frente: true, perfil: true, tres: true, espalda: true }, autoFicha: false }); ['prev_vista_frente', 'prev_vista_perfil', 'prev_vista_tres', 'prev_vista_espalda', 'prev_cuerpo', 'prev_combo', 'prevT'].forEach(k => { delete q[k]; });
     const r = await persist_(q, { copy }); if (r && r.ok) { toast('Ficha anterior recuperada'); CB.pid = null; edPinta(); renderProfile(); } else toast('No se pudo'); }
+  function cbRepinta() { // v392: solo la columna de datos y el asistente, sin tocar la vista (y sin perder el scroll)
+    const m0 = document.getElementById('edf'); const p = edP(); if (!m0 || !p) return; const box0 = m0.querySelector('.edbox'); if (!box0) return;
+    const old = box0.querySelector('.cbdatos'); const sc = old ? old.scrollTop : 0; const nu = cbColumna(p); if (old) old.replaceWith(nu); else box0.prepend(nu); nu.scrollTop = sc;
+    const L = edPiezas(p); const pz = L.find(x => x.k === ED.k) || L[0]; const oa = box0.querySelector('.cbasis'); const na = cbAsistente(p, pz); if (oa) oa.replaceWith(na); else box0.appendChild(na); }
+  const CB_SW = { ojos: { negros: '#1d1711', marrones: '#6a3f23', verdes: '#4f8a4b', azules: '#3f78b8', grises: '#8c949c', ambar: '#b8812e', amarillos: '#c9a53a', violeta: '#6c4fa0', miel: '#a9792f', avellana: '#7d6a3b' }, peloColor: { negro: '#151312', castano: '#5b3a24', rubio: '#d9b56a', pelirrojo: '#b6482a', rosa: '#e9a6c0', azul: '#2f7bd8', verde: '#2f9a5c', blanco: '#ece9e4', gris: '#9a9a9a', platino: '#e8dcc0', moreno: '#2d1e16', cobrizo: '#b86a3c', lila: '#b58ad6', rojo: '#b3242b' } };
   function cbColumna(p) { // la columna de datos: los mismos controles del creador sobre la copia de trabajo
     const d = cbDatos(p); const col = el('div', 'cbdatos'); col.appendChild(el('small', 'pjk', 'Sus datos')); col.appendChild(el('p', 'ednota', 'Cambia lo que quieras: luego «Probar» en la vista que miras, y si te convence, «Rehacer la ficha».'));
     const wiz0 = pj.wiz; pj.wiz = pj.wiz || { open: {} }; pj.wiz.open = pj.wiz.open || {};
     try { const secs = [['cara', 'Cara', 'cara'], ['ojos', 'Ojos', 'ojos'], ['boca', 'Labios y nariz', 'boca'], ['pelocolor', 'Color de pelo', 'pelocolor'], ['piel', 'Piel', 'piel'], ['cuerpo', 'Altura y complexión', 'cuerpo'], ['curvas', 'Pecho y cadera', 'curvas'], ['estilo', 'Estilo visual', 'estilo']];
-      secs.forEach(([id, t, sid]) => { const dt = document.createElement('details'); dt.className = 'pjsec cbsec'; dt.open = !!pj.wiz.open['cb_' + id]; dt.addEventListener('toggle', () => { pj.wiz.open['cb_' + id] = dt.open; }); const sm = document.createElement('summary'); sm.innerHTML = `<b>${t}</b><span>${esc(resumenDe(sid, d) || '')}</span>`; dt.appendChild(sm); const b = el('div', 'cbsecb'); try { b.appendChild(stepBody(sid, d)); } catch (e) { b.appendChild(el('small', 'ednota', 'no disponible')); } dt.appendChild(b); col.appendChild(dt); }); }
+      CB.abiertoSec = CB.abiertoSec || 'cara';
+      secs.forEach(([id, t, sid]) => { const dt = document.createElement('details'); dt.className = 'pjsec cbsec cb-' + sid; dt.open = CB.abiertoSec === id; dt.addEventListener('toggle', () => { if (dt.open) { CB.abiertoSec = id; col.querySelectorAll('details.cbsec').forEach(o => { if (o !== dt) o.open = false; }); } else if (CB.abiertoSec === id) CB.abiertoSec = null; });   /* v392: uno abierto a la vez */
+        const sm = document.createElement('summary'); sm.innerHTML = `<b>${t}</b><span>${esc(resumenDe(sid, d) || '')}</span>`; dt.appendChild(sm); const b = el('div', 'cbsecb'); try { b.appendChild(stepBody(sid, d)); } catch (e) { b.appendChild(el('small', 'ednota', 'no disponible')); }
+        cbAdapta(b, sid, d); dt.appendChild(b); col.appendChild(dt); }); }
     finally { if (!wiz0) pj.wiz = null; }
     col.addEventListener('click', () => { setTimeout(() => { if (JSON.stringify(cbResumen(CB.d)) !== JSON.stringify(cbResumen(p))) { CB.dirty = true; CB.d.prompt = CB.d.promptEditado ? CB.d.prompt : null; const h = col.querySelector('.cbdirty'); if (h) h.style.display = ''; } }, 0); });
+    CB.dirty = CB.dirty || JSON.stringify(cbResumen(CB.d)) !== JSON.stringify(cbResumen(p)) || !!(CB.d.detTxt || '') !== !!(p.detTxt || '');   /* v392: al repintar, se mira si hay cambios de verdad */
     const h = el('div', 'cbdirty'); h.style.display = CB.dirty ? '' : 'none'; h.innerHTML = '<b>Datos cambiados</b> · aún no afectan a su ficha'; const bb = el('button', 'btn', 'Guardar solo los datos'); bb.title = 'Las próximas fotos ya los usan; la ficha de ahora no cambia'; bb.onclick = async () => { const r = await cbGuardaDatos(p); toast(r && r.ok ? 'Datos guardados' : 'No se pudo'); edPinta(); }; h.appendChild(bb); col.appendChild(h);
     return col; }
+  function cbAdapta(b, sid, d) { // v392: en el Constructor, ojos y pelo son muestras de color; el estilo, pastillas; sin fotos
+    const SW = sid === 'ojos' ? CB_SW.ojos : sid === 'pelocolor' ? CB_SW.peloColor : null;
+    if (SW) b.querySelectorAll('.pjcard').forEach(c => { const lb = (c.querySelector('b') || {}).innerText || ''; const opt = (O[sid === 'ojos' ? 'ojos' : 'peloColor'] || []).find(o => o[2] === lb); if (!opt) return; const v = c.querySelector('.pjvis'); if (v) { v.innerHTML = ''; v.className = 'pjvis cbsw'; v.style.background = SW[opt[0]] || '#777'; } });
+    if (sid === 'estilo') b.querySelectorAll('.pjcard').forEach(c => { const v = c.querySelector('.pjvis'); if (v && !c.classList.contains('pjcardref')) v.remove(); c.classList.add('cbpill'); }); }
   function cbAsistente(p, pz) { const sd = el('div', 'cbasis'); sd.appendChild(el('small', 'pjk', '🧬 Asistente de la ficha')); const log = el('div', 'cbchat');
     if (!CB.chat.length) log.appendChild(el('div', 'cbmsg ia', 'Dime qué cambiar y lo traduzco a su ficha: <i>«más pecho»</i>, <i>«labios más gruesos pero natural»</i>, <i>«pelo recogido»</i>, <i>«piel más morena»</i>. Te enseño el cambio antes de generar nada.'));
     CB.chat.forEach(c => { const m = el('div', 'cbmsg ' + c.de); m.innerHTML = esc(c.x) + (c.det && c.det.length ? '<ul>' + c.det.map(x => '<li>' + esc(x) + '</li>').join('') + '</ul>' : '') + (c.libre ? `<small>+ ${esc(c.libre)}</small>` : '') + (c.aviso ? `<small class="cbav">⚠ ${esc(c.aviso)}</small>` : '') + (c.usd != null ? `<small class="cbusd">${c.casa ? 'invita la casa' : fmtUsd(c.usd)}</small>` : ''); if (c.api) { const b = el('button', 'btn', 'Abrir Mis APIs'); b.onclick = () => openClaves(); m.appendChild(b); } log.appendChild(m); });
@@ -931,6 +944,7 @@
     const a = el('div', 'pjacts'); const g = el('button', 'btn acc big', '✨ Crear una imagen'); g.onclick = () => done('crear'); const c = el('button', 'btn big', 'Cerrar'); c.onclick = () => done(); a.appendChild(g); a.appendChild(c); b.appendChild(a); m0.appendChild(b);
   }
   function paintWiz() {
+    if (CB.pid && document.getElementById('edf')) { cbRepinta(); return; }   /* v392: con el Constructor abierto, se repinta él */
     const host = $('#profcard .pjbody'); if (!host || !pj.wiz) return; const keep = host.scrollTop; const w = pj.wiz, d = w.d; host.innerHTML = ''; const S = stepsOf(w);
     if (w.step < 0 || w.step >= S.length) w.step = 0; const stp = S[w.step];
     const hd = el('div', 'pjwhd'); hd.appendChild(el('div', '', `<small class="pjk">${w.editId ? 'Editar personaje' : w.mode === 'tengo' ? 'Ya tengo mi personaje' : w.mode === 'fotos' ? 'Desde tus favoritas' : 'Crear personaje desde cero'} · paso ${w.step + 1} de ${S.length}</small><h3>${stp.t}</h3><p>${stp.h}</p>`));
