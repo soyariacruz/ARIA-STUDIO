@@ -43,7 +43,7 @@ MAX_CUERPO = 40 * 1024 * 1024    # tope de una petición en modo servidor
 MAX_BIBLIO = 200 * 1024 * 1024   # tope de un fichero de la biblioteca común al copiarlo
 KINDS = ('vestidor', 'hair', 'expr')   # las bibliotecas a las que una cuenta puede añadir lo suyo
 _UUID = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
-VERSION = 397
+VERSION = 400
 _ctx = threading.local()   # la cuenta del hilo: la pone cada petición (y, a mano, cada hilo de fondo)
 def uid(): return getattr(_ctx, 'uid', None)   # en local siempre None
 DUENOS = tuple(e.strip().lower() for e in (os.environ.get('ARIA_DUENOS') or 'mix1994max@gmail.com').split(',') if e.strip())   # cuentas que pueden cambiar a Aria Cruz (en la web, la de Max)
@@ -624,7 +624,7 @@ def _adm_cuenta(u):
     except Exception: mo = None   # v284: sin monedero todavía (no ha usado el saldo regalo): no se enseña «le queda 0 $»
     sin_mon = not isinstance(mo, dict); mo = {} if sin_mon else mo
     queda = (float(mo.get('resto') or 0) if mo.get('mes') == mes else 0.0) + float(mo.get('extra') or 0) + float(mo.get('bienvenida') or 0)
-    regalo = sum(float(h.get('usd') or 0) for h in (mo.get('hist') or []) if isinstance(h, dict) and str(h.get('dia') or '').startswith(mes) and float(h.get('usd') or 0) > 0)
+    regalo = sum(float(h.get('usd') or 0) for h in (mo.get('hist') or []) if isinstance(h, dict) and str(h.get('dia') or '').startswith(mes) and float(h.get('usd') or 0) > 0 and h.get('que') != 'regalo')   # v398: lo retirado no es gasto
     try: pj = sum(1 for x in os.listdir(os.path.join(b, 'assets', 'personajes')) if not x.startswith(('.', '_')))
     except OSError: pj = 0
     try: clave = os.path.getsize(os.path.join(b, 'claves.env')) > 10
@@ -951,7 +951,7 @@ def _bolsa_resumen():
         except Exception: continue
         if not isinstance(m, dict): continue
         queda = (float(m.get('resto') or 0) if m.get('mes') == mes else 0.0) + float(m.get('extra') or 0) + float(m.get('bienvenida') or 0); comp += queda
-        gast = sum(float(h.get('usd') or 0) for h in (m.get('hist') or []) if isinstance(h, dict) and str(h.get('dia') or '').startswith(mes) and float(h.get('usd') or 0) > 0)
+        gast = sum(float(h.get('usd') or 0) for h in (m.get('hist') or []) if isinstance(h, dict) and str(h.get('dia') or '').startswith(mes) and float(h.get('usd') or 0) > 0 and h.get('que') != 'regalo')   # v398
         filas.append({'cid': cid, 'alias': str(d['alias'].get(cid) or 'Creador sin nombre')[:40], 'gastado': round(gast, 4), 'queda': round(queda, 4), 'precio': m.get('precio'), 'n': sum(1 for h in (m.get('hist') or []) if isinstance(h, dict) and str(h.get('dia') or '').startswith(mes) and h.get('que') == 'imagen')})
     filas.sort(key=lambda x: -x['gastado']); b = _bolsa_lee()
     return {'saldo': _bolsa_saldo(), 'gastado': round(_casa_global(), 4), 'tope': CASA_TOPE, 'comprometido': round(comp, 4), 'aviso': b['aviso'], 'cuentas': len(filas), 'top': filas[:20], 'todas': filas, 'camp': b['camp'][-20:], 'pct': 10, 'bienvenida': BIENVENIDA}
@@ -976,6 +976,14 @@ def _mon_lee():   # SIEMPRE con _cerrojo('mon') cogido. Da la bienvenida la prim
         r = _regalo_mes(p); gastado = float(m.get('mensual', 0)) - float(m.get('resto', 0)); m.update({'precio': p, 'mensual': r, 'resto': max(0.0, round(r - gastado, 4))}); cambia = True
     if cambia: _mon_guarda(m)
     return m
+def _regalos_nuevos():   # v398: regalos del equipo que esta cuenta aún no ha visto (la ventanita al entrar). Sin marca de visto, solo los de los últimos 14 días
+    if not _casa_base(): return []
+    try:
+        with _cerrojo('mon'): m = _mon_lee()
+    except Exception: return []
+    v = int(m.get('regalo_visto') or 0) or int(time.time()) - 14 * 86400
+    L = [h for h in (m.get('hist') or []) if isinstance(h, dict) and h.get('que') == 'regalo' and float(h.get('usd') or 0) < 0 and int(h.get('t') or 0) > v]
+    return [{'usd': round(-float(h['usd']), 2), 'nota': str(h.get('nota') or '')[:80], 't': int(h.get('t') or 0)} for h in L[-5:]]
 def _casa_en_curso():   # lo que está generándose ahora mismo con la clave de la casa y aún no se ha cobrado: cuenta como gastado
     u = uid(); ahora = time.time()
     return sum(float(j.get('usd') or 0) for j in list(jobs.values()) if j.get('casa') and j.get('owner') == u and not j.get('cobrado') and not j.get('failed') and ahora - float(j.get('t0') or 0) < 3 * 3600)
@@ -995,7 +1003,7 @@ def casa_info():   # el monedero tal como lo ve la web; None si la cuenta no va 
     if not casa_on(): return None
     with _cerrojo('mon'): m = _mon_lee()
     saldo = max(0.0, round(float(m['resto']) + float(m.get('extra') or 0) + float(m['bienvenida']) - _casa_en_curso(), 4)); p = WS_MODELS[CASA_DEF]['usd']['std']
-    return {'saldo': saldo, 'mensual': m['mensual'], 'resto': m['resto'], 'extra': float(m.get('extra') or 0), 'bienvenida': m['bienvenida'], 'mes': m['mes'], 'imagen': p, 'imagenes': int((saldo + 1e-6) // p), 'modelo': WS_MODELS[CASA_DEF]['name'], 'modelos': list(CASA_MODELOS), 'pausa': _casa_global() >= CASA_TOPE}
+    return {'saldo': saldo, 'propia': bool(load_ws()), 'mensual': m['mensual'], 'resto': m['resto'], 'extra': float(m.get('extra') or 0), 'bienvenida': m['bienvenida'], 'mes': m['mes'], 'imagen': p, 'imagenes': int((saldo + 1e-6) // p), 'modelo': WS_MODELS[CASA_DEF]['name'], 'modelos': list(CASA_MODELOS), 'pausa': _casa_global() >= CASA_TOPE}
 def casa_puede(usd):   # ¿llega el saldo regalo para esto? Si no, error claro
     if _casa_global() >= CASA_TOPE: plog(f'🎁 TOPE GLOBAL del saldo regalo alcanzado ({CASA_TOPE} $ este mes)'); raise RuntimeError('El saldo regalo está en pausa unos días. Mientras tanto puedes generar con tu propia clave en «Mis APIs».')
     c = casa_info()
@@ -3208,13 +3216,13 @@ class H(SimpleHTTPRequestHandler):
             c = casa_info()
             if not c and not _casa_base(): return self._json(200, {'ok': True, 'casa': None, 'hist': []})
             with _cerrojo('mon'): m = _mon_lee()
-            return self._json(200, {'ok': True, 'casa': c, 'hist': [{k: h.get(k) for k in ('t', 'usd', 'que', 'modelo', 'n')} for h in reversed(m.get('hist') or [])][:200]})
+            return self._json(200, {'ok': True, 'casa': c, 'hist': [{k: h.get(k) for k in ('t', 'usd', 'que', 'modelo', 'n', 'nota')} for h in reversed(m.get('hist') or [])][:200]})   # v398: + nota
         if u.path == '/api/push/clave':   # v375
             if not SERVIDOR: return self._json(200, {'ok': False})
             try: return self._json(200, {'ok': True, 'clave': _vapid()[1]})
             except Exception as e: return self._json(500, {'error': 'avisos no disponibles: ' + str(e)[:80]})
         if u.path == '/api/ping':
-            return self._json(200, {'ok': True, **({'espacio': {'usado': espacio(), 'tope': CUOTA}, 'aria_mia': not aria_fija(), 'nsfw': nsfw_ok()} if SERVIDOR else {}), 'model': MODEL, 'default': CASA_DEF if casa_on() else 'mstudio', 'models': model_list(), 'unavailable': unavailable(), 'ws': bool(load_ws()) or casa_on(), 'casa': casa_info(), 'aspects': ASPECTS, 'key': _hf_listo(), 'ark': bool(load_ark()[0]), 'ark_usd': ARK_USD, 'genjutsu': (not SERVIDOR) or GJ_WEB, 'interno': bool(getattr(_ctx, 'interno', False)) if SERVIDOR else os.path.isfile(os.path.expanduser('~/.claude/notion.env')), **({'servidor': True} if SERVIDOR else {})})   # interno = el ordenador de Max: enseña «Workflows» (en la web alojada, solo las cuentas autorizadas)
+            return self._json(200, {'ok': True, **({'espacio': {'usado': espacio(), 'tope': CUOTA}, 'aria_mia': not aria_fija(), 'nsfw': nsfw_ok()} if SERVIDOR else {}), 'model': MODEL, 'default': CASA_DEF if casa_on() else 'mstudio', 'models': model_list(), 'unavailable': unavailable(), 'ws': bool(load_ws()) or casa_on(), 'casa': casa_info() or casa_info_aunque(), 'regalo_nuevo': _regalos_nuevos(), 'aspects': ASPECTS, 'key': _hf_listo(), 'ark': bool(load_ark()[0]), 'ark_usd': ARK_USD, 'genjutsu': (not SERVIDOR) or GJ_WEB, 'interno': bool(getattr(_ctx, 'interno', False)) if SERVIDOR else os.path.isfile(os.path.expanduser('~/.claude/notion.env')), **({'servidor': True} if SERVIDOR else {})})   # interno = el ordenador de Max: enseña «Workflows» (en la web alojada, solo las cuentas autorizadas)
         if u.path == '/api/live':   # lo ya generado por la API (assets/live/<item>_<rid>.ext) → la app lo enseña sin volver a generar
             files = {}; allf = []; ld, vd = live_dir(), video_dir()
             for fn in sorted(os.listdir(ld), key=lambda f: os.path.getmtime(os.path.join(ld, f))):
@@ -3567,6 +3575,10 @@ class H(SimpleHTTPRequestHandler):
         if SERVIDOR and self.path in ('/api/describir', '/api/personas_img', '/api/acc_cajas', '/api/pj_analizar') and not _tope('lectura', 120, 3600): return self._json(429, {'error': 'Demasiadas lecturas seguidas: espera unos minutos.'})
         if self.path in ('/api/perfil', '/api/ficha_panel', '/api/fichas360') and aria_fija(): return self._json(403, {'error': FIJA, 'fija': True})   # todo esto escribe en la ficha de Aria
         if self.path == '/api/video': return self.do_video()
+        if self.path == '/api/regalo/visto':   # v398: la ventanita del regalo ya se ha visto
+            if _casa_base():
+                with _cerrojo('mon'): m = _mon_lee(); m['regalo_visto'] = int(time.time()); _mon_guarda(m)
+            return self._json(200, {'ok': True})
         if self.path == '/api/pj/asistente':   # v391: {id, peticion, datos:{campo: valor}, permitidos:{campo:[valores]}, prompt} → {cambios, libre, prompt, resumen, rehacer, aviso, usd, casa}
             n = int(self.headers.get('Content-Length') or 0); body = json.loads(self.rfile.read(n) or b'{}')
             pet = str(body.get('peticion') or '').strip()[:1500]
@@ -4391,13 +4403,22 @@ class H(SimpleHTTPRequestHandler):
                 if ac == 'regalar_todos':
                     b = _bolsa_lee(); b['camp'].append({'id': 'c' + hashlib.sha1(f'{time.time()}{usd}'.encode()).hexdigest()[:10], 'usd': usd, 'nota': nota, 't': int(time.time()), 'por': getattr(_ctx, 'email', '')}); _bolsa_guarda(b)
                     plog(f'🎁 bolsa: +{usd} $ para todas las cuentas · {nota}'); return self._json(200, {'ok': True, **_bolsa_resumen()})
+                if ac == 'quitar':   # v398: retirar saldo regalado que aún no ha gastado
+                    u = _com_cuentas().get(str(body.get('cid') or ''))
+                    if not u: return self._json(404, {'error': 'Esa cuenta no existe.'})
+                    with como(u, '', False):
+                        with _cerrojo('mon'):
+                            m = _mon_lee(); ex = float(m.get('extra') or 0); q = round(min(usd, ex), 4)
+                            if q <= 0: return self._json(400, {'error': 'No le queda nada regalado por retirar.'})
+                            m['extra'] = round(ex - q, 4); m.setdefault('hist', []).append({'t': int(time.time()), 'dia': time.strftime('%Y-%m-%d', time.gmtime()), 'usd': q, 'que': 'regalo', 'nota': nota or 'Retirado por el equipo'}); _mon_guarda(m)
+                    _ADM_C.pop(u, None); plog(f'🎁 bolsa: −{q} $ retirados a {body.get("cid")} · {nota}'); return self._json(200, {'ok': True, 'quitado': q, **_bolsa_resumen()})
                 if ac == 'regalar':
                     u = _com_cuentas().get(str(body.get('cid') or ''))
                     if not u: return self._json(404, {'error': 'Esa cuenta no existe.'})
                     with como(u, '', False):
                         with _cerrojo('mon'):
                             m = _mon_lee(); m['extra'] = round(float(m.get('extra') or 0) + usd, 4); m.setdefault('hist', []).append({'t': int(time.time()), 'dia': time.strftime('%Y-%m-%d', time.gmtime()), 'usd': -usd, 'que': 'regalo', 'nota': nota}); _mon_guarda(m)
-                    plog(f'🎁 bolsa: +{usd} $ para {body.get("cid")} · {nota}'); return self._json(200, {'ok': True, **_bolsa_resumen()})
+                    _ADM_C.pop(u, None); plog(f'🎁 bolsa: +{usd} $ para {body.get("cid")} · {nota}'); return self._json(200, {'ok': True, **_bolsa_resumen()})   # v398: la ficha del Admin se refresca al momento
                 return self._json(400, {'error': 'acción desconocida'})
             except Exception as e:
                 plog('bolsa ✕ ' + str(e)); return self._json(400, {'error': str(e)})
