@@ -311,7 +311,7 @@
     if (id === 'tdatos') {
       const g = el('div', 'pjtd'); const c1 = el('div', 'pjtdcol');
       c1.appendChild(grp('Nombre', input(d, 'nombre', 'Ej.: Aria Cruz', { err: d._err === 'nombre' }), d._err === 'nombre' ? '⚠ ponle un nombre para poder guardar' : ''));
-      c1.appendChild(grp('Usuario', input(d, 'usuario', '@soy_aria_cruz'), 'opcional'));
+      c1.appendChild(grp('Usuario de Instagram', input(d, 'usuario', '@usuario o el enlace de su Instagram'), 'opcional · así su Instagram se puede abrir'));
       c1.appendChild(grp('Edad aparente', slider(d, 'edad', 18, 70, v => v + ' años')));
       c1.appendChild(grp('Género', cards('genero', d, 'genero')));
       g.appendChild(c1);
@@ -344,7 +344,7 @@
     }
     if (id === 'rol') { b.appendChild(grp('Rol', cards('rol', d, 'rol', { multi: true }), 'puedes marcar varios')); b.appendChild(otro(d, 'rolTxt', 'Ej.: presentadora de noticias de IA')); }
     if (id === 'nicho') { b.appendChild(grp('Nicho', cards('nicho', d, 'nicho', { multi: true }), 'de qué habla · puedes marcar varios')); b.appendChild(otro(d, 'nichoTxt', 'Ej.: enseña a crear influencers IA sin complicaciones')); }
-    if (id === 'nombre') { const g = el('div', 'pjform'); g.appendChild(grp('Nombre', input(d, 'nombre', 'Ej.: Aria Cruz', { err: d._err === 'nombre' }), d._err === 'nombre' ? '⚠ ponle un nombre para poder guardarla' : '')); g.appendChild(grp('Usuario', input(d, 'usuario', '@soy_aria_cruz'))); g.appendChild(grp('Bio', input(d, 'bio', ARIA_BIO, { area: true }), 'la presentación de su perfil de Instagram')); b.appendChild(g); }
+    if (id === 'nombre') { const g = el('div', 'pjform'); g.appendChild(grp('Nombre', input(d, 'nombre', 'Ej.: Aria Cruz', { err: d._err === 'nombre' }), d._err === 'nombre' ? '⚠ ponle un nombre para poder guardarla' : '')); g.appendChild(grp('Usuario de Instagram', input(d, 'usuario', '@usuario o el enlace de su Instagram'), 'opcional · así su Instagram se puede abrir')); g.appendChild(grp('Bio', input(d, 'bio', ARIA_BIO, { area: true }), 'la presentación de su perfil de Instagram')); b.appendChild(g); }
     if (id === 'edad') { b.appendChild(grp('Edad aparente', slider(d, 'edad', 18, 70, v => v + ' años'))); b.appendChild(grp('Género', cards('genero', d, 'genero'))); b.appendChild(otro(d, 'generoTxt', 'Escribe su género si no está')); }
     if (id === 'cara') b.appendChild(grp('Forma de la cara', cards('cara', d, 'cara', { cls: 'one' })));
     if (id === 'ojos') { b.appendChild(grp('Color', cards('ojos', d, 'ojos', { cls: 'row8' }))); b.appendChild(grp('Otro color', colorPick(d, 'ojos', 55, [120, 40]), 'el tono exacto con las barras')); b.appendChild(grp('Forma', cards('ojosForma', d, 'ojosForma', { cls: 'row4' }))); }
@@ -415,6 +415,7 @@
   // ---------------------------------------------------------------- guardar
   async function savePersona() {
     const w = pj.wiz, d = w.d; const S = stepsOf(w);
+    { const v_ = String(d.usuario || '').trim(), m_ = v_.match(/instagram\.com\/([A-Za-z0-9._]+)/i); d.usuario = m_ ? '@' + m_[1] : v_ ? '@' + v_.replace(/^@+/, '').replace(/\s+/g, '') : ''; }   /* v383: @usuario aunque peguen el enlace */
     if (!(d.nombre || '').trim()) { // lo único obligatorio: se pide en una ventana y se sigue guardando, sin volver atrás por los pasos
       let m0 = document.getElementById('pjfalta'); if (m0) m0.remove(); m0 = el('div', 'fxm'); m0.id = 'pjfalta'; document.body.appendChild(m0); m0.onclick = e => { if (e.target === m0) m0.remove(); };
       const bx = el('div', 'devbox'); m0.appendChild(bx); bx.appendChild(el('div', 'devemo', '✍️')); bx.appendChild(el('h3', '', 'Solo falta su nombre')); bx.appendChild(el('p', '', 'Es lo único obligatorio. Lo demás lo puedes cambiar cuando quieras.'));
@@ -883,7 +884,7 @@
     const hd = el('div', 'pjwhd'); hd.appendChild(el('div', '', `<small class="pjk">${w.editId ? 'Editar personaje' : w.mode === 'tengo' ? 'Ya tengo mi personaje' : w.mode === 'fotos' ? 'Desde tus favoritas' : 'Crear personaje desde cero'} · paso ${w.step + 1} de ${S.length}</small><h3>${stp.t}</h3><p>${stp.h}</p>`));
     const dots = el('div', 'pjdots'); S.forEach((s, i) => { const k = i; const b = el('button', k === w.step ? 'on' : k < w.step ? 'done' : '', ''); b.title = s.t; b.onclick = () => { w.step = k; saveDraft(); paintWiz(); updSide(); }; dots.appendChild(b); }); hd.appendChild(dots);
     if (w.editId) { const p0 = pj.list.find(x => x.id === w.editId); const bb = el('button', 'btn fxback', `← Volver a ${esc((p0 && p0.nombre) || 'su ficha')} sin guardar`); bb.onclick = () => { pj.wiz = null; saveDraft(); pj.sel = w.editId; window.pjScrollTop = true; renderProfile(); renderSide(); }; host.appendChild(bb); }
-    host.appendChild(hd); host.appendChild(stp.ids ? stepMulti(stp, d) : stepBody(stp.id, d));
+    host.appendChild(hd); { const cu = stp.ids ? stepMulti(stp, d) : stepBody(stp.id, d); if (['quien', 'tdatos'].includes(stp.id) && cu.classList) cu.classList.add('pjestrecho'); host.appendChild(cu); }   /* v383: los datos, en una columna estrecha */
     const nav = el('div', 'pjnav'); const first = w.step === 0;
     const bk = el('button', 'btn', first ? '✕ Salir' : '← Atrás'); bk.onclick = async () => { if (first) { if ((await pregunta('¿Salir del creador? El borrador se queda guardado.'))) { pj.wiz = null; renderProfile(); renderSide(); } return; } w.step--; saveDraft(); paintWiz(); updSide(); host.scrollTop = 0; }; nav.appendChild(bk);
     if (stp.id === 'fin' || stp.id === 'tdatos') { const sv = el('button', 'btn acc', w.editId ? '✓ Guardar cambios' : stp.id === 'tdatos' ? '✓ Guardar mi personaje' : '✓ Guardar y crear su imagen'); sv.onclick = () => savePersona(); nav.appendChild(sv); }
