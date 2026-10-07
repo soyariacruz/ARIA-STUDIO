@@ -43,7 +43,7 @@ MAX_CUERPO = 40 * 1024 * 1024    # tope de una petición en modo servidor
 MAX_BIBLIO = 200 * 1024 * 1024   # tope de un fichero de la biblioteca común al copiarlo
 KINDS = ('vestidor', 'hair', 'expr')   # las bibliotecas a las que una cuenta puede añadir lo suyo
 _UUID = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
-VERSION = 406
+VERSION = 413
 _ctx = threading.local()   # la cuenta del hilo: la pone cada petición (y, a mano, cada hilo de fondo)
 def uid(): return getattr(_ctx, 'uid', None)   # en local siempre None
 DUENOS = tuple(e.strip().lower() for e in (os.environ.get('ARIA_DUENOS') or 'mix1994max@gmail.com').split(',') if e.strip())   # cuentas que pueden cambiar a Aria Cruz (en la web, la de Max)
@@ -2328,7 +2328,9 @@ def _com_aria(d, yo):   # v304: Aria da permiso a cada cuenta para crear con ell
     return cambio
 def _com_par(a, b): return '|'.join(sorted([a, b]))
 def _com_aria_pj():   # v404: la Aria publicada, como personaje de la cuenta real de Aria (la web la enseña con su foto: src)
-    P = _comun().get('perfil') or {}; ig = P.get('ig') if isinstance(P.get('ig'), dict) else {}
+    try: P = _comun().get('perfil') or {}
+    except Exception: P = {}   # v409: en la app local no hay catálogo común: Aria sale con lo mínimo
+    ig = P.get('ig') if isinstance(P.get('ig'), dict) else {}
     return {'pid': 'aria', 'nombre': str(P.get('name') or 'Aria Cruz')[:60], 'usuario': str(P.get('handle') or '@soy_aria_cruz').split(' ·')[0].strip()[:60], 'edad': 25, 'bio': str(P.get('bio') or '')[:600],
             'ig': str(ig.get('url') or (P.get('ig') if isinstance(P.get('ig'), str) else '') or 'https://www.instagram.com/soy_aria_cruz/')[:200], 'nicho': [], 'avatar': bool(P.get('avatar')), 'src': str(P.get('avatar') or '')[:300],
             'oculto': False, 'abierto': True, 'igseg': str(ig.get('followers') or P.get('followers') or '')[:12], 'nuevo': False, 't': 0, 'orden': -1, 'seguidores': 0, 'aria': True}
@@ -2944,8 +2946,19 @@ def _mcp_rpc(h, m):   # un mensaje JSON-RPC → respuesta (o None si es una noti
     return {'jsonrpc': '2.0', 'id': mid, 'error': {'code': -32601, 'message': f'método desconocido: {met}'}}
 def _generar(h, body):   # v387: → dict (con 'error' si falla)
     return _generar_r(h, body)[1]
+def _param(nombre):   # v412: una variable de entorno o, en la app local, su línea en claves.env (solo la lee la app)
+    v = (os.environ.get(nombre) or '').strip()
+    if not v and not SERVIDOR:
+        try:
+            for ln in open(CLAVES, encoding='utf-8'):
+                if ln.startswith(nombre + '='): v = ln.split('=', 1)[1].strip().strip('"\''); break
+        except OSError: pass
+    return v
+def _wfsn(): return _param('ARIA_WFSN')   # v408/v412: lo que se AÑADE al final del prompt con el botón 🔥 encendido
+def _wfsn_boton(): return _param('ARIA_WFSNBUTTON')   # v412: lo que se VE en el botón 🔥
 def _generar_r(self, body):   # v387: lo que era el cuerpo de /api/generar → (código, respuesta). self = el handler (solo para _json no se usa ya: devolvemos tuplas)
     _js = lambda code, obj: (code, obj)
+    if ((body.get('meta') or {}).get('nsfw') or body.get('nsfw')) and _wfsn() and _wfsn() not in str(body.get('prompt') or ''): body['prompt'] = (str(body.get('prompt') or '').rstrip() + ' ' + _wfsn()).strip()   # v408/v409: botón 🔥 encendido → ARIA_WFSNBUTTON al final del prompt (se ve en la consola local)
     if not nsfw_ok() and _con_aria(body) and ((body.get('meta') or {}).get('nsfw') or body.get('nsfw') or _es_nsfw(body.get('prompt'))): return _js(400, {'error': 'El contenido NSFW con Aria Cruz no está disponible en esta cuenta.'})
     prest = sorted({tuple(str(i.get('path')).split('?')[0].split('/')[2:4]) for i in (body.get('images') or []) if isinstance(i, dict) and str(i.get('path') or '').startswith('assets/prestamo/')})
     if prest and ((body.get('meta') or {}).get('nsfw') or body.get('nsfw') or _es_nsfw(body.get('prompt'))):   # v223: solo si en ESA colaboración el modo NSFW lo han activado los dos (y no ha vencido)
@@ -2975,14 +2988,14 @@ def _generar_r(self, body):   # v387: lo que era el cuerpo de /api/generar → (
             return _js(200, {'request_id': rid, 'usd': 0, 'credits': None, 'model': M['ep'], 'model_key': mkey, 'image_urls': urls, 'payload': {k_: v_ for k_, v_ in payload.items() if k_ != 'reference_images'}})
         if M.get('prov') == 'ws':
             usd = round(M['usd']['high' if body.get('quality') == 'high' else 'std'] + M.get('per', 0) * max(0, min(len(body.get('images', [])), M['refs']) - 1), 4)   # precio de tarifa con sus referencias
-            if not regalo and _casa_base() and load_ws() and mkey in CASA_MODELOS and not ((body.get('meta') or {}).get('nsfw') or body.get('nsfw') or _es_nsfw(body.get('prompt'))):   # v357: con su clave, el regalo se gasta PRIMERO (si entra y le llega)
+            if not regalo and _casa_base() and load_ws() and mkey in CASA_MODELOS and not _es_nsfw(body.get('prompt')):   # v357: con su clave, el regalo se gasta PRIMERO (si entra y le llega) · v413: también con 🔥
                 _ctx.regalo_primero = True
                 try: c_ = casa_info(); regalo = bool(c_ and c_['saldo'] + 1e-6 >= usd and _casa_global() < CASA_TOPE)
                 except Exception: regalo = False
                 if not regalo: _ctx.regalo_primero = False
                 else: _ctx.ws_modo = 'casa'   # se lanza con la clave de la casa
             if regalo:   # 🎁 paga el saldo regalo: nunca NSFW (la clave es la de la casa) y solo si le llega
-                if (body.get('meta') or {}).get('nsfw') or body.get('nsfw') or _es_nsfw(body.get('prompt')): raise RuntimeError('El saldo regalo no vale para contenido NSFW. Para eso, conecta tu propia clave en «Mis APIs».')
+                if _es_nsfw(body.get('prompt')): raise RuntimeError('El saldo regalo no vale para contenido NSFW. Para eso, conecta tu propia clave en «Mis APIs».')   # v413: el botón 🔥 sí vale con el regalo; el texto explícito, no
                 if mkey not in CASA_MODELOS: raise RuntimeError('Ese modelo no entra en el saldo regalo: conecta tu propia clave en «Mis APIs».')   # v260: antes de subir nada
                 casa_puede(usd)
             urls = [resolve_ws(i) for i in (body.get('images') or [])[:M['refs']]]
@@ -3281,7 +3294,7 @@ class H(SimpleHTTPRequestHandler):
             try: return self._json(200, {'ok': True, 'clave': _vapid()[1]})
             except Exception as e: return self._json(500, {'error': 'avisos no disponibles: ' + str(e)[:80]})
         if u.path == '/api/ping':
-            return self._json(200, {'ok': True, **({'espacio': {'usado': espacio(), 'tope': CUOTA}, 'aria_mia': not aria_fija(), 'nsfw': nsfw_ok()} if SERVIDOR else {}), 'model': MODEL, 'default': CASA_DEF if casa_on() else 'mstudio', 'models': model_list(), 'unavailable': unavailable(), 'ws': bool(load_ws()) or casa_on(), 'casa': casa_info() or casa_info_aunque(), 'regalo_nuevo': _regalos_nuevos(), 'primera': int(((_VISTO.get(uid() or '') or {}) if SERVIDOR else {}).get('primera') or 0), 'aspects': ASPECTS, 'key': _hf_listo(), 'ark': bool(load_ark()[0]), 'ark_usd': ARK_USD, 'genjutsu': (not SERVIDOR) or GJ_WEB, 'interno': bool(getattr(_ctx, 'interno', False)) if SERVIDOR else os.path.isfile(os.path.expanduser('~/.claude/notion.env')), **({'servidor': True} if SERVIDOR else {})})   # interno = el ordenador de Max: enseña «Workflows» (en la web alojada, solo las cuentas autorizadas)
+            return self._json(200, {'ok': True, **({'espacio': {'usado': espacio(), 'tope': CUOTA}, 'aria_mia': not aria_fija(), 'nsfw': nsfw_ok()} if SERVIDOR else {}), 'model': MODEL, 'default': CASA_DEF if casa_on() else 'mstudio', 'models': model_list(), 'unavailable': unavailable(), 'ws': bool(load_ws()) or casa_on(), 'casa': casa_info() or casa_info_aunque(), 'regalo_nuevo': _regalos_nuevos(), 'wfsn': _wfsn_boton()[:400], 'primera': int(((_VISTO.get(uid() or '') or {}) if SERVIDOR else {}).get('primera') or 0), 'aspects': ASPECTS, 'key': _hf_listo(), 'ark': bool(load_ark()[0]), 'ark_usd': ARK_USD, 'genjutsu': (not SERVIDOR) or GJ_WEB, 'interno': bool(getattr(_ctx, 'interno', False)) if SERVIDOR else os.path.isfile(os.path.expanduser('~/.claude/notion.env')), **({'servidor': True} if SERVIDOR else {})})   # interno = el ordenador de Max: enseña «Workflows» (en la web alojada, solo las cuentas autorizadas)
         if u.path == '/api/live':   # lo ya generado por la API (assets/live/<item>_<rid>.ext) → la app lo enseña sin volver a generar
             files = {}; allf = []; ld, vd = live_dir(), video_dir()
             for fn in sorted(os.listdir(ld), key=lambda f: os.path.getmtime(os.path.join(ld, f))):
@@ -3592,6 +3605,11 @@ class H(SimpleHTTPRequestHandler):
                     except Exception: continue
                     out.append({'tipo': P0.get('tipo'), 'file': fn, 'name': str(P0.get('name') or fn)[:80], 'thumb': 'assets/papelera/' + P0['thumb'] if P0.get('thumb') else '', 'kind': 'image', 't': int(t), 'dias': dias})
             out.sort(key=lambda x: -x['t']); return self._json(200, {'ok': True, 'items': out[:800], 'dias': 30, 'caduca': bool(SERVIDOR)})
+        if u.path == '/api/raw' and not SERVIDOR:   # v411: la consola local pide las llamadas RAW desde un momento
+            try: d0 = float((q.get('desde') or ['0'])[0] or 0)
+            except ValueError: d0 = 0.0
+            with _RAW_L: L_ = [x for x in _RAW if x['t'] > d0]
+            return self._json(200, {'ok': True, 'raw': L_[-20:]})
         if u.path == '/api/pendientes':   # trabajos de personajes que la página aún no ha recogido (si se recarga, no se pierden)
             out = [{'rid': rid, 'item': j.get('item'), 'meta': {k: (j.get('meta') or {}).get(k) for k in ('personaje', 'pjKind', 'name', 'pjEditor')}, 'file': j.get('file'), 'usd': j.get('usd'), 'kind': j.get('kind', 'image'), 'edad': round(time.time() - j['t0'], 1)}
                    for rid, j in list(jobs.items()) if j.get('owner') == uid() and not j.get('claimed') and not j.get('failed') and str((j.get('meta') or {}).get('personaje') or '_').strip()[:1] not in ('_', '')]
@@ -4491,7 +4509,7 @@ class H(SimpleHTTPRequestHandler):
                 except Exception: m0 = {}
                 regalo = casa_on()
                 if regalo:
-                    if m0.get('nsfw'): raise RuntimeError('El saldo regalo no vale para contenido NSFW.')
+                    if _es_nsfw(m0.get('prompt')): raise RuntimeError('El saldo regalo no vale para contenido NSFW.')   # v413
                     casa_puede(UPSCALE_USD)
                 url = resolve_ws({'path': rel})
                 try: bal0 = None if regalo else float((ws('GET', '/api/v3/balance').get('data') or {}).get('balance'))
@@ -5147,7 +5165,39 @@ def _vigilante():   # cada 8 s: los trabajos de personajes sin recoger se descar
                     _vig_en.add(rid); threading.Thread(target=_vigila_uno, args=(rid, j), daemon=True).start()
                 else: urllib.request.urlopen(f'http://127.0.0.1:{PORT}/api/estado?id={rid}', timeout=120).read()
             except Exception: pass
+_RAW = []; _RAW_L = threading.Lock()   # v411: solo app local — las últimas llamadas a APIs externas, sin claves
+def _raw_cab(h):
+    out = {}
+    for k, v in (h or {}).items():
+        v = str(v); kl = k.lower()
+        if kl in ('authorization', 'apikey', 'x-api-key', 'api-key', 'x-key', 'key', 'x-admin', 'x-aria-sync') or 'token' in kl or 'secret' in kl:
+            pre = v.split(' ', 1)[0] + ' ' if ' ' in v else ''; v = pre + '••••' + (v[-4:] if len(v) > 12 else '')
+        out[k] = v
+    return out
+def _raw_cuerpo(b):
+    if b is None: return None
+    try: t = b.decode('utf-8') if isinstance(b, (bytes, bytearray)) else str(b)
+    except Exception: return f'[binario · {len(b) // 1024} KB]'
+    t = re.sub(r'data:[a-zA-Z0-9/+.-]+;base64,[A-Za-z0-9+/=]{200,}', lambda m: f'[imagen base64 · {len(m.group(0)) // 1024} KB]', t)
+    t = re.sub(r'"([A-Za-z0-9+/=]{400,})"', lambda m: f'"[base64 · {len(m.group(1)) // 1024} KB]"', t)
+    t = re.sub(r'("(?:api_?key|apikey|token|secret|authorization|x-api-key|key)"\s*:\s*")([^"]{4,})(")', lambda m: m.group(1) + '••••' + m.group(2)[-4:] + m.group(3), t, flags=re.I)   # v411: claves que viajen en el cuerpo, tapadas
+    return t[:30000]
+def _raw_hook():
+    if SERVIDOR: return
+    f0 = urllib.request.urlopen
+    def urlopen(req, *a, **kw):
+        r = None; err = None
+        try: r = f0(req, *a, **kw); return r
+        except urllib.error.HTTPError as e: err = e; raise
+        finally:
+            try:
+                url = req.full_url if hasattr(req, 'full_url') else str(req); m = req.get_method() if hasattr(req, 'get_method') else 'GET'
+                if m != 'GET' and not re.search(r'localhost|127\.0\.0\.1|supabase', url):
+                    with _RAW_L: _RAW.append({'t': time.time(), 'metodo': m, 'url': url, 'cabeceras': _raw_cab(dict(req.header_items())), 'cuerpo': _raw_cuerpo(req.data), 'estado': r.status if r is not None else (err.code if err else None)}); del _RAW[:-60]
+            except Exception: pass
+    urllib.request.urlopen = urlopen
 if __name__ == '__main__':
+    _raw_hook()   # v411
     if SERVIDOR:   # nada de esto toca la carpeta del código ni su assets/
         if not DATOS: sys.exit('modo servidor: falta ARIA_DATOS (la carpeta de datos de las cuentas)')
         os.makedirs(os.path.join(DATOS, 'usuarios'), mode=0o700, exist_ok=True)
