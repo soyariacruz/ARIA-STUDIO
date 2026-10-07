@@ -3668,7 +3668,7 @@ window.addEventListener('resize', sizeMirror);
 function keepPlaying() { if (state.tab !== 'perfil') return; ['#turn', '#idle'].forEach(id => { const v = $(id); if (v.getAttribute('src') && v.paused) v.play().catch(() => {}); }); }
 document.addEventListener('visibilitychange', keepPlaying); document.addEventListener('pointerdown', keepPlaying, { passive: true }); setInterval(keepPlaying, 2500);
 document.addEventListener('wheel', e => { // rueda sobre la imagen grande: se compacta y baja la biblioteca (ya no cambia de ficha)
-  if (!state.ready || state.spinning || $('#gal').classList.contains('on') || $('#lb').classList.contains('on')) return; if (e.target.closest('#rail') || e.target.closest('aside') || e.target.closest('.console') || e.target.closest('.gridhd') || e.target.closest('.hook') || e.target.closest('.lb')) return;
+  if (!state.ready || state.spinning || $('#gal').classList.contains('on') || $('#lb').classList.contains('on')) return; if (document.querySelector('.fxm, .cpfbg.fijo, #galfull') || e.target.closest('.fxm, .cpfbg, #galfull')) return;   /* v376: con una ventana abierta, la rueda es solo suya */ if (e.target.closest('#rail') || e.target.closest('aside') || e.target.closest('.console') || e.target.closest('.gridhd') || e.target.closest('.hook') || e.target.closest('.lb')) return;
   if (!wheelK(e)) rail.scrollTop += e.deltaY;
 }, { passive: true });
 
