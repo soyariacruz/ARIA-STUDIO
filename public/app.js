@@ -2990,7 +2990,7 @@ async function admManda(url, body) { const r = await fetch(url, { method: 'POST'
 admPinta = (f0 => function () { const r_ = f0.apply(this, arguments); const m = $('#admfic'); if (m && ADM.r && ADM.r.filas) { const z2 = ADM.r.filas.find(x => x.email === m.dataset.em); if (z2) admFicha(z2, ADM.r); else m.remove(); } return r_; })(admPinta);   // v315: la ficha abierta se refresca tras cada acción
 function adminAbre(sec) { if (typeof mvCierra === 'function') mvCierra(false);   /* v335 */ // v280: ⚙️ Admin — una página (como Duelos) con el resumen, los miembros y las herramientas del equipo
   if (!state.interno) return; if (COM && COM.on) comCierra(); if ($('#ligapage')) ligaCierra(); if ($('#audpage')) audCierra(); if ($('#fichpage')) fichCierra();
-  if (sec) ADM.sec = sec; else if (ADM.av && !$('#admpage')) { ADM.sec = 'miembros'; ADM.filtro = 'sin'; }   // v292: con algo pendiente, directo a ello
+  if (sec) ADM.sec = sec; else if (!$('#admpage')) ADM.sec = 'resumen';   // v390 (Max): al abrir, siempre el Resumen (los pendientes se ven ahí)
   let pg = $('#admpage');
   if (!pg) { pg = el('div', ''); pg.id = 'admpage'; document.body.appendChild(pg);
     const coloca = () => { if (innerWidth < 768) { ['top', 'bottom', 'left'].forEach(k => pg.style.removeProperty(k)); return; } const m = document.querySelector('main'), n = $('#nav'); const r = m ? m.getBoundingClientRect() : { top: 0, bottom: innerHeight }; pg.style.top = Math.round(r.top) + 'px'; pg.style.bottom = Math.max(0, Math.round(innerHeight - r.bottom)) + 'px'; pg.style.left = Math.round(n ? n.getBoundingClientRect().right : 0) + 'px'; };
