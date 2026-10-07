@@ -43,7 +43,7 @@ MAX_CUERPO = 40 * 1024 * 1024    # tope de una petición en modo servidor
 MAX_BIBLIO = 200 * 1024 * 1024   # tope de un fichero de la biblioteca común al copiarlo
 KINDS = ('vestidor', 'hair', 'expr')   # las bibliotecas a las que una cuenta puede añadir lo suyo
 _UUID = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
-VERSION = 414
+VERSION = 415
 _ctx = threading.local()   # la cuenta del hilo: la pone cada petición (y, a mano, cada hilo de fondo)
 def uid(): return getattr(_ctx, 'uid', None)   # en local siempre None
 DUENOS = tuple(e.strip().lower() for e in (os.environ.get('ARIA_DUENOS') or 'mix1994max@gmail.com').split(',') if e.strip())   # cuentas que pueden cambiar a Aria Cruz (en la web, la de Max)
@@ -2958,10 +2958,11 @@ def _wfsn(): return _param('ARIA_WFSN')   # v408/v412: lo que se AÑADE al final
 def _wfsn_boton(): return _param('ARIA_WFSNBUTTON')   # v412: lo que se VE en el botón 🔥
 def _generar_r(self, body):   # v387: lo que era el cuerpo de /api/generar → (código, respuesta). self = el handler (solo para _json no se usa ya: devolvemos tuplas)
     _js = lambda code, obj: (code, obj)
+    body['prompt0'] = str(body.get('prompt') or '')   # v415: el prompt tal como lo escribió la persona (los filtros miran este, no el añadido de 🔥)
     if ((body.get('meta') or {}).get('nsfw') or body.get('nsfw')) and _wfsn() and _wfsn() not in str(body.get('prompt') or ''): body['prompt'] = (str(body.get('prompt') or '').rstrip() + ' ' + _wfsn()).strip()   # v408/v409: botón 🔥 encendido → ARIA_WFSNBUTTON al final del prompt (se ve en la consola local)
-    if not nsfw_ok() and _con_aria(body) and ((body.get('meta') or {}).get('nsfw') or body.get('nsfw') or _es_nsfw(body.get('prompt'))): return _js(400, {'error': 'El contenido NSFW con Aria Cruz no está disponible en esta cuenta.'})
+    if not nsfw_ok() and _con_aria(body) and _es_nsfw(body.get('prompt0')): return _js(400, {'error': 'El contenido NSFW con Aria Cruz no está disponible en esta cuenta.'})   # v415: solo el texto escrito; el botón 🔥 no cuenta
     prest = sorted({tuple(str(i.get('path')).split('?')[0].split('/')[2:4]) for i in (body.get('images') or []) if isinstance(i, dict) and str(i.get('path') or '').startswith('assets/prestamo/')})
-    if prest and ((body.get('meta') or {}).get('nsfw') or body.get('nsfw') or _es_nsfw(body.get('prompt'))):   # v223: solo si en ESA colaboración el modo NSFW lo han activado los dos (y no ha vencido)
+    if prest and _es_nsfw(body.get('prompt0')):   # v415: solo el texto escrito · v223: solo si en ESA colaboración el modo NSFW lo han activado los dos (y no ha vencido)
         d_ = _com_lee(); yo_ = _cid()
         if not all(len(p) == 2 and any(x.get('de') == yo_ and x.get('para') == p[0] and x.get('pid') in (None, p[1]) and _sol_nsfw(x) for x in d_['sol']) for p in prest): return _js(400, {'error': 'Con ese personaje el modo NSFW no está activado: tenéis que activarlo los dos en vuestra conversación de la Comunidad.'})
     _ctx.prestamo_ok = bool(prest); _ctx.prest = [p for p in prest if len(p) == 2]
@@ -2988,14 +2989,14 @@ def _generar_r(self, body):   # v387: lo que era el cuerpo de /api/generar → (
             return _js(200, {'request_id': rid, 'usd': 0, 'credits': None, 'model': M['ep'], 'model_key': mkey, 'image_urls': urls, 'payload': {k_: v_ for k_, v_ in payload.items() if k_ != 'reference_images'}})
         if M.get('prov') == 'ws':
             usd = round(M['usd']['high' if body.get('quality') == 'high' else 'std'] + M.get('per', 0) * max(0, min(len(body.get('images', [])), M['refs']) - 1), 4)   # precio de tarifa con sus referencias
-            if not regalo and _casa_base() and load_ws() and mkey in CASA_MODELOS and not _es_nsfw(body.get('prompt')):   # v357: con su clave, el regalo se gasta PRIMERO (si entra y le llega) · v413: también con 🔥
+            if not regalo and _casa_base() and load_ws() and mkey in CASA_MODELOS and not _es_nsfw(body.get('prompt0')):   # v357: con su clave, el regalo se gasta PRIMERO (si entra y le llega) · v413: también con 🔥
                 _ctx.regalo_primero = True
                 try: c_ = casa_info(); regalo = bool(c_ and c_['saldo'] + 1e-6 >= usd and _casa_global() < CASA_TOPE)
                 except Exception: regalo = False
                 if not regalo: _ctx.regalo_primero = False
                 else: _ctx.ws_modo = 'casa'   # se lanza con la clave de la casa
             if regalo:   # 🎁 paga el saldo regalo: nunca NSFW (la clave es la de la casa) y solo si le llega
-                if _es_nsfw(body.get('prompt')): raise RuntimeError('El saldo regalo no vale para contenido NSFW. Para eso, conecta tu propia clave en «Mis APIs».')   # v413: el botón 🔥 sí vale con el regalo; el texto explícito, no
+                if _es_nsfw(body.get('prompt0')): raise RuntimeError('El saldo regalo no vale para contenido NSFW. Para eso, conecta tu propia clave en «Mis APIs».')   # v413: el botón 🔥 sí vale con el regalo; el texto explícito, no
                 if mkey not in CASA_MODELOS: raise RuntimeError('Ese modelo no entra en el saldo regalo: conecta tu propia clave en «Mis APIs».')   # v260: antes de subir nada
                 casa_puede(usd)
             urls = [resolve_ws(i) for i in (body.get('images') or [])[:M['refs']]]
@@ -5042,7 +5043,7 @@ class H(SimpleHTTPRequestHandler):
         return self._json(*_generar_r(self, body))   # v387: la misma generación la usa el MCP
     def do_video(self):   # {mode:i2v|r2v, prompt, image:{path|data}, refs:[{path}], duration, resolution, aspect, audio, item, usd}
         n = int(self.headers.get('Content-Length') or 0); body = json.loads(self.rfile.read(n) or b'{}')
-        if not nsfw_ok() and _con_aria(body) and ((body.get('meta') or {}).get('nsfw') or body.get('nsfw') or _es_nsfw(body.get('prompt'))): return self._json(400, {'error': 'El contenido NSFW con Aria Cruz no está disponible en esta cuenta.'})
+        if not nsfw_ok() and _con_aria(body) and _es_nsfw(body.get('prompt')): return self._json(400, {'error': 'El contenido NSFW con Aria Cruz no está disponible en esta cuenta.'})
         try:
             mode = body.get('mode') if body.get('mode') in VIDEO_MODELS else 'i2v'; M = VIDEO_MODELS[mode]
             if body.get('provider') in ('ws', 'wsg') and casa_on(): raise RuntimeError('El vídeo todavía no entra en el saldo regalo: conecta tu propia clave en «Mis APIs».')   # v260: antes de subir nada
