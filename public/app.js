@@ -132,6 +132,7 @@ function buildNav() {
   if (innerWidth < 768) { const cb = nav.querySelector('button[data-tab=crear]'), vb = nav.querySelector('button[data-tab=video]'); [[cb, 'Imagen'], [vb, 'Vídeo']].forEach(([b, t]) => { const n = b && [...b.childNodes].find(x => x.nodeType === 3 && x.textContent.trim()); if (n) n.textContent = t; }); }
   nav.appendChild(el('div', 'sp')); comPonAvisos(); try { navCandados(); } catch (e) {}   // v296
 }
+setTimeout(() => { paint = (f0 => function () { const r_ = f0.apply(this, arguments); try { primeraVez(); } catch (e) {} return r_; })(paint); try { primeraVez(); } catch (e) {} }, 0);   // v384
 function setTab(k) {
   if (k === 'creaciones' && state.creN) { state.creN = 0; setTimeout(creDot, 0); }   // v317
   if (!state._pop && state.ready) { try { if (location.hash !== '#' + k) history.pushState({ t: k }, '', '#' + k); } catch (e) {} }   // v317: el botón Atrás del navegador vuelve a la sección anterior
@@ -287,6 +288,12 @@ function fitAr(it, src) { // ajusta el espejo al tamaño real de la imagen (una 
   if (it._ar) { if (arOverride !== it._ar) { arOverride = it._ar; sizeMirror(); } return; }
   const im = new Image(); im.onload = () => { it._ar = im.naturalWidth / im.naturalHeight; if (cur() === it && state.tab !== 'perfil') { arOverride = it._ar; sizeMirror(); } }; im.src = src;
 }
+function primeraVez() { // v384: quien aún no tiene personaje propio y no ha generado nada: en vez de la foto base de Aria, las tres de la portada + «Crear mi personaje»
+  const w = document.querySelector('.mirror-wrap') || mirror; if (!w) return; let p = w.querySelector('.primera'); const src = String((layers[front] || layers[0]).getAttribute('src') || '').split('?')[0];
+  const ok = state.tab === 'crear' && !state.shown && typeof charList === 'function' && !charList().some(c => !c.prestado && c.id !== 'aria') && C.base && src && src === String(C.base.photo || '').split('?')[0] && !(state.comp && state.comp.biblio);
+  if (!ok) { if (p) p.remove(); return; } if (p) return;
+  p = el('div', 'primera', `<div class="primfotos">${[1, 2, 3].map(n => `<img src="/portada/${n}.jpg?v=353" alt="">`).join('')}</div><h3>Tu primera imagen aparecerá aquí</h3><p>Crea tu personaje y pulsa «Generar». Mientras, puedes probar con Aria, de ejemplo.</p>`);
+  const b = el('button', 'btn acc', '＋ Crear mi personaje'); b.onclick = e => { e.stopPropagation(); setTab('perfil'); if (window.pjStart) setTimeout(pjStart, 50); }; p.appendChild(b); p.onclick = e => e.stopPropagation(); w.appendChild(p); }
 function paint(it, fast) {
   if (!it) return;   // la lista de esa pestaña aún no ha llegado (p. ej. Creaciones al recargar)
   const t = TABS[state.tab]; const v = view();
@@ -549,7 +556,7 @@ function cineStep(d) { const L = videoList(); if (!L.length) return; cineShow(L[
 function cineInit() { if (!state.vplay || !videoList().includes(state.vplay)) cineShow(null); else cineShow(state.vplay); }
 $('#cinePrev').onclick = () => cineStep(-1); $('#cineNext').onclick = () => cineStep(1);
 $('#cine').addEventListener('click', e => { if (e.target.closest('.cnav')) return; if (state.k > 0.25) { e.preventDefault(); e.stopPropagation(); setCompact(false); return; } const v = $('#cineVid'); if (e.target === v && state.vplay) { const r = v.getBoundingClientRect(); if (e.clientY < r.bottom - 64) { e.preventDefault(); e.stopPropagation(); v.pause(); openGal(state.vplay); } } }, true);
-mirror.addEventListener('click', e => { if (state.tab === 'crear' && state.k > 0.25 && !e.target.closest('button')) { e.stopPropagation(); setCompact(false); } }, true);
+mirror.addEventListener('click', e => { if (state.tab === 'crear' && state.k > 0.25 && !e.target.closest('button, a, .primera')) {   /* v384: «Conectar mi clave» es un enlace */ e.stopPropagation(); setCompact(false); } }, true);
 function recreateVideo(it) { // carga en el panel todo lo que llevó ese vídeo: referencias, prompt, ajustes y proveedor
   const m = it.meta || {}; state.vpool = []; const src = m.source && !String(m.source).startsWith('data:') ? m.source : null;
   if (src) poolAdd({ id: 'src:' + src, kind: 'image', name: (m.comp && (m.comp['@IMG1'] || m.comp['@Image1'] || m.comp.Imagen)) || 'Imagen de partida', src, thumb: src }, true);
@@ -560,14 +567,16 @@ function recreateVideo(it) { // carga en el panel todo lo que llevó ese vídeo:
 $('#dlBtn').onclick = e => { e.stopPropagation(); save(); };
 $('#rcBig').onclick = e => { e.stopPropagation(); const it = cur(); if (!it || state.tab !== 'biblio') return; state.comp.biblio = it; badge(); state.flash = 'biblio'; setTab('crear'); toast(`«${it.name}» como imagen a recrear`); };
 mirror.addEventListener('click', e => { // clic en la imagen grande: si es una creación generada, se abre en el popup (y las flechas siguen por todas)
-  if (e.target.closest('button') || state.tab === 'perfil' || state.tab === 'creaciones' || cmp || mirror.classList.contains('queue')) return;
+  if (e.target.closest('button, a, .primera') || state.tab === 'perfil' || state.tab === 'creaciones' || cmp || mirror.classList.contains('queue')) return;
   if (state.shown && (state.tab === 'crear' || state.tab === 'perfil')) { openGal(state.shown); return; }
+  { const b_ = state.comp.biblio, sv_ = String(layers[front].getAttribute('src') || '').split('?')[0]; if (state.tab === 'crear' && b_ && sv_ && sv_ === String(b_.image || b_.src || '').split('?')[0]) { state.galGroup = TABS.biblio.items.filter(i => !i.group); openGal(b_); return; } }   /* v384: se ve la foto a recrear → su visor */
   const it = cur(); if (!it) return; const src = (state.tab === 'crear' && it.custom) ? ((it._liveBy && it._liveBy[compSig()]) || it._last) : it.live; if (!src) { if (state.tab === 'biblio') lightbox(it.image, it.name); return; }
   const c = TABS.creaciones.items.find(x => !x.pending && x.src === src.split('?')[0]); if (c) { state.sel.creaciones = c; openGal(c); } else lightbox(src, it.name);
 });
 mirror.addEventListener('click', e => { // en la Fototeca o cuando el espejo enseña una imagen de catálogo: verla en grande
-  if (e.target.closest('button') || state.tab === 'perfil' || state.tab === 'creaciones' || cmp || mirror.classList.contains('queue') || mirrorClickable() || state.shown) return;
-  const src = layers[front].getAttribute('src'); if (src && !mirror.classList.contains('vidmode')) lightbox(src, cur() ? cur().name : '');
+  if (e.target.closest('button, a, .primera') || state.tab === 'perfil' || state.tab === 'creaciones' || cmp || mirror.classList.contains('queue') || mirrorClickable() || state.shown) return;
+  const src = layers[front].getAttribute('src');
+  { const b_ = state.comp.biblio; if (b_ && src && String(src).split('?')[0] === String(b_.image || b_.src || '').split('?')[0]) { state.galGroup = TABS.biblio.items.filter(i => !i.group); openGal(b_); return; } }   /* v384: la foto a recrear, en el visor de la Fototeca */ if (src && !mirror.classList.contains('vidmode')) lightbox(src, cur() ? cur().name : '');
 });
 function mirrorClickable() { const it = cur(); if (!it || state.tab === 'perfil' || state.tab === 'creaciones') return false; if (state.tab === 'biblio') return true; const src = (state.tab === 'crear' && it.custom) ? ((it._liveBy && it._liveBy[compSig()]) || it._last) : it.live; return !!src; }
 $('#vidBtn').onclick = () => { const v = $('#vid'); v.muted = !v.muted; $('#vidBtn').textContent = v.muted ? '🔇 Sonido' : '🔊 Sonido'; };
@@ -1807,7 +1816,7 @@ function openGal(it) {
   $('.galmedia').classList.toggle('isvideo', it.kind === 'video'); if (it.kind === 'video' && galTimer) galPlay(false);
   if (it.kind === 'video') { im.style.display = 'none'; vd.style.display = ''; vd.muted = false; if (state.tab === 'videoteca') applySound(vd); if (vd.getAttribute('src') !== it.src) vd.src = it.src; vd.play().catch(() => {}); }
   else { vd.pause(); vd.style.display = 'none'; im.style.display = ''; im.src = (COMP[state.tab] && state.tab !== 'biblio' && !it.meta) ? (state.tab === 'vestidor' ? it.ficha : (state.tab === 'hair' && state.galGroup ? it.files.main : compImage(state.tab, it))) : (it.src || it.image); hiSwap(im, im.getAttribute('src')); }
-  if ((state.tab === 'biblio' || state.tab === 'videoteca' || COMP[state.tab]) && !it.meta) libMeta(it, $('#galSide')); else creationMeta(it, $('#galSide')); g.classList.add('on'); requestAnimationFrame(() => { $('.galmedia').style.setProperty('--galnw', $('#galN').offsetWidth + 'px'); });
+  if ((state.tab === 'biblio' || state.tab === 'videoteca' || COMP[state.tab] || TABS.biblio.items.includes(it)) && !it.meta) libMeta(it, $('#galSide')); else creationMeta(it, $('#galSide')); g.classList.add('on'); requestAnimationFrame(() => { $('.galmedia').style.setProperty('--galnw', $('#galN').offsetWidth + 'px'); });
 }
 function closeGal() { GALH.on = false; { const f_ = $('#galfull'); if (f_) f_.remove(); }   /* v371 */   /* v369: el Atrás del móvil cierra la imagen */ const gm_ = document.querySelector('.galmedia'); if (gm_ && gm_.classList.contains('galfs')) { gm_.classList.remove('galfs'); $('#gzReset').textContent = '⛶'; } state.galGroup = null; $('#gal').classList.remove('on', 'alto'); $('#galVid').pause(); galIt = null; galPlay(false); }
 let galTimer = 0;
@@ -2118,6 +2127,7 @@ function addBtn(tab, what) {
   b.onclick = () => { if (inTray) { delete state.comp[tab]; badge(); renderSide(); return; } state.comp[tab] = it; if (tab === 'hair') { state.hairVar = it._variant || null; state.hairCol = it._color || null; } badge(); log(`<span class="g">✨ ${COMP[tab]} «${it.name}» añadida a la creación</span>`); state.flash = tab; setTab('crear'); toast(`«${it.name}» añadida a tu creación`); };
   st.appendChild(b);
   const inVid = poolHas(compImage(tab, it)); const bv = el('button', 'btn w', inVid ? '✓ En Crear vídeo · quitar' : '🎬 Añadir a Crear vídeo'); bv.onclick = () => { if (inVid) { const k = state.vpool.findIndex(r => r.src === compImage(tab, it)); if (k >= 0) state.vpool.splice(k, 1); vbadge(); renderSide(); renderRail(); } else { addToVideo(tab, it); setTab('video'); } }; st.appendChild(bv);
+  if (it.desc) { const dw = el('div', 'compdesc'); dw.appendChild(el('p', '', esc(it.desc))); const cp = el('button', 'btn', 'Copiar'); cp.onclick = () => { try { navigator.clipboard.writeText(it.desc); toast('Descripción copiada'); } catch (e) { toast('No se ha podido copiar'); } }; dw.appendChild(cp); st.appendChild(dw); }   /* v384 */
 
   return sec('', st);
 }
