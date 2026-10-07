@@ -43,7 +43,7 @@ MAX_CUERPO = 40 * 1024 * 1024    # tope de una petición en modo servidor
 MAX_BIBLIO = 200 * 1024 * 1024   # tope de un fichero de la biblioteca común al copiarlo
 KINDS = ('vestidor', 'hair', 'expr')   # las bibliotecas a las que una cuenta puede añadir lo suyo
 _UUID = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
-VERSION = 364
+VERSION = 365
 _ctx = threading.local()   # la cuenta del hilo: la pone cada petición (y, a mano, cada hilo de fondo)
 def uid(): return getattr(_ctx, 'uid', None)   # en local siempre None
 DUENOS = tuple(e.strip().lower() for e in (os.environ.get('ARIA_DUENOS') or 'mix1994max@gmail.com').split(',') if e.strip())   # cuentas que pueden cambiar a Aria Cruz (en la web, la de Max)
@@ -3241,7 +3241,7 @@ class H(SimpleHTTPRequestHandler):
                     PJ_ = _com_pjs(CU, para); ab = {q['pid'] for q in PJ_ if q.get('abierto')}
                     if _demo_cid(para):   # v228: un creador de ejemplo acepta solo, para poder probar el recorrido entero
                         x['estado'] = 'aceptada'; x['demo'] = True; x['t2'] = time.time(); d['msgs'].setdefault(_com_par(yo, para), []).append({'de': para, 'x': DEMO_HOLA, 't': time.time() + 0.01, 'auto': True}); _com_guarda(d); return self._json(200, {'ok': True, 'solicitud': x})
-                    if (pid in ab) if pid else (bool(PJ_) and len(ab) == len(PJ_)):   # v223: personaje abierto a colaborar → entra directo, sin esperar (solo SFW: el NSFW siempre lo activan los dos a mano)
+                    if False and ((pid in ab) if pid else (bool(PJ_) and len(ab) == len(PJ_))):   # v223 · v365 (Max): ya NO entra directo aunque esté abierto: siempre lo acepta su dueño
                         x['estado'] = 'aceptada'; x['abierta'] = True; x['t2'] = time.time(); nom = next((q['nombre'] for q in PJ_ if q['pid'] == pid), None) if pid else None
                         d['msgs'].setdefault(_com_par(yo, para), []).append({'de': yo, 'x': '🤝 He empezado a colaborar con ' + (nom or 'tus personajes') + ' (lo tienes abierto a colaborar). Puedes retirar el permiso cuando quieras, aquí arriba.', 't': time.time() + 0.01, 'auto': True})
                     _com_guarda(d); return self._json(200, {'ok': True, 'solicitud': x})
