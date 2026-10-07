@@ -2493,8 +2493,27 @@ function guiaClave() { // paso a paso para sacar la clave de WaveSpeed, con un d
 // Las colaboraciones son permisos entre creadores: «X puede crear con el personaje Y». Los mensajes son entre creadores.
 async function comAvisos() { if (!state.ready) return; if (!COM.D) { await comCarga(); return; }   // la primera vez se trae todo: también con qué personajes de otros creadores puedes crear
   let n = 0; try { let vt = 0; try { vt = +localStorage.getItem('am_com_visto') || 0; } catch (e) {} const j = await fetch('/api/comunidad/avisos' + (vt ? '?desde=' + vt : '')).then(x => x.json()); if (!j || !j.ok) return; n = j.n || 0; if (j.nuevos != null) COM.nuevos = j.nuevos; } catch (e) { return; }   /* v320: los influencers nuevos los cuenta el servidor */
-  if (n !== COM.n && !COM.on) { const sube = n > COM.n; await comCarga(); if (sube) toast('🔔 Tienes novedades en la Comunidad'); return; }
+  const sube_ = AVISO.listo && n > (COM.n || 0); AVISO.listo = true;   // v367: avisos en el ordenador
+  if (n !== COM.n && !COM.on) { await comCarga(); if (sube_) { toast('🔔 Tienes novedades en la Comunidad'); avisoNuevo(); } return; }
+  if (sube_ && COM.on) { const n0 = COM.n; await comCarga(); COM.n = n0; avisoNuevo(); }
   COM.n = n; comPonAvisos(); }
+const AVISO = { listo: false };
+function avisoSuena() { try { const A = new (window.AudioContext || window.webkitAudioContext)(); const o = A.createOscillator(), g = A.createGain(); o.type = 'sine'; o.frequency.setValueAtTime(880, A.currentTime); o.frequency.setValueAtTime(1320, A.currentTime + 0.1); g.gain.setValueAtTime(0.0001, A.currentTime); g.gain.exponentialRampToValueAtTime(0.16, A.currentTime + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, A.currentTime + 0.4); o.connect(g); g.connect(A.destination); o.start(); o.stop(A.currentTime + 0.42); setTimeout(() => A.close(), 700); } catch (e) {} }
+function avisoNuevo() { // v367: lo último que ha llegado → sonido + notificación del ordenador (si la tiene activada)
+  const D0 = COM.D; if (!D0) return; const ch = (D0.chats || []).filter(c => c.sin_leer && c.ultimo).sort((a, b) => (b.ultimo.t || 0) - (a.ultimo.t || 0))[0];
+  const so = (D0.solicitudes || []).filter(x => x.para === D0.yo && x.estado === 'pendiente').sort((a, b) => (b.t || 0) - (a.t || 0))[0];
+  let tit, cuerpo, con; if (ch && (!so || (ch.ultimo.t || 0) >= (so.t || 0))) { con = ch.con; tit = comNom(comCta(con)); cuerpo = String(ch.ultimo.x || 'Te ha escrito').slice(0, 140); } else if (so) { con = so.de; tit = comNom(comCta(con)); cuerpo = '🤝 Quiere colaborar contigo'; } else return;
+  const viendo = !document.hidden && COM.on && COM.vista === 'msg' && COM.arg === con; if (viendo) return;
+  avisoSuena();
+  try { if ('Notification' in window && Notification.permission === 'granted') { const nt = new Notification(tit, { body: cuerpo, tag: 'aria-' + con, icon: '/portada/1.jpg' }); nt.onclick = () => { window.focus(); nt.close(); COM.visto = true; comAbre('msg', con); }; } } catch (e) {} }
+function avisoPide() { // v367: al entrar, si aún no tiene los avisos activados, se le pregunta (una vez por sesión) hasta que los acepta
+  if (!(window.CUENTA && CUENTA.web) || !('Notification' in window) || Notification.permission !== 'default') return; try { if (sessionStorage.getItem('am_aviso_pedido')) return; sessionStorage.setItem('am_aviso_pedido', '1'); } catch (e) {}
+  let m0 = $('#avisom'); if (m0) m0.remove(); m0 = el('div', 'fxm'); m0.id = 'avisom'; document.body.appendChild(m0); m0.onclick = e => { if (e.target === m0) m0.remove(); };
+  const b = el('div', 'devbox avisobox'); m0.appendChild(b); b.appendChild(el('div', 'devemo', '🔔')); b.appendChild(el('h3', '', '¿Te avisamos cuando te escriban?'));
+  b.appendChild(el('p', '', 'Cuando te llegue un mensaje o alguien quiera colaborar contigo, te saldrá una notificación en el ordenador (como un WhatsApp) mientras tengas ARIA STUDIO abierto, aunque estés en otra pestaña.'));
+  const ft = el('div', 'pjacts'); const si = el('button', 'btn acc big', 'Activar avisos'); si.onclick = async () => { let r = 'default'; try { r = await Notification.requestPermission(); } catch (e) {} m0.remove(); if (r === 'granted') { toast('🔔 Avisos activados'); avisoSuena(); } else if (r === 'denied') toast('Avisos bloqueados: puedes activarlos en los ajustes del navegador'); };
+  const no = el('button', 'btn', 'Ahora no'); no.onclick = () => m0.remove(); ft.appendChild(si); ft.appendChild(no); b.appendChild(ft); }
+setTimeout(() => { if (state.ready) avisoPide(); else setTimeout(avisoPide, 6000); }, 5000);
 function comPrestSync() { // lo prestado ha cambiado: salen de la imagen los personajes para los que ya no hay permiso y Crear imagen se repinta
   try { if (!Array.isArray(state.extras)) return; const fuera = state.extras.filter(id => esPrest(id) && !prestInfo(id)); const hay = state.extras.some(esPrest); if (fuera.length) { state.extras = state.extras.filter(id => !fuera.includes(id)); fuera.forEach(id => { delete state.compBy[id]; }); saveExtras(); toast('Un personaje de otro creador ya no está disponible y ha salido de tu imagen'); }
     const sig = JSON.stringify(((COM.D || {}).prestados || []).map(p => p.cid + p.pid + (p.nsfw ? '!' : ''))); if (sig !== COM.psig) { COM.psig = sig; if ((fuera.length || hay) && state.ready && state.tab === 'crear') { badge(); renderSide(); const it = cur(); if (it) paint(it, true); } } } catch (e) {} }
@@ -2504,7 +2523,7 @@ function comPonAvisos() { { const mm = document.querySelector('#nav .mvmore'); c
       if (nn && !(COM.on && COM.vista !== 'msg')) { b.insertAdjacentHTML('beforeend', `<u class="comdot comnew">${nn}</u>`); b.title = nn === 1 ? 'Hay un influencer nuevo en la Comunidad' : `Hay ${nn} influencers nuevos en la Comunidad`; } } }
   let bell = $('#comBell'); if (!bell) { const m = document.querySelector('header .meter'); if (!m) return; bell = el('button', 'combell'); bell.id = 'comBell'; bell.type = 'button'; bell.onclick = () => { const d = COM.D; comAbre(d && (d.solicitudes.some(x => x.para === d.yo && x.estado === 'pendiente') || d.chats.some(c => c.sin_leer)) ? 'msg' : 'dir', d ? comPendiente() : null); }; m.parentElement.insertBefore(bell, m); }
   bell.style.display = 'none';   /* v260: el globito de Mensajes ya lo cuenta */ bell.innerHTML = `🔔 <b>${COM.n}</b>`; bell.title = 'Comunidad: tienes solicitudes o mensajes sin leer'; }
-setTimeout(comAvisos, 7000); setInterval(comAvisos, 60000);
+setTimeout(comAvisos, 7000); setInterval(comAvisos, 20000);   // v367: cada 20 s (para que el aviso llegue rápido)
 const comAVC = new Map();   // avatares de otros creadores: se piden con la sesión y se guardan en memoria
 function comAvPon(root) { root.querySelectorAll('img[data-av]').forEach(async im => { const u = im.dataset.av; im.removeAttribute('data-av'); try { if (!comAVC.has(u)) comAVC.set(u, fetch(u).then(r => r.ok ? r.blob() : null).then(bl => bl ? URL.createObjectURL(bl) : '')); const src = await comAVC.get(u); if (src) im.src = src; else im.replaceWith(Object.assign(document.createElement('i'), { textContent: im.alt || '?' })); } catch (e) {} }); }
 const comAv = (c, p, cls) => `<span class="comav ${cls || ''}">${p && p.src ? `<img src="${p.src}" alt="">` : p && p.avatar ? `<img data-av="/api/comunidad/avatar?c=${c.cid}&p=${encodeURIComponent(p.pid)}${COM.avv ? '&v=' + COM.avv : ''}" alt="${esc((p.nombre || '?')[0])}">` : `<i>${esc(((p && p.nombre) || comNom(c) || '?')[0])}</i>`}</span>`;
