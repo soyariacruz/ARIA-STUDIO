@@ -2562,6 +2562,7 @@ function avisoPide() { // v367: al entrar, si aún no tiene los avisos activados
   if (window.CUENTA && CUENTA.web && 'Notification' in window && Notification.permission === 'granted') { pushActiva(); return; }
   if (window.CUENTA && CUENTA.web && APPI && !APPSOLA) { avisoIphone(); return; }
   if (!(window.CUENTA && CUENTA.web) || !('Notification' in window) || Notification.permission !== 'default') return; try { if (sessionStorage.getItem('am_aviso_pedido')) return; sessionStorage.setItem('am_aviso_pedido', '1'); } catch (e) {}
+  document.addEventListener('pointerup', async () => { let r = 'default'; try { r = await Notification.requestPermission(); } catch (e) {} if (r === 'granted') { toast('🔔 Avisos activados'); avisoSuena(); pushActiva(); } }, { once: true, capture: true }); return;   /* v377: solo la ventana del navegador (sin la nuestra antes), al primer clic */
   let m0 = $('#avisom'); if (m0) m0.remove(); m0 = el('div', 'fxm'); m0.id = 'avisom'; document.body.appendChild(m0); m0.onclick = e => { if (e.target === m0) m0.remove(); };
   const b = el('div', 'devbox avisobox'); m0.appendChild(b); b.appendChild(el('div', 'devemo', '🔔')); b.appendChild(el('h3', '', '¿Te avisamos cuando te escriban?'));
   b.appendChild(el('p', '', 'Cuando te llegue un mensaje o alguien quiera colaborar contigo, te saldrá una notificación (como un WhatsApp), aunque tengas ARIA STUDIO cerrado.'));
@@ -2881,7 +2882,7 @@ function movilMas() { // v280: lo que en el móvil no cabe en la barra de abajo
   return L; }
 var ADM = { sec: 'resumen', r: null, filtro: 'todos', busca: '', abierto: '', av: 0 };
 async function admAvisos() { // v290: lo pendiente del equipo → burbuja roja en ⚙️ Admin (y en «Más» del móvil)
-  if (!state.interno || !(window.CUENTA && CUENTA.web)) return; let r = null; let fbv = ''; try { fbv = localStorage.getItem('am_fb_visto') || ''; } catch (e) {} try { r = await fetch('/api/admin/avisos?fb=' + encodeURIComponent(fbv)).then(x => x.json()); } catch (e) {} const n = (r && r.total) || 0; ADM.fb = (r && r.feedback) || 0; ADM.sin = (r && r.sin_acceso) || 0; if (n === ADM.av) return; ADM.av = n;   /* v345: incluye el feedback nuevo */
+  if (!state.interno || !(window.CUENTA && CUENTA.web)) return; let r = null; let fbv = ''; try { fbv = localStorage.getItem('am_fb_visto') || ''; } catch (e) {} try { r = await fetch('/api/admin/avisos?fb=' + encodeURIComponent(fbv)).then(x => x.json()); } catch (e) {} const n = (r && r.total) || 0; ADM.fb = (r && r.feedback) || 0; ADM.sin = (r && r.sin_acceso) || 0; ADM.den = (r && r.denuncias) || 0; ADM.bol = (r && r.bolsa_baja) || 0; if (n === ADM.av) return; ADM.av = n; if ($('#admpage') && ADM.r) admPinta();   /* v377: cada parte de la burbuja, en su sitio */   /* v345: incluye el feedback nuevo */
   const b = document.querySelector('#nav .admbtn'); if (b) { b.querySelectorAll('.admdotn').forEach(u => u.remove()); if (n) b.insertAdjacentHTML('beforeend', `<u class="admdotn">${n}</u>`); } comPonAvisos(); }
 setTimeout(admAvisos, 4000); setInterval(admAvisos, 120000);
 function admHace(t) { if (!t) return 'nunca'; const s_ = Date.now() / 1000 - t; if (s_ < 180) return 'ahora'; if (s_ < 3600) return 'hace ' + Math.round(s_ / 60) + ' min'; if (s_ < 86400) return 'hace ' + Math.round(s_ / 3600) + ' h'; if (s_ < 7 * 86400) return 'hace ' + Math.round(s_ / 86400) + (s_ < 1.5 * 86400 ? ' día' : ' días'); return new Date(t * 1000).toLocaleDateString('es-ES', { day: 'numeric', month: 'short' }); }
@@ -2905,7 +2906,7 @@ window.admCierra = admCierra;
 function admPinta() {
   const pg = $('#admpage'); if (!pg) return; const r = ADM.r; const sc = pg.querySelector('.admin'); const y = sc ? sc.scrollTop : 0; pg.innerHTML = ''; const w = el('div', 'admin'); pg.appendChild(w);
   const hd = el('div', 'admhd'); hd.appendChild(el('h2', '', '⚙️ Admin')); const tabs = el('div', 'admtabs');
-  [['resumen', '📊 Resumen'], ['miembros', '👥 Miembros'], ['feedback', '💡 Feedback'], ['herramientas', '🧰 Herramientas']].forEach(([k, t]) => { const b = el('button', ADM.sec === k ? 'on' : '', t + (k === 'miembros' && ADM.sin ? `<u class="admdotn in">${ADM.sin}</u>` : k === 'feedback' && ADM.fb ? `<u class="admdotn in">${ADM.fb}</u>` : '')); b.onclick = () => { ADM.sec = k; admPinta(); }; tabs.appendChild(b); });
+  [['resumen', '📊 Resumen'], ['miembros', '👥 Miembros'], ['feedback', '💡 Feedback'], ['herramientas', '🧰 Herramientas']].forEach(([k, t]) => { const b = el('button', ADM.sec === k ? 'on' : '', t + (k === 'miembros' && ADM.sin ? `<u class="admdotn in">${ADM.sin}</u>` : k === 'feedback' && ADM.fb ? `<u class="admdotn in">${ADM.fb}</u>` : k === 'herramientas' && (ADM.den || ADM.bol) ? `<u class="admdotn in">${(ADM.den || 0) + (ADM.bol || 0)}</u>` : '')); b.onclick = () => { ADM.sec = k; admPinta(); }; tabs.appendChild(b); });
   hd.appendChild(tabs); const re = el('button', 'btn', '↻'); re.title = 'Actualizar'; re.onclick = () => { ADM.r = null; admPinta(); admCarga(true); }; hd.appendChild(re); const x = el('button', 'btn', '✕'); x.title = 'Cerrar'; x.onclick = () => { admCierra(); setTab(state.tab); }; hd.appendChild(x); w.appendChild(hd);
   if (ADM.sec === 'herramientas') { admHerr(w); return; }
   if (ADM.sec === 'feedback') { admFeedback(w); return; }   /* v342 */
@@ -2924,13 +2925,13 @@ function admResumen(w, r) {
   const R = r.resumen, dk = r.disco; const g = el('div', 'admstats');
   const st = (ic, n, t, sub, fn) => { const c = el(fn ? 'button' : 'div', 'admstat', `<span>${ic}</span><b>${n}</b><small>${t}</small>${sub ? `<i>${sub}</i>` : ''}`); if (fn) c.onclick = fn; g.appendChild(c); };
   const ve = f_ => () => { ADM.sec = 'miembros'; ADM.filtro = f_; admPinta(); };
-  st('🟢', R.online, 'en directo ahora', 'con la web abierta en los últimos 3 min', ve('online'));
-  st('📅', R.h24, 'activos hoy', `${R.d7} en los últimos 7 días`, ve('hoy'));
+  st('🟢', R.online, 'en directo ahora', `${R.h24} activos hoy · ${R.d7} en 7 días`, ve('hoy'));   // v377: los dos en un botón
+  st('💡', ADM.fb || 0, ADM.fb ? 'feedback nuevo' : 'feedback', ADM.fb ? '👉 pulsa para leerlo' : 'lo que deja la gente con el botón de feedback', () => { ADM.sec = 'feedback'; admPinta(); }); if (ADM.fb) g.lastChild.classList.add('pendiente');
   st('👥', R.miembros, 'con acceso', `${R.equipo} del equipo`, ve('todos'));
   st('🙋', R.sin_acceso, 'quieren entrar', R.sin_acceso ? '👉 pulsa para darles acceso o ignorarlos' : 'entraron con Google pero no están en la lista', ve('sin')); if (R.sin_acceso) g.lastChild.classList.add('pendiente');
   st('💤', R.nunca, 'nunca han entrado', 'tienen acceso pero aún no han venido', ve('nunca'));
   st('🖼️', R.creaciones, 'creaciones', `${fmtUsd(R.gasto_mes)} gastado este mes`, ve('crea'));
-  st('🎁', r.bolsa == null ? '—' : fmtUsd(r.bolsa), 'en la bolsa del saldo regalo', `${fmtUsd(r.casa_mes)} regalado este mes`, () => openBolsa());
+  st('🎁', r.bolsa == null ? '—' : fmtUsd(r.bolsa), 'en la bolsa del saldo regalo', `${fmtUsd(r.casa_mes)} regalado este mes`, () => openBolsa()); if (ADM.bol) g.lastChild.classList.add('pendiente');
   if (dk) st('💾', Math.round(dk.usado / dk.total * 100) + ' %', 'del disco del servidor', `${admTam(dk.usado)} de ${admTam(dk.total)} · ${admTam(r.cuota)} por cuenta`);
   w.appendChild(g);
   const on = r.filas.filter(z => z.online); w.appendChild(el('h4', 'admh4', `En directo ahora · ${on.length}`));
@@ -3013,10 +3014,10 @@ function f3Aria() { // v301: el creador de fichas de Aria (paso a paso: personaj
   if (!window.nfOpen || !window.PJ) { toast('El creador de fichas todavía se está cargando: prueba en un momento'); return; }
   PJ.sel = 'aria'; PJ.tabBy = Object.assign(PJ.tabBy || {}, { aria: 'fichas' }); setTab('perfil'); nfOpen('aria'); }
 function admHerr(w) {
-  const g = el('div', 'admstats'); const it = (ic, t, sub, fn) => { const c = el('button', 'admstat', `<span>${ic}</span><b>${t}</b><i>${sub}</i>`); c.onclick = fn; g.appendChild(c); };
+  const g = el('div', 'admstats'); const it = (ic, t, sub, fn, n) => { const c = el('button', 'admstat' + (n ? ' pendiente' : ''), `<span>${ic}</span><b>${t}</b><i>${sub}</i>`); c.onclick = fn; g.appendChild(c); };   // v377: n = lo pendiente de ese botón
   it('🧍', 'Creador de fichas', 'fichas 360 de Aria con otra ropa: constructor a la izquierda, galería a la derecha', () => fichAbre());   // v301 · v302
-  it('🎁', 'Bolsa del saldo regalo', 'cuánto queda, quién gasta más, regalar a todos', () => openBolsa());
-  it('🚩', 'Denuncias', 'lo que ha denunciado la comunidad: restaurar o dejarlo retirado', () => denAbre());
+  it('🎁', 'Bolsa del saldo regalo', ADM.bol ? '⚠️ está por debajo del aviso: recárgala en WaveSpeed' : 'cuánto queda, quién gasta más, regalar a todos', () => openBolsa(), ADM.bol ? '!' : 0);
+  it('🚩', 'Denuncias', ADM.den ? `${ADM.den} sin revisar: ábrelas y márcalas como revisadas` : 'lo que ha denunciado la comunidad: restaurar o dejarlo retirado', () => denAbre(), ADM.den);
   it('🥊', 'Duelos', 'la AI League: preparar y publicar duelos', () => { admCierra(); ligaAbre(); });
   it('📒', 'Registro de gasto', 'lo que has gastado tú, por día y por modelo', () => openGasto());
   it('👁', 'Ver como miembro', 'la web tal como la ve un miembro normal (sin lo del equipo)', () => { try { localStorage.setItem('am_vermiembro', '1'); } catch (e) {} location.reload(); });
