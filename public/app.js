@@ -3585,7 +3585,7 @@ function errEs(msg) { // v263: el error del generador, en castellano y con qué 
   if (/[a-z]{4,} [a-z]{4,} [a-z]{4,}/i.test(m) && !/[áéíóúñ¿¡]/i.test(m) && !/\b(el|la|de|que|tu|con)\b/i.test(m)) return { txt: 'El generador no ha podido crear la imagen (' + m.slice(0, 140) + ').', tips: ['Vuelve a probar o cambia de modelo.'] };
   return { txt: m, tips: [] }; }
 window.errEs = errEs;
-function errTitulo(cr) { return !cr.regalo ? 'No hay suficientes créditos' : /NSFW/i.test(cr.msg) ? 'No disponible con el saldo regalo' : /pausa/i.test(cr.msg) ? 'Saldo regalo en pausa' : /no llega/i.test(cr.msg) ? 'No te llega el saldo regalo' : /no entra/i.test(cr.msg) ? 'No entra en el saldo regalo' : 'Saldo regalo agotado'; }
+function errTitulo(cr) { return !cr.regalo ? 'No hay suficientes créditos' : /NSFW/i.test(cr.msg) ? 'No disponible con el saldo regalo' : /pausa/i.test(cr.msg) ? 'Saldo regalo en pausa' : /no llega/i.test(cr.msg) ? 'No te llega el saldo regalo' : /no entra/i.test(cr.msg) ? 'No entra en el saldo regalo' : /agotad|no te queda|se ha acabado|sin saldo/i.test(cr.msg) ? 'Saldo regalo agotado' : 'No se ha podido usar el saldo regalo'; }   /* v382: «agotado» solo si lo está */
 function errCreditos(msg) { // ¿el error es que se ha acabado el saldo de la API? → de qué proveedor y dónde se recarga
   if (/saldo regalo/i.test(msg || '')) return { regalo: true, prov: 'saldo regalo', msg: String(msg) };
   if (!/insufficient (credits?|balance|funds)|top up your account|not enough (credits?|balance)|saldo insuficiente|sin saldo/i.test(msg || '')) return null; const pv = (curModel() || {}).prov;

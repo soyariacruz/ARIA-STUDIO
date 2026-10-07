@@ -43,7 +43,7 @@ MAX_CUERPO = 40 * 1024 * 1024    # tope de una petición en modo servidor
 MAX_BIBLIO = 200 * 1024 * 1024   # tope de un fichero de la biblioteca común al copiarlo
 KINDS = ('vestidor', 'hair', 'expr')   # las bibliotecas a las que una cuenta puede añadir lo suyo
 _UUID = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
-VERSION = 381
+VERSION = 382
 _ctx = threading.local()   # la cuenta del hilo: la pone cada petición (y, a mano, cada hilo de fondo)
 def uid(): return getattr(_ctx, 'uid', None)   # en local siempre None
 DUENOS = tuple(e.strip().lower() for e in (os.environ.get('ARIA_DUENOS') or 'mix1994max@gmail.com').split(',') if e.strip())   # cuentas que pueden cambiar a Aria Cruz (en la web, la de Max)
@@ -1014,7 +1014,7 @@ def casa_cobra(usd, que, rid=None, modelo=None):   # descuenta del monedero (pri
     _casa_global(usd)
 def _casa_puerta(path, ctype=None):   # qué se puede pedir a WaveSpeed con la clave de la casa (solo POST): subir referencias, leer imágenes (se cobra) y generar con los modelos permitidos y con permiso
     if '/media/upload' in path:
-        if not str(ctype or '').startswith('image/'): raise RuntimeError('Con el saldo regalo solo se pueden usar imágenes como referencia.')   # v260: nada de alojar otros ficheros en la cuenta de la casa
+        if not str(ctype or '').startswith('image/'): plog(f'saldo regalo: referencia rechazada · tipo {ctype!r}'); raise RuntimeError(f'Con el saldo regalo solo se pueden usar imágenes como referencia (una llegó como «{ctype or "sin tipo"}»).')   # v260: nada de alojar otros ficheros en la cuenta de la casa
         return
     if '/any-llm' in path: casa_puede(LECTURA_USD); casa_cobra(LECTURA_USD, 'lectura'); return
     if getattr(_ctx, 'casa_ok', False) and any(path == '/api/v3/' + WS_MODELS[k]['ep'] for k in CASA_MODELOS): return
@@ -1044,6 +1044,20 @@ def img_norm(data, ctype='image/jpeg', crop=None):   # AVIF/HEIC/TIFF… → JPE
     if crop:
         W, H = im.size; x0, y0, x1, y1 = [float(v) for v in crop]; im = im.crop((int(x0 * W), int(y0 * H), int(x1 * W), int(y1 * H)))
     b = io.BytesIO(); im.save(b, 'JPEG', quality=93); return b.getvalue(), 'image/jpeg'
+def _sniff(b):   # v382: qué es un fichero por sus primeros bytes (cuando llega sin tipo o con uno genérico)
+    if b[:3] == b'\xff\xd8\xff': return 'image/jpeg'
+    if b[:8] == b'\x89PNG\r\n\x1a\n': return 'image/png'
+    if b[:4] == b'RIFF' and b[8:12] == b'WEBP': return 'image/webp'
+    if b[:4] == b'GIF8': return 'image/gif'
+    if b[4:8] == b'ftyp':
+        br = b[8:12]
+        if br in (b'heic', b'heix', b'hevc', b'heim', b'heis', b'mif1', b'msf1'): return 'image/heic'
+        if br in (b'avif', b'avis'): return 'image/avif'
+        return 'video/quicktime' if br == b'qt  ' else 'video/mp4'
+    if b[:4] == b'\x1aE\xdf\xa3': return 'video/webm'
+    if b[:3] == b'ID3' or b[:2] in (b'\xff\xfb', b'\xff\xf3'): return 'audio/mpeg'
+    if b[:4] == b'RIFF' and b[8:12] == b'WAVE': return 'audio/wav'
+    return ''
 def img_bytes(img):   # {data:dataURL} o {path:'assets/…'} (+ crop opcional) → (bytes, ctype) listos para subir
     if 'data' in img:
         head, b64 = img['data'].split(',', 1); ctype = head.split(':')[1].split(';')[0]; data = base64.b64decode(b64)
@@ -1051,6 +1065,8 @@ def img_bytes(img):   # {data:dataURL} o {path:'assets/…'} (+ crop opcional) �
         p = busca(img.get('path'))   # solo la casa de la cuenta o la biblioteca común
         if not p: raise RuntimeError('Ya no tienes permiso para crear con ese personaje (su creador lo ha retirado o lo ha ocultado). Quítalo de la imagen.' if str(img.get('path') or '').startswith('assets/prestamo/') else 'Esa imagen ya no está compartida contigo (su creador ha dejado de compartir la carpeta). Elige otra imagen a recrear.' if str(img.get('path') or '').startswith('assets/compartida/') else 'ruta no válida: ' + str(img.get('path', ''))[:200])
         data = open(p, 'rb').read(); ctype = mimetypes.guess_type(p)[0] or 'image/jpeg'
+    if not str(ctype or '').startswith(('image/', 'video/', 'audio/')) or ctype in ('image/jpeg', 'image/png') and _sniff(data[:16]) not in ('', ctype):   # v382: sin tipo, genérico o mal puesto → por sus bytes
+        ctype = _sniff(data[:16]) or ctype
     if not ctype.startswith('image/'): return data, ctype
     return img_norm(data, ctype, img.get('crop'))
 def ws_upload(data, ctype):
