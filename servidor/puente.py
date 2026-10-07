@@ -43,7 +43,7 @@ MAX_CUERPO = 40 * 1024 * 1024    # tope de una petición en modo servidor
 MAX_BIBLIO = 200 * 1024 * 1024   # tope de un fichero de la biblioteca común al copiarlo
 KINDS = ('vestidor', 'hair', 'expr')   # las bibliotecas a las que una cuenta puede añadir lo suyo
 _UUID = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
-VERSION = 373
+VERSION = 374
 _ctx = threading.local()   # la cuenta del hilo: la pone cada petición (y, a mano, cada hilo de fondo)
 def uid(): return getattr(_ctx, 'uid', None)   # en local siempre None
 DUENOS = tuple(e.strip().lower() for e in (os.environ.get('ARIA_DUENOS') or 'mix1994max@gmail.com').split(',') if e.strip())   # cuentas que pueden cambiar a Aria Cruz (en la web, la de Max)
@@ -223,7 +223,8 @@ Reglas de los prompts de imagen (en INGLÉS, largos, detallados y CREATIVOS; nad
 - Cada prompt pone a prueba UN test de la batería; puede haber varios prompts del mismo test."""
 _LIGA_CAT = {'t': 0, 'L': []}; _LIGA_CAT_L = threading.Lock()
 LIGA_ELEGIDOS = [   # los generadores que el equipo usa en los duelos (en este orden, con su nombre limpio y su marca). Para añadir uno: su id del catálogo de WaveSpeed
-    ('google/nano-banana-pro/edit', 'Nano Banana Pro', 'Google'), ('google/nano-banana-2/edit', 'Nano Banana 2', 'Google'),
+    ('google/nano-banana-pro/edit', 'Nano Banana Pro', 'Google'), ('google/nano-banana-2.1/edit', 'Nano Banana 2.1', 'Google'), ('kwaivgi/kling-image-o3/edit', 'Kling Image O3', 'Kling'),   # v374: Nano Banana 2 se apaga el 29 oct
+   
     ('openai/gpt-image-2.5-sunburst/edit', 'GPT Image 2.5 Sunburst', 'OpenAI'), ('openai/gpt-image-2.5-flare/edit', 'GPT Image 2.5 Flare', 'OpenAI'), ('openai/gpt-image-2/edit', 'GPT Image 2', 'OpenAI'),
     ('bytedance/seedream-v5.0-pro/edit', 'Seedream 5.0 Pro', 'ByteDance'), ('bytedance/seedream-v5.0-lite/edit', 'Seedream 5.0 Lite', 'ByteDance'), ('bytedance/seedream-v5.0-flash/edit', 'Seedream 5.0 Flash', 'ByteDance'), ('bytedance/seedream-v4.5/edit', 'Seedream 4.5', 'ByteDance'),
     ('black-forest-labs/flux-3/image-edit', 'FLUX 3', 'Black Forest Labs'), ('wavespeed-ai/flux-2-max/edit', 'FLUX 2 Max', 'Black Forest Labs'), ('wavespeed-ai/flux-2-pro/edit', 'FLUX 2 Pro', 'Black Forest Labs'), ('wavespeed-ai/flux-2-flex/edit', 'FLUX 2 Flex', 'Black Forest Labs'),
@@ -794,11 +795,20 @@ def _gpt(p, urls, ar, q):   return {'prompt': p, 'images': urls[:16], 'resolutio
 def _sdrm(p, urls, ar, q):  return {'prompt': p, 'images': urls[:10], 'resolution': '2k' if q == 'high' else '1.5k', 'aspect_ratio': ar, 'output_format': 'jpeg', 'prompt_optimization_mode': 'standard'}
 def _sflash(p, urls, ar, q): return {'prompt': p, 'images': urls[:10], 'resolution': '2k' if q == 'high' else '1.5k', 'aspect_ratio': ar, 'output_format': 'jpeg'}
 def _qwws(p, urls, ar, q):  return {'prompt': p, 'images': urls[:3], 'resolution': '2k' if q == 'high' else '1k', 'aspect_ratio': ar}
+def _nblite(p, urls, ar, q): return {'prompt': p, 'images': urls[:4], 'aspect_ratio': ar, 'output_format': 'jpeg'}   # v374: sin resolución (siempre 1K)
+_AR5 = {'2:3': '3:4', '3:2': '4:3'}   # v374: Ideogram solo tiene 1:1, 4:3, 3:4, 16:9 y 9:16
+def _ideo45(p, urls, ar, q): return dict({'prompt': p, 'image': urls[0], 'aspect_ratio': _AR5.get(ar, ar), 'quality': 'high' if q == 'high' else 'medium'}, **({'reference_images': urls[1:5]} if len(urls) > 1 else {}))   # v374: la 1.ª es la que se edita; hasta 4 más de referencia
+def _ws1o3(p, urls, ar, q): return {'prompt': p, 'images': urls[:10], 'resolution': '2k' if q == 'high' else '1k', 'aspect_ratio': ar, 'output_format': 'jpeg'}   # v374: Kling Image O3 y FLUX 3 (mismos campos)
 WS_MODELS = {   # precios de la página de cada modelo en wavespeed.ai (3 oct 2026): 'usd' = con UNA referencia; 'per' = recargo por cada referencia más
     'nbp':      {'ep': 'google/nano-banana-pro/edit',          'name': 'Nano Banana Pro',  'refs': 14, 'usd': {'std': 0.14,  'high': 0.14},  'per': 0,     'body': _nbp,  'nota': 'Google · por WaveSpeed · hasta 14 referencias · 1K y 2K cuestan lo mismo', 'high': '2k', 'prov': 'ws'},
     'gptimg':   {'ep': 'openai/gpt-image-2.5-sunburst/edit',   'name': 'GPT Image 2.5',    'refs': 16, 'usd': {'std': 0.039, 'high': 0.165}, 'per': 0.015, 'body': _gpt,  'nota': 'OpenAI · por WaveSpeed · hasta 16 referencias', 'high': '2k · calidad alta', 'prov': 'ws'},
     'seedream': {'ep': 'bytedance/seedream-v5.0-pro/edit',     'name': 'Seedream 5.0 Pro', 'refs': 10, 'usd': {'std': 0.045, 'high': 0.09},  'per': 0.003, 'body': _sdrm, 'nota': 'ByteDance · por WaveSpeed · hasta 10 referencias', 'high': '2k', 'std': '1.5k', 'prov': 'ws'},
     'seedflash': {'ep': 'bytedance/seedream-v5.0-flash/edit',  'name': 'Seedream 5.0 Flash', 'refs': 10, 'usd': {'std': 0.027, 'high': 0.027}, 'per': 0, 'body': _sflash, 'nota': 'ByteDance · por WaveSpeed · el más barato · hasta 10 referencias · precio fijo', 'high': '2k', 'std': '1.5k', 'prov': 'ws'},
+    'nb21':     {'ep': 'google/nano-banana-2.1/edit',          'name': 'Nano Banana 2.1',  'refs': 14, 'usd': {'std': 0.04,  'high': 0.06},  'per': 0.002, 'body': _nbp,  'nota': 'Google · por WaveSpeed · el nuevo (oct 2026) · hasta 14 referencias', 'high': '2k', 'prov': 'ws'},   # v374
+    'nblite':   {'ep': 'google/nano-banana-2-lite/edit',       'name': 'Nano Banana 2 Lite', 'refs': 4, 'usd': {'std': 0.04,  'high': 0.04},  'per': 0,     'body': _nblite, 'nota': 'Google · por WaveSpeed · rápido · hasta 4 referencias · solo 1K', 'high': '1k', 'prov': 'ws'},   # v374
+    'ideo45':   {'ep': 'ideogram-ai/ideogram-v4.5/edit',       'name': 'Ideogram 4.5',     'refs': 5,  'usd': {'std': 0.06,  'high': 0.22},  'per': 0,     'body': _ideo45, 'nota': 'Ideogram · por WaveSpeed · el mejor con texto dentro de la imagen (carteles, logos) · edita la 1.ª imagen + 4 referencias', 'high': 'calidad alta', 'prov': 'ws'},   # v374
+    'klingo3':  {'ep': 'kwaivgi/kling-image-o3/edit',          'name': 'Kling Image O3',   'refs': 10, 'usd': {'std': 0.028, 'high': 0.028}, 'per': 0,     'body': _ws1o3, 'nota': 'Kling · por WaveSpeed · muy barato · hasta 10 referencias · 1K y 2K cuestan lo mismo', 'high': '2k', 'prov': 'ws'},   # v374
+    'flux3':    {'ep': 'black-forest-labs/flux-3/image-edit',  'name': 'FLUX 3',           'refs': 10, 'usd': {'std': 0.05,  'high': 0.12},  'per': 0,     'body': _ws1o3, 'nota': 'Black Forest Labs · por WaveSpeed · hasta 10 referencias', 'high': '2k', 'prov': 'ws'},   # v374
     'qwenws':   {'ep': 'alibaba/qwen-image-3.0/edit',          'name': 'Qwen Image 3 · WaveSpeed', 'refs': 3, 'usd': {'std': 0.03, 'high': 0.03}, 'per': 0.003, 'body': _qwws, 'nota': 'el mismo Qwen Image 3, por WaveSpeed · 1-3 referencias · 1K y 2K cuestan lo mismo', 'high': '2k', 'prov': 'ws'},
 }
 CLAVES = os.path.expanduser('~/.aria-studio/claves.env')   # claves pegadas en la pantalla «Conecta tu API»: fuera de la carpeta de la app (ni se sirven ni viajan en un zip)
@@ -881,7 +891,7 @@ def _casa_key():
     return k
 CASA_KEY = _casa_key() if SERVIDOR else ''
 CASA_TOPE = float(os.environ.get('ARIA_CASA_TOPE') or 1000)   # $ al mes entre TODAS las cuentas: freno de seguridad, no recorta a nadie en condiciones normales
-CASA_MODELOS = ('seedflash', 'gptimg', 'nbp', 'seedream', 'qwenws'); CASA_DEF = 'seedflash'   # v362 (Max): con el saldo regalo, TODOS los de imagen de WaveSpeed; solo se bloquea el modo NSFW (y los prompts NSFW). Antes v358: solo GPT y Nano Banana   # v358: sin Seedream 5.0 Flash (no acepta filtro de seguridad: comprobado en el catálogo de WaveSpeed); estos dos traen el suyo   # con el saldo regalo: el barato por defecto y los dos que traen su propio filtro; Seedream 5.0 Pro (sin filtro) queda fuera
+CASA_MODELOS = ('seedflash', 'gptimg', 'nbp', 'seedream', 'qwenws', 'nb21', 'nblite', 'ideo45', 'klingo3', 'flux3'); CASA_DEF = 'seedflash'   # v374: + los nuevos de WaveSpeed   # v362 (Max): con el saldo regalo, TODOS los de imagen de WaveSpeed; solo se bloquea el modo NSFW (y los prompts NSFW). Antes v358: solo GPT y Nano Banana   # v358: sin Seedream 5.0 Flash (no acepta filtro de seguridad: comprobado en el catálogo de WaveSpeed); estos dos traen el suyo   # con el saldo regalo: el barato por defecto y los dos que traen su propio filtro; Seedream 5.0 Pro (sin filtro) queda fuera
 BIENVENIDA = 1.0; LECTURA_USD = 0.002   # cada lectura de una imagen con IA (describir una foto, detectar personas…)
 SIN_SALDO = 'Saldo regalo agotado. Se repone el día 1; para seguir ahora, conecta tu propia clave en «Mis APIs».'
 _NSFW_RE = re.compile(r"\b(nsfw|topless|nipples?|areolas?|genitals?|genitalia|pubic|vagina|vulva|penis|no clothes|(?:is|are|she'?s|he'?s|fully|completely|totally|stark) naked|naked (?:woman|women|man|men|girl|boy|body|person|people|figure|torso|chest|skin)|(?:fully|completely|totally) nude|nude body|bare breasts?|no underwear|sexually explicit|explicit nud|desnud[oa]s?|sin ropa|sin nada de ropa|en pelotas|en bolas|pezon(?:es)?|pez[oó]n|sin sujetador|tetas al aire|pechos al aire|senos? desnudos?|genitales|sin bragas|en topless)", re.I)
@@ -1065,11 +1075,11 @@ UNAVAILABLE = [   # lo que Max usa a diario y la API pública de Higgsfield NO o
     {'key': 'gpt-image-2.5',   'name': 'GPT Image 2.5',    'why': 'próximamente'},
     {'key': 'seedream-5',      'name': 'Seedream 5',       'why': 'próximamente'},
 ]
-def all_models(): return dict((MODELS if _hf_listo() else {}), **(WS_MODELS if load_ws() else ({k: WS_MODELS[k] for k in CASA_MODELOS} if casa_on() else {})), **(MG_MODELS if load_mg() else {}))   # v328: + Magnific   # solo los modelos de los proveedores con clave
+def all_models(): return dict((MODELS if _hf_listo() else {}), **(WS_MODELS if load_ws() else ({k: WS_MODELS[k] for k in CASA_MODELOS} if casa_on() else {})), **(MG_MODELS if load_mg() else {}), **(FAL_MODELS if load_fal() else {}))   # v374: + fal   # v328: + Magnific   # solo los modelos de los proveedores con clave
 def model_list(): return [{'key': k, 'name': m['name'], 'ep': m['ep'], 'refs': m['refs'], 'usd': m['usd'], 'per': m.get('per', 0), 'nota': m['nota'], 'high': m['high'], 'std': m.get('std', '1k'), 'prov': m.get('prov', 'hf')} for k, m in all_models().items()]
 def unavailable():   # v362: los modelos que esta cuenta NO puede usar, para enseñarlos en gris con qué API los activa
     AM = all_models(); out = []
-    for D_, api_ in ((WS_MODELS, 'WaveSpeed'), (MODELS, 'Higgsfield'), (MG_MODELS, 'Magnific')):
+    for D_, api_ in ((WS_MODELS, 'WaveSpeed'), (MODELS, 'Higgsfield'), (MG_MODELS, 'Magnific'), (FAL_MODELS, 'fal')):   # v374: + fal
         for k_, m_ in D_.items():
             if k_ not in AM: out.append({'key': k_, 'name': m_['name'], 'why': 'conecta tu API de ' + api_})
     return out
@@ -1087,7 +1097,9 @@ VID_CUR = [('Seedance', 'Seedance 2.0 Fast', 'bytedance/seedance-2.0-fast'), ('S
            ('Kling', 'Kling 3.0 Omni Pro', 'kwaivgi/kling-video-o3-pro'), ('Kling', 'Kling 3.0 Omni', 'kwaivgi/kling-video-o3-std'), ('Kling', 'Kling 3.0 Pro', 'kwaivgi/kling-v3.0-pro'), ('Kling', 'Kling 3.0', 'kwaivgi/kling-v3.0-std'), ('Kling', 'Kling 2.6 Pro', 'kwaivgi/kling-v2.6-pro'),
            ('Veo', 'Veo 3.1', 'google/veo3.1'), ('Veo', 'Veo 3.1 Fast', 'google/veo3.1-fast'), ('Veo', 'Veo 3.1 Lite', 'google/veo3.1-lite'),
            ('Minimax', 'Hailuo 2.3 Pro', 'minimax/hailuo-2.3@pro'), ('Minimax', 'Hailuo 2.3', 'minimax/hailuo-2.3@standard'), ('Minimax', 'Minimax H3', 'minimax/h3'),
-           ('Wan', 'Wan 3.0', 'alibaba/wan-3.0'), ('Grok', 'Grok Imagine 1.5', 'x-ai/grok-imagine-video-v1.5')]
+           ('Wan', 'Wan 3.0', 'alibaba/wan-3.0'), ('Grok', 'Grok Imagine 1.5', 'x-ai/grok-imagine-video-v1.5'),
+           ('Kling', 'Kling 3 Turbo Pro', 'kwaivgi/kling-v3-turbo-pro'), ('Kling', 'Kling 3 Turbo', 'kwaivgi/kling-v3-turbo-std'), ('Kling', 'Kling 3.0 4K', 'kwaivgi/kling-v3.0-4k'),   # v374
+           ('Seedance', 'Seedance 2.0 Mini', 'bytedance/seedance-2.0-mini'), ('Wan', 'Wan 3.0 Prime', 'alibaba/wan-3.0-prime'), ('Luma', 'Luma Ray 3.2', 'luma/ray-3.2'), ('LTX', 'LTX-2 Pro', 'lightricks/ltx-2-pro'), ('LTX', 'LTX-2 Fast', 'lightricks/ltx-2-fast')]
 _VCAT = {'t': 0, 'M': {}}; _VCAT_L = threading.Lock()
 def _vcat(forzar=False):   # id → esquema y precio base, del catálogo de WaveSpeed (cada 6 h)
     with _VCAT_L:
@@ -1121,7 +1133,7 @@ def _vinfo():   # lo que el panel necesita para cada modelo: modos, duraciones, 
         mx = lambda k: max([int(((M[v]['p'].get(k) or {}).get('maxItems')) or 0) for v in md.values()] + [0])
         maxi = {'img': max(mx('reference_images'), mx('images'), 1 if 'i2v' in md else 0), 'vid': mx('reference_videos'), 'aud': mx('reference_audios')}
         out.append({'id': base, 'fam': fam, 'nombre': nom, 'modos': sorted(k for k in md if k != 'se'), 'ini': 'i2v' in md, 'fin': fin, 'usd': min(float(M[v]['usd'] or 0) for v in md.values()), 'dur': dur, 'durDef': (p.get('duration') or {}).get('default'),
-                    'res': en('resolution'), 'aspect': en('aspect_ratio'), 'audio': next((k for k in ('generate_audio', 'sound', 'audio') if (p.get(k) or {}).get('type') == 'boolean'), None), 'refs': 'r2v' in md or 'reference_images' in (M.get(md.get('t2v', ''), {}).get('p') or {}), 'max': maxi})
+                    'res': en('resolution'), 'aspect': en('aspect_ratio') or [x for x in en('size') if ':' in str(x)], 'audio': next((k for k in ('generate_audio', 'sound', 'audio') if (p.get(k) or {}).get('type') == 'boolean'), None), 'refs': 'r2v' in md or 'reference_images' in (M.get(md.get('t2v', ''), {}).get('p') or {}), 'max': maxi})
     return out
 def _vpayload(mid, b, prompt):   # la petición para ese modelo, desde su esquema
     sch = _vcat()[mid]; p = sch['p']; en = lambda k: ((p.get(k) or {}).get('enum') or []); out = {'prompt': prompt}
@@ -1144,6 +1156,8 @@ def _vpayload(mid, b, prompt):   # la petición para ese modelo, desde su esquem
         out['resolution'] = r0 if (not E or r0 in E) else (p['resolution'].get('default') or (E[len(E) // 2] if E else r0))
     if 'aspect_ratio' in p and not ('image' in out and 'aspect_ratio' not in sch['req'] and b.get('aspect') in (None, '', 'auto')):
         E = en('aspect_ratio'); a0 = b.get('aspect') or '9:16'; out['aspect_ratio'] = a0 if (not E or a0 in E) else (p['aspect_ratio'].get('default') or E[0])
+    if 'size' in p and 'aspect_ratio' not in p and en('size') and all(':' in str(x) for x in en('size')):   # v374: Luma pide el formato como «size»
+        E = en('size'); a0 = b.get('aspect') or '9:16'; out['size'] = a0 if a0 in E else (p['size'].get('default') or E[0])
     for k in ('generate_audio', 'sound', 'audio'):
         if (p.get(k) or {}).get('type') == 'boolean': out[k] = bool(b.get('audio')) and not ('end_image' in out and mid.startswith('kwaivgi/kling-v2.6'))   # Kling 2.6: imagen final y sonido no van juntos
     if not mid.startswith('bytedance/'):   # Seedance entiende @Image1; los demás no
@@ -1592,14 +1606,60 @@ def _add_estilo(j, live_path):   # peinado o expresión creados soltando una fot
             except Exception as e: plog(f'estilo {sid} Notion ✕ {e}')
         threading.Thread(target=_up, daemon=True).start()
     return it
-APIS = (('ws', 'WaveSpeed', 'WS_API_KEY', 'wavespeed.env', 'Nano Banana Pro, GPT Image, Seedream y Qwen'),
+APIS = (('ws', 'WaveSpeed', 'WS_API_KEY', 'wavespeed.env', 'Nano Banana, GPT Image, Seedream, Ideogram, FLUX, Kling y Qwen'),
         ('hf', 'Higgsfield', 'HF_API_KEY', 'higgsfield.env', 'Marketing Studio, Grok y Qwen'),
         ('ark', 'BytePlus', 'ARK_API_KEY', 'byteplus.env', 'vídeo con Seedance'),
         ('claude', 'Claude (Anthropic)', 'ANTHROPIC_API_KEY', 'anthropic.env', 'escribir mundos, historias y prompts de los Workflows'),
         ('mg', 'Magnific', 'FREEPIK_API_KEY', 'freepik.env', 'mejorar y escalar imágenes (API de Freepik)'),   # v324
         ('el', 'ElevenLabs', 'ELEVENLABS_API_KEY', 'elevenlabs.env', 'voces y audio'),
-        ('oai', 'ChatGPT (OpenAI)', 'OPENAI_API_KEY', 'openai.env', 'prompts e imágenes GPT'))
+        ('oai', 'ChatGPT (OpenAI)', 'OPENAI_API_KEY', 'openai.env', 'prompts e imágenes GPT'),
+        ('fal', 'fal', 'FAL_KEY', 'fal.env', 'Nano Banana, GPT Image, Seedream, Ideogram, FLUX y Kling'))   # v374
 MG_URL = 'https://api.magnific.com'
+def load_fal(): return _env('FAL_KEY', 'fal.env')   # v374
+class _FalHTTP(RuntimeError):
+    def __init__(s, code, msg): RuntimeError.__init__(s, msg); s.code = code
+def _fal(method, url, body=None, k=None):   # v374: una llamada a fal con la clave de la cuenta
+    k = k or load_fal()
+    if not k: raise RuntimeError('fal no está conectado: conéctalo en «Mis APIs»')
+    rq = urllib.request.Request(url, data=json.dumps(body).encode() if body is not None else None, method=method, headers={'Authorization': 'Key ' + k, 'Content-Type': 'application/json', 'Accept': 'application/json', 'User-Agent': UA})
+    try: return json.loads(urllib.request.urlopen(rq, timeout=120).read() or b'{}')
+    except urllib.error.HTTPError as e: raise _FalHTTP(e.code, f'fal respondió {e.code}: ' + e.read().decode('utf-8', 'replace')[:300])
+def _fal_ok(k):   # v374: se comprueba pidiendo un precio (no genera ni cobra; con una clave mala, 401)
+    rq = urllib.request.Request('https://api.fal.ai/v1/models/pricing?endpoint_id=fal-ai/nano-banana-pro/edit', headers={'Authorization': 'Key ' + k, 'Accept': 'application/json', 'User-Agent': UA}); urllib.request.urlopen(rq, timeout=30).read(); return True
+_fal_uploads = {}
+def _fal_sube(data, ctype):   # v374: una referencia → el almacén de fal (URL pública); si no deja, va dentro de la petición (data URI)
+    h = (uid(), hashlib.sha1(data).hexdigest())
+    if h in _fal_uploads: return _fal_uploads[h]
+    if len(_fal_uploads) > 4000: _fal_uploads.clear()
+    try:
+        r = _fal('POST', 'https://rest.alpha.fal.ai/storage/upload/initiate?storage_type=fal-cdn-v3', {'content_type': ctype, 'file_name': 'ref.' + ('png' if ctype == 'image/png' else 'webp' if ctype == 'image/webp' else 'jpg')})
+        up, fu = r.get('upload_url'), r.get('file_url')
+        if not (up and fu): raise RuntimeError('sin upload_url')
+        urllib.request.urlopen(urllib.request.Request(up, data=data, method='PUT', headers={'Content-Type': ctype, 'User-Agent': UA}), timeout=120).read()
+    except Exception as e: plog('fal: subida ✕ (va como data URI) ' + str(e)[:120]); fu = f'data:{ctype};base64,' + base64.b64encode(data).decode()
+    _fal_uploads[h] = fu; return fu
+def _fal_tam(ar, lado):   # v374: «3:4» → {width, height} con el lado largo = lado (múltiplos de 16)
+    try: a, b = [float(x) for x in ar.split(':')]
+    except Exception: a, b = 3.0, 4.0
+    if a >= b: w, hh = lado, lado * b / a
+    else: w, hh = lado * a / b, lado
+    return {'width': int(round(w / 16) * 16), 'height': int(round(hh / 16) * 16)}
+_FAL_PRE = {'1:1': 'square_hd', '3:4': 'portrait_4_3', '2:3': 'portrait_4_3', '9:16': 'portrait_16_9', '4:3': 'landscape_4_3', '3:2': 'landscape_4_3', '16:9': 'landscape_16_9'}
+def _f_nb(p, urls, ar, q):    return {'prompt': p, 'image_urls': urls[:14], 'aspect_ratio': ar, 'resolution': '2K' if q == 'high' else '1K', 'output_format': 'jpeg', 'num_images': 1}
+def _f_gpt(p, urls, ar, q):   return {'prompt': p, 'image_urls': urls[:16], 'image_size': _fal_tam(ar, 2048 if q == 'high' else 1536), 'quality': 'high' if q == 'high' else 'medium', 'output_format': 'jpeg', 'num_images': 1}
+def _f_sdrm(p, urls, ar, q):  return {'prompt': p, 'image_urls': urls[:10], 'image_size': _fal_tam(ar, 2048 if q == 'high' else 1536), 'output_format': 'jpeg', 'num_images': 1}
+def _f_ideo(p, urls, ar, q):  return dict({'prompt': p, 'image_url': urls[0], 'image_size': _FAL_PRE.get(ar, 'portrait_4_3'), 'quality': 'high' if q == 'high' else 'medium', 'num_images': 1}, **({'reference_image_urls': urls[1:5]} if len(urls) > 1 else {}))
+def _f_flux(p, urls, ar, q):  return {'prompt': p, 'image_urls': urls[:10], 'resolution': '2k' if q == 'high' else '1k', 'aspect_ratio': ar, 'output_format': 'jpeg'}
+def _f_kling(p, urls, ar, q): return {'prompt': p, 'image_urls': urls[:10], 'resolution': '2K' if q == 'high' else '1K', 'aspect_ratio': ar, 'output_format': 'jpeg', 'num_images': 1}
+FAL_MODELS = {   # v374: fal, con la clave del miembro · precios de la página de cada modelo en fal.ai (8 oct 2026); GPT Image por tokens → aproximado
+    'falnb21':  {'ep': 'google/nano-banana-2.1/edit',            'name': 'Nano Banana 2.1 · fal', 'refs': 14, 'usd': {'std': 0.044, 'high': 0.07},  'per': 0,      'body': _f_nb,    'nota': 'Google · por fal · hasta 14 referencias', 'high': '2K', 'prov': 'fal'},
+    'falnbp':   {'ep': 'fal-ai/nano-banana-pro/edit',            'name': 'Nano Banana Pro · fal', 'refs': 14, 'usd': {'std': 0.15,  'high': 0.15},  'per': 0,      'body': _f_nb,    'nota': 'Google · por fal · hasta 14 referencias · 1K y 2K cuestan lo mismo', 'high': '2K', 'prov': 'fal'},
+    'falgpt':   {'ep': 'openai/gpt-image-2.5/sunburst/edit',     'name': 'GPT Image 2.5 · fal',   'refs': 16, 'usd': {'std': 0.03,  'high': 0.12},  'per': 0,      'body': _f_gpt,   'nota': 'OpenAI · por fal · hasta 16 referencias · precio aproximado (fal cobra por tokens)', 'high': '2k · calidad alta', 'prov': 'fal'},
+    'falsdrm':  {'ep': 'bytedance/seedream/v5/pro/edit',         'name': 'Seedream 5.0 Pro · fal', 'refs': 10, 'usd': {'std': 0.0675, 'high': 0.135}, 'per': 0.0045, 'body': _f_sdrm,  'nota': 'ByteDance · por fal · hasta 10 referencias', 'high': '2k', 'std': '1.5k', 'prov': 'fal'},
+    'falideo':  {'ep': 'ideogram/v4.5/edit',                     'name': 'Ideogram 4.5 · fal',    'refs': 5,  'usd': {'std': 0.06,  'high': 0.22},  'per': 0,      'body': _f_ideo,  'nota': 'Ideogram · por fal · texto dentro de la imagen · edita la 1.ª imagen + 4 referencias', 'high': 'calidad alta', 'prov': 'fal'},
+    'falflux':  {'ep': 'blackforestlabs/flux-3/edit-image',      'name': 'FLUX 3 · fal',          'refs': 10, 'usd': {'std': 0.048, 'high': 0.12},  'per': 0,      'body': _f_flux,  'nota': 'Black Forest Labs · por fal · hasta 10 referencias', 'high': '2k', 'prov': 'fal'},
+    'falkling': {'ep': 'fal-ai/kling-image/o3/image-to-image',   'name': 'Kling Image O3 · fal',  'refs': 10, 'usd': {'std': 0.028, 'high': 0.028}, 'per': 0,      'body': _f_kling, 'nota': 'Kling · por fal · hasta 10 referencias · 1K y 2K cuestan lo mismo', 'high': '2K', 'prov': 'fal'},
+}
 def load_mg(): return _env('FREEPIK_API_KEY', 'freepik.env')
 def load_el(): return _env('ELEVENLABS_API_KEY', 'elevenlabs.env')
 def _mg(method, path, body=None):   # v328: una llamada a Magnific con la clave de la cuenta
@@ -1655,7 +1715,7 @@ def _ark_ok(k):   # comprueba una clave de BytePlus pidiendo su lista de trabajo
 def _de_quien(k):   # ¿de qué proveedor es esta clave? Se prueba con cada uno; None si ninguno la acepta
     if not re.fullmatch(r'[\x21-\x7e]{16,400}', k): return None
     duda = False
-    for aid, prueba in ((('claude', _claude_ok),) if k.startswith('sk-ant-') else (('el', _el_ok),) if k.startswith('sk_') else (('oai', _oai_ok),) if k.startswith('sk-') else (('mg', _mg_ok),) if k.startswith('FPSX') else (('hf', _hf_ok),) if ':' in k else (('ws', _ws_saldo), ('ark', _ark_ok), ('el', _el_ok), ('mg', _mg_ok))):   # v324: + ElevenLabs, ChatGPT y Magnific
+    for aid, prueba in ((('claude', _claude_ok),) if k.startswith('sk-ant-') else (('el', _el_ok),) if k.startswith('sk_') else (('oai', _oai_ok),) if k.startswith('sk-') else (('mg', _mg_ok),) if k.startswith('FPSX') else (('fal', _fal_ok), ('hf', _hf_ok)) if ':' in k else (('ws', _ws_saldo), ('ark', _ark_ok), ('el', _el_ok), ('mg', _mg_ok))):   # v324: + ElevenLabs, ChatGPT y Magnific
         for intento in (1, 2):   # «no la acepta» (401/403…) es un no; cualquier otro fallo (red, 5xx, tardanza) se reintenta una vez
             try: prueba(k); return aid
             except urllib.error.HTTPError as e:
@@ -2066,6 +2126,16 @@ def _estado(rid):   # estado de un trabajo; si ha terminado, lo descarga a la ca
         elif j.get('prov') == 'mg':   # v328
             w = (_mg('GET', j['mgp'] + '/' + rid).get('data') or {}); G = [g if isinstance(g, str) else (g or {}).get('url') for g in (w.get('generated') or [])]; G = [g for g in G if g]
             stt = str(w.get('status') or '').upper(); st = {'status': 'completed' if stt == 'COMPLETED' and G else 'failed' if stt == 'FAILED' else 'in_progress', 'request_id': rid, 'images': [{'url': u} for u in G], 'video': {'url': G[0] if G else None}, 'error': w.get('error') or ('Magnific no pudo generarla' if stt == 'FAILED' else None)}
+        elif j.get('prov') == 'fal':   # v374: cola de fal → al terminar, se pide el resultado
+            s_ = _fal('GET', j['fst']); stt = str(s_.get('status') or '').upper(); st = {'status': 'in_progress', 'request_id': rid}
+            if stt == 'COMPLETED':
+                try:
+                    r_ = _fal('GET', j['fres']); G = [(g or {}).get('url') if isinstance(g, dict) else g for g in (r_.get('images') or [])]; G = [g for g in G if g]
+                    st = {'status': 'completed' if G else 'failed', 'request_id': rid, 'images': [{'url': u} for u in G], 'video': {'url': G[0] if G else None}, 'error': None if G else 'fal no devolvió ninguna imagen'}
+                except _FalHTTP as e:
+                    if e.code >= 500 or e.code == 429: raise
+                    st = {'status': 'nsfw' if re.search(r'nsfw|content.?(policy|moderation)|safety', str(e), re.I) else 'failed', 'request_id': rid, 'error': str(e)}
+            if st['status'] != 'in_progress' and not j.get('t_end'): j['t_end'] = time.time()
         elif j.get('prov') == 'el':   # v328: ya lo descarga el hilo
             st = {'status': j.get('el_st') or 'in_progress', 'request_id': rid, 'error': j.get('el_err')}
         elif j.get('prov') == 'ws':
@@ -3107,7 +3177,7 @@ class H(SimpleHTTPRequestHandler):
             if body.get('id') == 'auto':   # la pantalla ya no pregunta de quién es la clave
                 body['id'] = _de_quien(str(body.get('key') or '').strip())
                 if body['id'] == 'duda': return self._json(400, {'error': 'el proveedor no ha respondido al comprobar la clave. No es que esté mal: vuelve a pulsar Conectar'})
-                if not body['id']: return self._json(400, {'error': 'no reconozco esa clave. Funcionan las de WaveSpeed, Higgsfield (ID:SECRET), Magnific (Freepik), ElevenLabs, Claude y ChatGPT: revisa que esté copiada entera'})
+                if not body['id']: return self._json(400, {'error': 'no reconozco esa clave. Funcionan las de WaveSpeed, fal, Higgsfield (ID:SECRET), Magnific (Freepik), ElevenLabs, Claude y ChatGPT: revisa que esté copiada entera'})
             api_ = next((a for a in APIS if a[0] == body.get('id')), None)
             if not api_: return self._json(400, {'error': 'API desconocida'})
             aid, nombre, envn, homef, _para = api_
@@ -3121,6 +3191,7 @@ class H(SimpleHTTPRequestHandler):
                 elif aid == 'oai': _oai_ok(k)
                 elif aid == 'el': _el_ok(k)
                 elif aid == 'mg': _mg_ok(k)
+                elif aid == 'fal': _fal_ok(k)   # v374
                 elif aid == 'hf':
                     if ':' not in k: return self._json(400, {'error': 'la clave de Higgsfield tiene la forma ID:SECRET'})
                     _hf_ok(k)
@@ -4406,6 +4477,10 @@ class H(SimpleHTTPRequestHandler):
                 except RuntimeError as e: return self._json(400, {'error': 'ByteDance no deja cancelar una tarea que ya está corriendo: ' + str(e)[:120]})
                 j['canceled'] = True; return self._json(200, {'ok': True, 'raw': r})
             if j and j.get('prov') == 'ws': j['canceled'] = True; return self._json(200, {'ok': True, 'raw': 'WaveSpeed no cancela: se ignora el resultado'})
+            if j and j.get('prov') == 'fal':   # v374: fal solo cancela lo que aún está en cola
+                try: _fal('PUT', j['fcan'])
+                except Exception as e: return self._json(400, {'error': 'fal ya la está generando: no se puede cancelar'})
+                j['canceled'] = True; return self._json(200, {'ok': True})
             try: r = api('PUT', f'/requests/{rid}/cancel')
             except RuntimeError:
                 try: r = api('POST', f'/requests/{rid}/cancel')
@@ -4424,6 +4499,16 @@ class H(SimpleHTTPRequestHandler):
         save_inputs(body)
         try:
             AM = all_models(); regalo = casa_on(); mkey = body.get('model') if body.get('model') in AM else (CASA_DEF if regalo else 'qwen'); M = AM[mkey]
+            if M.get('prov') == 'fal':   # v374: fal (la clave del miembro)
+                urls = [_fal_sube(*img_bytes(i)) for i in (body.get('images') or [])[:M['refs']]]
+                if not urls: raise RuntimeError('hacen falta imágenes de referencia')
+                usd = round(M['usd']['high' if body.get('quality') == 'high' else 'std'] + M.get('per', 0) * max(0, len(urls) - 1), 4)
+                payload = M['body'](body.get('prompt', ''), urls, aspect_ok(body.get('aspect')), 'high' if body.get('quality') == 'high' else 'std')
+                r = _fal('POST', 'https://queue.fal.run/' + M['ep'], payload); rid = r.get('request_id')
+                if not rid: raise RuntimeError('fal no devolvió id: ' + json.dumps(r)[:200])
+                base_ = 'https://queue.fal.run/' + M['ep'] + '/requests/' + rid
+                jobs[rid] = {'t0': time.time(), 'item': body.get('item', 'img'), 'model': mkey, 'prov': 'fal', 'fst': r.get('status_url') or base_ + '/status', 'fres': r.get('response_url') or base_, 'fcan': r.get('cancel_url') or base_ + '/cancel', 'usd': usd, 'credits': None, 'meta': body.get('meta') or {}}
+                return self._json(200, {'request_id': rid, 'usd': usd, 'credits': None, 'model': M['ep'], 'model_key': mkey, 'image_urls': [u if not u.startswith('data:') else '(imagen)' for u in urls], 'payload': {k_: v_ for k_, v_ in payload.items() if k_ not in ('image_urls', 'image_url', 'reference_image_urls')}})
             if M.get('prov') == 'mg':   # v328: Magnific (créditos de la cuenta del miembro)
                 urls = [_mg_sube(*img_bytes(i)) for i in (body.get('images') or [])[:M['refs']]]
                 if not urls: raise RuntimeError('hacen falta imágenes de referencia')
