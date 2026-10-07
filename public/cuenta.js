@@ -73,7 +73,7 @@ html.sinapi #livedot,html.sinapi .meter{display:none!important}
     '<p id="gateMsg"></p>' +
     '<ul class="gpts"><li><b>Tu personaje, siempre el mismo</b>Crea su ficha una vez y sale igual en todas sus fotos.</li><li><b>Recrea cualquier foto</b>Elige una de la Fototeca o arrastra la tuya.</li><li><b>Empiezas con saldo regalo</b>Tus primeras imágenes van por nuestra cuenta. Después, desde 3 céntimos por imagen y sin suscripción.</li></ul>' +
     '<button class="gin" id="gateIn" hidden>Entrar con Google</button>' +
-    '<form class="gmail" id="gateMail" hidden><span>o con tu correo</span><div><input type="email" id="gateEmail" placeholder="tu@correo.com" autocomplete="email" required><button type="submit" id="gateLink">Enviarme un enlace</button></div><small id="gateMailOk" hidden>✓ Te hemos enviado un enlace: ábrelo desde este mismo aparato y entras sin contraseña.</small></form>' +   /* v394: enlace por correo (quien no tiene cuenta de Google) */
+    '<form class="gmail" id="gateMail" hidden><span>o con tu correo</span><div><input type="email" id="gateEmail" placeholder="tu@correo.com" autocomplete="email" required><button type="submit" id="gateLink">Recibir el enlace</button></div><small id="gateMailOk" hidden>✓ Enlace enviado: ábrelo desde este mismo aparato y entras sin contraseña.</small></form>' +   /* v394: enlace por correo (quien no tiene cuenta de Google) */
     '<button id="gateOut" hidden>Cerrar sesión</button>' +
     '<p class="gerr" id="gateErr" hidden></p><p class="gnota" id="gateNota" hidden>Acceso por invitación · <a href="https://www.skool.com/influencer-ai/about" target="_blank" rel="noopener">comunidad de Aria Cruz</a></p><p class="gnota glegal" hidden>Al entrar aceptas las <a href="/legal.html#condiciones" target="_blank">Condiciones de uso</a> y la <a href="/legal.html#privacidad" target="_blank">Privacidad</a> · solo mayores de 18 años</p></div></div>';
   document.body.prepend(gate);
@@ -278,8 +278,11 @@ html.sinapi #livedot,html.sinapi .meter{display:none!important}
     const q = new URLSearchParams(location.search), qerr = q.get('error_description');
     if (qerr) history.replaceState(null, '', location.pathname);
     G('gateMail').onsubmit = async (ev) => { ev.preventDefault(); const em = G('gateEmail').value.trim().toLowerCase(); if (!em) return; G('gateErr').hidden = true; G('gateLink').disabled = true; G('gateLink').textContent = 'Enviando…';   /* v394 */
+      let inv = null; try { inv = await fetch0(SERVIDOR_URL + '/api/invitado', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: em }) }).then(r => r.json()); } catch (e) { inv = null; }   /* v396: solo se manda el enlace a quien está en la lista */
+      if (inv && inv.invitado === false) { G('gateLink').disabled = false; G('gateLink').textContent = 'Recibir el enlace'; G('gateErr').textContent = 'Ese correo no está en la lista de invitados. Pide acceso en la comunidad de Aria Cruz.'; G('gateErr').hidden = false; return; }
+      if (inv && inv.error && !inv.invitado) { G('gateLink').disabled = false; G('gateLink').textContent = 'Recibir el enlace'; G('gateErr').textContent = inv.error; G('gateErr').hidden = false; return; }
       const { error } = await sb.auth.signInWithOtp({ email: em, options: { emailRedirectTo: location.origin, shouldCreateUser: true } });
-      G('gateLink').disabled = false; G('gateLink').textContent = 'Enviarme un enlace'; if (error) { G('gateErr').textContent = 'No se ha podido enviar el enlace: ' + error.message; G('gateErr').hidden = false; } else { G('gateMailOk').hidden = false; G('gateEmail').disabled = true; G('gateLink').hidden = true; } };
+      G('gateLink').disabled = false; G('gateLink').textContent = 'Recibir el enlace'; if (error) { G('gateErr').textContent = 'No se ha podido enviar el enlace: ' + error.message; G('gateErr').hidden = false; } else { G('gateMailOk').hidden = false; G('gateEmail').disabled = true; G('gateLink').hidden = true; } };
     G('gateIn').onclick = async (ev) => {
       G('gateErr').hidden = true; ev.target.disabled = true;
       const { error } = await sb.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: location.origin } });

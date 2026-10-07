@@ -43,7 +43,7 @@ MAX_CUERPO = 40 * 1024 * 1024    # tope de una petición en modo servidor
 MAX_BIBLIO = 200 * 1024 * 1024   # tope de un fichero de la biblioteca común al copiarlo
 KINDS = ('vestidor', 'hair', 'expr')   # las bibliotecas a las que una cuenta puede añadir lo suyo
 _UUID = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
-VERSION = 395
+VERSION = 396
 _ctx = threading.local()   # la cuenta del hilo: la pone cada petición (y, a mano, cada hilo de fondo)
 def uid(): return getattr(_ctx, 'uid', None)   # en local siempre None
 DUENOS = tuple(e.strip().lower() for e in (os.environ.get('ARIA_DUENOS') or 'mix1994max@gmail.com').split(',') if e.strip())   # cuentas que pueden cambiar a Aria Cruz (en la web, la de Max)
@@ -3021,6 +3021,7 @@ class H(SimpleHTTPRequestHandler):
             try: n = int(self.headers.get('Content-Length') or 0)
             except ValueError: n = -1
             if n < 0 or n > MAX_CUERPO: self.close_connection = True; return self._corta(400 if n < 0 else 413, 'petición no válida' if n < 0 else 'petición demasiado grande')
+        if self.command == 'POST' and self.path == '/api/invitado': return self._invitado()   # v396: la portada pregunta si un correo está invitado antes de mandarle el enlace
         try: c = _quien(self)
         except _NoEntra as e: return self._corta(e.code, e.msg)
         try: _visto_pon(c[0], c[1], self.headers.get('User-Agent'))   # v280: para el panel ⚙️ Admin (quién está conectado)
@@ -3033,6 +3034,20 @@ class H(SimpleHTTPRequestHandler):
                 plog(f'{self.command} {self.path[:80]} ✕ {type(e).__name__}: {e}')
                 try: return self._corta(500, 'error interno')
                 except Exception: return
+    _INV = {}   # v396: ip → [t…] (como mucho 20 preguntas por hora)
+    def _invitado(self):   # v396 · POST {email} → {ok, invitado}: solo dice sí/no; la lista no sale de aquí
+        ip = (self.headers.get('X-Forwarded-For') or self.client_address[0] or '').split(',')[0].strip(); ahora = time.time()
+        L = [t for t in self._INV.get(ip, []) if ahora - t < 3600]
+        if len(L) >= 20: self._INV[ip] = L; return self._json(429, {'error': 'Demasiados intentos: prueba dentro de un rato.'})
+        L.append(ahora); self._INV[ip] = L
+        if len(self._INV) > 5000: self._INV.clear()
+        try: n = int(self.headers.get('Content-Length') or 0); body = json.loads(self.rfile.read(min(n, 4096)) or b'{}')
+        except Exception: body = {}
+        e = str(body.get('email') or '').strip().lower()[:200]
+        if not re.fullmatch(r'[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}', e): return self._json(400, {'error': 'correo no válido'})
+        try: L_ = _mi_lista()
+        except Exception as ex: plog('invitado ✕ ' + str(ex)[:120]); return self._json(200, {'ok': True, 'invitado': True, 'sin_lista': True})   # sin lista (desarrollo): que lo intente y lo decida el login
+        return self._json(200, {'ok': True, 'invitado': any(str(m.get('email') or '').strip().lower() == e for m in L_)})
     def _importar(self):   # v251 · volcar creaciones a UNA cuenta (solo con ARIA_ADMIN). GET ?uid= → qué tiene esa cuenta · POST {uid, file, data(b64), meta} → la guarda si no existe
         adm = os.environ.get('ARIA_ADMIN') or ''
         if len(adm) < 32 or not hmac.compare_digest((self.headers.get('X-Admin') or '').encode(), adm.encode()): return self._corta(404)
