@@ -73,6 +73,7 @@ html.sinapi #livedot,html.sinapi .meter{display:none!important}
     '<p id="gateMsg"></p>' +
     '<ul class="gpts"><li><b>Tu personaje, siempre el mismo</b>Crea su ficha una vez y sale igual en todas sus fotos.</li><li><b>Recrea cualquier foto</b>Elige una de la Fototeca o arrastra la tuya.</li><li><b>Empiezas con saldo regalo</b>Tus primeras imágenes van por nuestra cuenta. Después, desde 3 céntimos por imagen y sin suscripción.</li></ul>' +
     '<button class="gin" id="gateIn" hidden>Entrar con Google</button>' +
+    '<form class="gmail" id="gateMail" hidden><span>o con tu correo</span><div><input type="email" id="gateEmail" placeholder="tu@correo.com" autocomplete="email" required><button type="submit" id="gateLink">Enviarme un enlace</button></div><small id="gateMailOk" hidden>✓ Te hemos enviado un enlace: ábrelo desde este mismo aparato y entras sin contraseña.</small></form>' +   /* v394: enlace por correo (quien no tiene cuenta de Google) */
     '<button id="gateOut" hidden>Cerrar sesión</button>' +
     '<p class="gerr" id="gateErr" hidden></p><p class="gnota" id="gateNota" hidden>Acceso por invitación · <a href="https://www.skool.com/influencer-ai/about" target="_blank" rel="noopener">comunidad de Aria Cruz</a></p><p class="gnota glegal" hidden>Al entrar aceptas las <a href="/legal.html#condiciones" target="_blank">Condiciones de uso</a> y la <a href="/legal.html#privacidad" target="_blank">Privacidad</a> · solo mayores de 18 años</p></div></div>';
   document.body.prepend(gate);
@@ -80,7 +81,7 @@ html.sinapi #livedot,html.sinapi .meter{display:none!important}
   // La portada tiene cuatro caras: esperando, entrar, abriendo el estudio y «sin acceso».
   function cara(msg, o = {}) {
     G('gateMsg').textContent = msg || ''; G('gateMsg').hidden = !msg;
-    G('gateIn').hidden = !o.entrar; G('gateIn').disabled = false; gate.classList.toggle('entrar', !!o.entrar); G('gateNota').hidden = !o.entrar;
+    G('gateIn').hidden = !o.entrar; G('gateMail').hidden = !o.entrar; G('gateIn').disabled = false; gate.classList.toggle('entrar', !!o.entrar); G('gateNota').hidden = !o.entrar;
     G('gateOut').hidden = !o.salir;
     G('gateErr').textContent = o.error || ''; G('gateErr').hidden = !o.error;
     root.classList.add('gate');
@@ -276,6 +277,9 @@ html.sinapi #livedot,html.sinapi .meter{display:none!important}
     const sb = CU.sb = window.supabase.createClient(SB_URL, SB_KEY, { auth: { flowType: 'pkce' } });
     const q = new URLSearchParams(location.search), qerr = q.get('error_description');
     if (qerr) history.replaceState(null, '', location.pathname);
+    G('gateMail').onsubmit = async (ev) => { ev.preventDefault(); const em = G('gateEmail').value.trim().toLowerCase(); if (!em) return; G('gateErr').hidden = true; G('gateLink').disabled = true; G('gateLink').textContent = 'Enviando…';   /* v394 */
+      const { error } = await sb.auth.signInWithOtp({ email: em, options: { emailRedirectTo: location.origin, shouldCreateUser: true } });
+      G('gateLink').disabled = false; G('gateLink').textContent = 'Enviarme un enlace'; if (error) { G('gateErr').textContent = 'No se ha podido enviar el enlace: ' + error.message; G('gateErr').hidden = false; } else { G('gateMailOk').hidden = false; G('gateEmail').disabled = true; G('gateLink').hidden = true; } };
     G('gateIn').onclick = async (ev) => {
       G('gateErr').hidden = true; ev.target.disabled = true;
       const { error } = await sb.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: location.origin } });

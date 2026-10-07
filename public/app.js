@@ -26,8 +26,8 @@ const TABS = {
   lugar:    { label: 'Lugares',   icon: '📍', shape: 'wide',  ar: 16 / 9, items: C.lugar,    filters: ['Míos', 'Interior', 'Exterior'], fkey: 'tags', base: 'Lugares', sub: i => (i.tags || []).join(' · ') || 'lugar' },
   videoteca: { label: 'Filmoteca', icon: '🎞', shape: 'tall', ar: 9 / 16, items: (C.videoteca || []).map(v => Object.assign(v, { kind: 'video', src: v.video, thumb: v.poster })), filters: ['Cinematic', 'UGC'], fkey: 'tags', base: 'Prompts de Vídeo (pago)', sub: i => (i.ai || []).join(' · ') || 'vídeo' },
   biblio:   { label: 'Fototeca',  icon: '🖼️', shape: 'tall', ar: 3 / 4,  items: C.biblio || [], filters: ['Individual', 'Carrousel'], fkey: 'tags', base: 'Prompts de Imágenes (pago)', sub: i => (i.ai || []).join(' · ') || 'prompt' },
-  crear:    { label: 'Crear imagen', icon: '📸', shape: 'tall', ar: 3 / 4, items: C.crear,    base: 'Tu creación', sub: i => i.sub || (i.custom ? 'combina lo que añadas' : 'receta') },
-  video:    { label: 'Crear vídeo', icon: '🎥', shape: 'tall', ar: 3 / 4,  items: [],         base: 'Imágenes para animar', filters: ['Imágenes', 'Vídeos'], fkey: 'kindLabel', sub: i => i.sub || 'imagen' },
+  crear:    { label: 'Imagen', icon: '📸', shape: 'tall', ar: 3 / 4, items: C.crear,    base: 'Tu creación', sub: i => i.sub || (i.custom ? 'combina lo que añadas' : 'receta') },
+  video:    { label: 'Vídeo', icon: '🎥', shape: 'tall', ar: 3 / 4,  items: [],         base: 'Imágenes para animar', filters: ['Imágenes', 'Vídeos'], fkey: 'kindLabel', sub: i => i.sub || 'imagen' },
   creaciones: { label: 'Creaciones', icon: '🗂', shape: 'tall', ar: 3 / 4, items: [],   base: 'Generadas con la API', filters: ['Imágenes', 'Vídeos', 'Variaciones', 'Ocultos'], fkey: 'kindLabel', sub: i => i.sub || '' },
 };
 // Vestidor: la prenda base de Aria (tank top y leggings negros, n82) siempre primera; el resto de más nueva a más antigua
@@ -121,7 +121,7 @@ function buildNav() {
     /* v253: Crear vídeo, abierto */
     if (LIBS.includes(k)) { const w = el('div', 'navlib'); w.appendChild(b); const mb = el('button', 'more', 'Más <span>▾</span>'); mb.title = 'Vestidor, Efectos, Movie looks, Cartoon, Expresiones y Peinados (Lugares y Poses, pronto)'; mb.onclick = () => navMore(w, LIBS_ORD.concat(LUGARES_ON ? ['lugar'] : []).map(q => q === '-' ? '-' : [TABS[q].icon, TABS[q].label, () => setTab(q), '', q === state.tab]).concat(['-']).concat(LUGARES_ON ? [] : [['📍', 'Lugares', () => toast('Lugares: próximamente'), 'pronto']]).concat([['🤸', 'Poses', () => toast('Poses: próximamente'), 'pronto']])); w.appendChild(mb); host.appendChild(w); }
     else host.appendChild(b); });
-  { const eq = state.interno; const au = el('button', (eq ? 'int ' : 'pronto ') + 'audiobtn' + ($('#audpage') ? ' on' : ''), '<span>🎙️</span>Crear audio' + (eq ? '' : '<i class="nvpronto">pronto</i>')); au.title = eq ? 'Crear audio (en pruebas, solo el equipo)' : 'Crear audio (la voz de tu personaje, ambiente, lip sync para vídeo): próximamente'; au.onclick = () => audioAbre(); main.appendChild(au); }   // v289 · v291: el equipo ya entra
+  { const eq = state.interno; const au = el('button', (eq ? 'int ' : 'pronto ') + 'audiobtn' + ($('#audpage') ? ' on' : ''), '<span>🎙️</span>Audio' + (eq ? '' : '<i class="nvpronto">pronto</i>')); au.title = eq ? 'Crear audio (en pruebas, solo el equipo)' : 'Crear audio (la voz de tu personaje, ambiente, lip sync para vídeo): próximamente'; au.onclick = () => audioAbre(); main.appendChild(au); }   // v289 · v291: el equipo ya entra
   { nav.appendChild(el('div', 'nav-sep')); const cb = el('button', 'more combtn' + (COM && COM.on ? ' on' : ''), '<span>🤝</span>Comunidad');   /* v250: abierta */ cb.title = 'Comunidad: los creadores y sus personajes, colaboraciones y mensajes';
       cb.onclick = () => { if (COM.on) { comIr('dir').then(comPonAvisos); return; } COM.visto = true; comAbre('dir'); }; nav.appendChild(cb);
       const mb = el('button', 'more msgbtn', '<span>💬</span>Mensajes'); mb.title = 'Tus conversaciones con otros creadores: solicitudes, colaboraciones y carpetas compartidas'; mb.onclick = () => { if (COM.on) { comIr('msg').then(comPonAvisos); return; } COM.visto = true; comAbre('msg'); }; nav.appendChild(mb); }
@@ -2972,7 +2972,7 @@ function movilMas() { // v280: lo que en el móvil no cabe en la barra de abajo
   L.push(['🤝', 'Comunidad', () => { COM.visto = true; COM.on ? comIr('dir').then(comPonAvisos) : comAbre('dir'); }, '', COM && COM.on && COM.vista === 'dir']);
   L.push(['💬', 'Mensajes', () => { COM.visto = true; COM.on ? comIr('msg').then(comPonAvisos) : comAbre('msg'); }, COM.n ? COM.n + ' sin leer' : '', COM && COM.on && COM.vista === 'msg']);
   L.splice(2, 0, ['✨', 'Efectos', () => state.interno ? efectosAbre() : toast('✨ Efectos: próximamente'), state.interno ? '' : 'pronto', false, state.interno]);   // v290 · v294
-  L.push(['🎙️', 'Crear audio', () => audioAbre(), state.interno ? '' : 'pronto', !!$('#audpage'), state.interno]);   // v289 · v291
+  L.push(['🎙️', 'Audio', () => audioAbre(), state.interno ? '' : 'pronto', !!$('#audpage'), state.interno]);   // v289 · v291
   L.push(['🗑', 'Papelera', () => openPapelera(), '']);   // v294
   L.push(['💡', 'Feedback', () => window.fbAbre && fbAbre(), '']);
   if (state.interno) { L.push(['⚙️', 'Admin', () => adminAbre(), ADM.av ? ADM.av + ' pendientes' : '', !!$('#admpage'), true]); L.push(['🧍', 'Fichas', () => fichAbre(), '', !!$('#fichpage'), true]); }   /* v335 */
@@ -3036,7 +3036,7 @@ function admResumen(w, r) {
   const ult = r.filas.filter(z => z.visto && !z.online).sort((a, b) => b.visto - a.visto).slice(0, 8);
   if (ult.length) { w.appendChild(el('h4', 'admh4', 'Los últimos en pasar')); ult.forEach(z => w.appendChild(admFila(z, r))); } }
 function admMiembros(w, r) {
-  const alta = el('div', 'admalta'); const ta = el('textarea', 'search'); ta.rows = 2; ta.placeholder = 'Dar acceso: pega uno o varios correos de Google…'; alta.appendChild(ta);
+  const alta = el('div', 'admalta'); const ta = el('textarea', 'search'); ta.rows = 2; ta.placeholder = 'Dar acceso: pega uno o varios correos…'; alta.appendChild(ta);
   const pr = el('select', 'sel'); PLANES.forEach(([v, t]) => { const o = document.createElement('option'); o.value = v; o.textContent = t; pr.appendChild(o); }); pr.title = 'Su plan de Skool (opcional)'; alta.appendChild(pr);
   const g = el('button', 'btn acc', 'Dar acceso'); g.onclick = async () => { if (!ta.value.trim()) { toast('Pega algún correo'); return; } g.disabled = true; const z = await admManda('/api/miembros', { accion: 'alta', emails: ta.value, precio: pr.value }); g.disabled = false; if (z) { toast(`👥 ${z.nuevos} con acceso nuevo${z.actualizados ? ` · ${z.actualizados} ya estaban` : ''}`); ta.value = ''; admCarga(true); } };
   alta.appendChild(g); w.appendChild(alta);
