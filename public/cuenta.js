@@ -144,6 +144,8 @@ html.sinapi #livedot,html.sinapi .meter{display:none!important}
   }
   const SERVIDOR_URL = LOCAL ? '' : 'https://aria-studio.onrender.com';   // el servidor de las cuentas (generar, personajes, creaciones). En desarrollo (localhost:3000) lo pone web_dev.py
   const fetch0 = window.fetch.bind(window);
+  const NAT = (() => { try { return (window.Capacitor && Capacitor.isNativePlatform && Capacitor.isNativePlatform()) ? String(Capacitor.getPlatform()) : ''; } catch (e) { return ''; } })(); window.ARIA_APP = NAT; if (NAT) document.documentElement.classList.add('app');   /* v402: dentro de la app (Capacitor) */
+  const APP_VUELTA = 'com.ariacruz.studio://auth';   /* v402: a dónde vuelve el login desde el navegador del sistema */
   // Si el servidor no contesta (se está reiniciando tras una actualización, o un corte de red), las LECTURAS se reintentan solas
   // durante un minuto con un aviso a la vista. Antes la app lo tomaba por «no tienes nada» y enseñaba la cuenta vacía.
   let avisoEl = null;
@@ -191,7 +193,7 @@ html.sinapi #livedot,html.sinapi .meter{display:none!important}
   }
   window.fetch = (input, init) => {
     if (CU.token && typeof input === 'string' && input.startsWith('/api/')) {   // /api va directo al servidor (sin tope de tamaño ni de tiempo), con la sesión en la cabecera
-      init = Object.assign({}, init); init.headers = new Headers(init.headers || {}); init.headers.set('Authorization', 'Bearer ' + CU.token); if (CU.verMiembro) init.headers.set('X-Ver-Como', 'miembro');
+      init = Object.assign({}, init); init.headers = new Headers(init.headers || {}); init.headers.set('Authorization', 'Bearer ' + CU.token); if (CU.verMiembro) init.headers.set('X-Ver-Como', 'miembro'); if (NAT) init.headers.set('X-Aria-App', NAT);   /* v402 */
       return conReintento(SERVIDOR_URL + input, init);
     }
     return fetch0(input, init);
@@ -281,15 +283,17 @@ html.sinapi #livedot,html.sinapi .meter{display:none!important}
       let inv = null; try { inv = await fetch0(SERVIDOR_URL + '/api/invitado', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: em }) }).then(r => r.json()); } catch (e) { inv = null; }   /* v396: solo se manda el enlace a quien está en la lista */
       if (inv && inv.invitado === false) { G('gateLink').disabled = false; G('gateLink').textContent = 'Recibir el enlace'; G('gateErr').textContent = 'Ese correo no está en la lista de invitados. Pide acceso en la comunidad de Aria Cruz.'; G('gateErr').hidden = false; return; }
       if (inv && inv.error && !inv.invitado) { G('gateLink').disabled = false; G('gateLink').textContent = 'Recibir el enlace'; G('gateErr').textContent = inv.error; G('gateErr').hidden = false; return; }
-      const { error } = await sb.auth.signInWithOtp({ email: em, options: { emailRedirectTo: location.origin, shouldCreateUser: true } });
+      const { error } = await sb.auth.signInWithOtp({ email: em, options: { emailRedirectTo: NAT ? APP_VUELTA : location.origin, shouldCreateUser: true } });   /* v402: en la app vuelve a la app */
       G('gateLink').disabled = false; G('gateLink').textContent = 'Recibir el enlace'; if (error) { G('gateErr').textContent = 'No se ha podido enviar el enlace: ' + error.message; G('gateErr').hidden = false; } else { G('gateMailOk').hidden = false; G('gateEmail').disabled = true; G('gateLink').hidden = true; } };
     G('gateIn').onclick = async (ev) => {
       G('gateErr').hidden = true; ev.target.disabled = true;
-      const { error } = await sb.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: location.origin } });
+      const { data, error } = await sb.auth.signInWithOAuth({ provider: 'google', options: NAT ? { redirectTo: APP_VUELTA, skipBrowserRedirect: true } : { redirectTo: location.origin } });   /* v402: en la app, Google va en el navegador del sistema (Google no deja entrar desde dentro de una app web) */
       if (error) cara(G('gateMsg').textContent, { entrar: true, error: error.message });
+      else if (NAT && data && data.url) { try { await Capacitor.Plugins.Browser.open({ url: data.url }); } catch (e) { location.href = data.url; } ev.target.disabled = false; }
     };
     // dentro de este aviso no se puede esperar a Supabase (se bloquea): se sale de él con setTimeout
     const paint = (session) => setTimeout(() => { if (session && session.user) entrar(session); else if (!dentro) { fuera(); if (qerr) cara(G('gateMsg').textContent, { entrar: true, error: qerr }); } }, 0);
+    if (NAT) { try { Capacitor.Plugins.App.addListener('appUrlOpen', async ({ url }) => { if (!String(url || '').startsWith(APP_VUELTA)) return; try { await Capacitor.Plugins.Browser.close(); } catch (e) {} const u = new URL(url); const err = u.searchParams.get('error_description'); const code = u.searchParams.get('code'); if (err) { cara(G('gateMsg').textContent, { entrar: true, error: err }); return; } if (code) { const { error } = await sb.auth.exchangeCodeForSession(code); if (error) cara(G('gateMsg').textContent, { entrar: true, error: error.message }); } }); } catch (e) { console.warn('app url', e); } }   /* v402: la vuelta del login en la app */
     sb.auth.onAuthStateChange((ev, session) => { sesion(session); if (ev === 'SIGNED_OUT') { dentro = null; return fuera(); } paint(session); });   // también al renovarse la sesión (cada hora)
     sb.auth.getSession().then(({ data }) => { sesion(data.session); paint(data.session); }).catch(() => fuera());
   };

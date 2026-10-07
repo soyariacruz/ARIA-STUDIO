@@ -43,14 +43,14 @@ MAX_CUERPO = 40 * 1024 * 1024    # tope de una petición en modo servidor
 MAX_BIBLIO = 200 * 1024 * 1024   # tope de un fichero de la biblioteca común al copiarlo
 KINDS = ('vestidor', 'hair', 'expr')   # las bibliotecas a las que una cuenta puede añadir lo suyo
 _UUID = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
-VERSION = 400
+VERSION = 404
 _ctx = threading.local()   # la cuenta del hilo: la pone cada petición (y, a mano, cada hilo de fondo)
 def uid(): return getattr(_ctx, 'uid', None)   # en local siempre None
 DUENOS = tuple(e.strip().lower() for e in (os.environ.get('ARIA_DUENOS') or 'mix1994max@gmail.com').split(',') if e.strip())   # cuentas que pueden cambiar a Aria Cruz (en la web, la de Max)
 ARIA_UID = (os.environ.get('ARIA_UID') or '1e9592c3-a0be-420a-ae93-77b0434bf471').strip().lower()   # la cuenta principal de Aria (soyariacruz@gmail.com): ahí vive la Aria de equipo
 ARIA_PUBLICAN = DUENOS + tuple(e.strip().lower() for e in (os.environ.get('ARIA_PUBLICAN') or 'soyariacruz@gmail.com').split(',') if e.strip())   # quién pulsa «Publicar para todos»
 NSFW_OK = tuple(e.strip().lower() for e in (os.environ.get('ARIA_NSFW') or 'mix1994max@gmail.com,soyariacruz@gmail.com').split(',') if e.strip())   # las ÚNICAS cuentas con NSFW en la web (Max, 5 oct 2026)
-def nsfw_ok(): return (not SERVIDOR) or ((getattr(_ctx, 'email', '') or '').lower() in NSFW_OK and not getattr(_ctx, 'ver_miembro', False))   # NSFW CON ARIA CRUZ
+def nsfw_ok(): return (not SERVIDOR) or ((getattr(_ctx, 'email', '') or '').lower() in NSFW_OK and not getattr(_ctx, 'ver_miembro', False) and not getattr(_ctx, 'app', ''))   # v402: en la app de las tiendas, nunca   # NSFW CON ARIA CRUZ
 def _con_aria(body):   # ¿sale Aria Cruz? (por lo que dice la página o porque va su ficha: assets/perfil/…)
     m = body.get('meta') or {}; chars = m.get('chars') if isinstance(m.get('chars'), list) else [m.get('char')]
     imgs = [i for i in (body.get('images') or []) + (body.get('refs') or []) + [body.get('image'), body.get('end')] if isinstance(i, dict)]
@@ -2244,6 +2244,9 @@ def _com_lee():
         d['msgs'] = {k: v for k, v in d['msgs'].items() if 'demo-' not in k}; d['sol'] = [x for x in d['sol'] if isinstance(x, dict) and 'demo-' not in f"{x.get('de')}|{x.get('para')}"]
     for k_ in list(d['sig']):
         if isinstance(d['sig'][k_], list) and any(str(x).startswith('demo-') for x in d['sig'][k_]): d['sig'][k_] = [x for x in d['sig'][k_] if not str(x).startswith('demo-')]
+    try:
+        if _com_migra_aria(d): _com_guarda(d)   # v404
+    except Exception as e: plog('comunidad: migración de Aria ✕ ' + str(e)[:160])
     ahora = time.time()
     for x in d['sol']:   # v223: un permiso con plazo se apaga solo al vencer (se ve terminado en cuanto se lee; se guarda con el siguiente cambio)
         if isinstance(x, dict) and x.get('estado') == 'aceptada' and isinstance(x.get('hasta'), (int, float)) and x['hasta'] < ahora: x['estado'] = 'terminada'; x['caducada'] = True; x['t2'] = x['hasta']
@@ -2302,11 +2305,12 @@ COM_DEMO = [   # creadores de DEMO para ver cómo queda la Comunidad con gente: 
         ('julia-mar', 'Julia Mar', '@juliamar', 24, 'Skincare honesto.'), ('dani-rivas', 'Dani Rivas', '@danirivas', 26, 'Tecnología y noches de ordenador.'), ('alba-nieto', 'Alba Nieto', '@albanieto', 23, 'Moda minimal en blanco y negro.'),
         ('clara-voss', 'Clara Voss', '@claravoss', 25, 'Gaming y ciencia ficción.'), ('ines-palma', 'Inés Palma', '@inespalma', 22, 'Coches clásicos y road trips.'), ('zoe-marin', 'Zoe Marín', '@zoemarin', 24, 'Vida real, sin filtros.'))]}]
 COM_DEMO = []   # v304: fuera la demo (Max, 6 oct): ni creadores ni mensajes de ejemplo
-ARIA_CID = 'caria'   # Aria en la comunidad: no es una cuenta, es el personaje de muestra. Le manda a cada cuenta una solicitud de ejemplo y contesta con un mensaje fijo
+ARIA_CID = _cid(ARIA_UID) if SERVIDOR else _cid(None)   # v404: Aria es la cuenta REAL de soyariacruz (Max habla como Aria desde ahí). Antes era «caria», una cuenta virtual de muestra
 ARIA_HOLA = '¡Hola! Soy Aria 💕 Ya puedes crear conmigo cuando quieras: elígeme en Crear imagen junto a tu personaje y salimos juntas.'
 ARIA_RESP = '¡Genial! Conmigo puedes crear cuando quieras: elígeme en Crear imagen junto a tu personaje. 💕'
 ARIA_RESP_V = '¡Genial! Conmigo puedes crear cuando quieras: elígeme en Crear imagen junto a tu personaje. (Soy el personaje de muestra: este chat es un ejemplo de cómo hablarás con otros creadores.)'
 def _com_aria(d, yo):   # v304: Aria da permiso a cada cuenta para crear con ella (sin aceptar nada) y sigue a sus personajes; lo nuevo, con aviso en Mensajes → True si ha cambiado algo
+    if yo == ARIA_CID: return False   # v404: Aria no se habla a sí misma
     t = time.time(); cambio = False; M = d['msgs'].setdefault(_com_par(yo, ARIA_CID), [])
     s_ = next((x for x in d['sol'] if x.get('de') == ARIA_CID and x.get('para') == yo), None)
     if not s_: d['sol'].append({'id': 's' + hashlib.sha1(os.urandom(12)).hexdigest()[:12], 'de': ARIA_CID, 'para': yo, 'pid': 'aria', 'msg': ARIA_HOLA, 'estado': 'aceptada', 't': t, 't2': t, 'demo': True}); M.append({'de': ARIA_CID, 'x': ARIA_HOLA, 't': t}); cambio = True
@@ -2314,12 +2318,7 @@ def _com_aria(d, yo):   # v304: Aria da permiso a cada cuenta para crear con ell
     CU = {}
     try: CU = _com_cuentas(); pjs = _com_personajes(CU[yo]) if yo in CU else []
     except Exception: pjs = []
-    L = d['sig'].setdefault(ARIA_CID, []); ac_ = next((c_ for c_, uu_ in (CU or {}).items() if uu_ == ARIA_UID), None) if 'CU' in dir() else None   # v320: y la cuenta de Aria (la de Max) también
-    if ac_ and ac_ != yo:
-        L2 = d['sig'].setdefault(ac_, [])
-        for p in pjs:
-            k2 = f"{yo}:{p.get('pid')}"
-            if p.get('pid') and k2 not in L2: L2.append(k2); cambio = True
+    L = d['sig'].setdefault(ARIA_CID, [])   # v404: ARIA_CID ya es la cuenta real: con seguirlos desde ahí basta
     for p in pjs:
         k = f"{yo}:{p.get('pid')}"
         if not p.get('pid') or k in L: continue
@@ -2328,6 +2327,40 @@ def _com_aria(d, yo):   # v304: Aria da permiso a cada cuenta para crear con ell
     if cambio: del M[:-500]; d['sig'][ARIA_CID] = L[-5000:]
     return cambio
 def _com_par(a, b): return '|'.join(sorted([a, b]))
+def _com_aria_pj():   # v404: la Aria publicada, como personaje de la cuenta real de Aria (la web la enseña con su foto: src)
+    P = _comun().get('perfil') or {}; ig = P.get('ig') if isinstance(P.get('ig'), dict) else {}
+    return {'pid': 'aria', 'nombre': str(P.get('name') or 'Aria Cruz')[:60], 'usuario': str(P.get('handle') or '@soy_aria_cruz').split(' ·')[0].strip()[:60], 'edad': 25, 'bio': str(P.get('bio') or '')[:600],
+            'ig': str(ig.get('url') or (P.get('ig') if isinstance(P.get('ig'), str) else '') or 'https://www.instagram.com/soy_aria_cruz/')[:200], 'nicho': [], 'avatar': bool(P.get('avatar')), 'src': str(P.get('avatar') or '')[:300],
+            'oculto': False, 'abierto': True, 'igseg': str(ig.get('followers') or P.get('followers') or '')[:12], 'nuevo': False, 't': 0, 'orden': -1, 'seguidores': 0, 'aria': True}
+def _com_migra_aria(d):   # v404: lo que tenía la Aria de muestra («caria») pasa a la cuenta real de Aria. Una sola vez; después no queda rastro de «caria»
+    V, R = 'caria', ARIA_CID; tocado = False
+    if V == R: return False
+    for k in list(d['msgs']):
+        par = k.split('|')
+        if V not in par: continue
+        M = d['msgs'].pop(k); tocado = True; par2 = [R if x == V else x for x in par]
+        if par2[0] == par2[1]: continue   # Aria consigo misma: fuera
+        for m in M:
+            if isinstance(m, dict) and m.get('de') == V: m['de'] = R
+        nk = _com_par(*par2); d['msgs'][nk] = sorted((d['msgs'].get(nk) or []) + M, key=lambda m: m.get('t', 0) if isinstance(m, dict) else 0)[-500:]
+    for x in d['sol']:
+        if isinstance(x, dict) and V in (x.get('de'), x.get('para')):
+            if x.get('de') == V: x['de'] = R
+            if x.get('para') == V: x['para'] = R
+            tocado = True
+    n0 = len(d['sol']); d['sol'] = [x for x in d['sol'] if not (isinstance(x, dict) and x.get('de') == x.get('para'))]; tocado = tocado or len(d['sol']) != n0
+    if V in d['sig']: d['sig'][R] = list(dict.fromkeys((d['sig'].get(R) or []) + [x for x in d['sig'].pop(V) if isinstance(x, str)]))[-5000:]; tocado = True
+    for k_, L_ in list(d['sig'].items()):
+        if isinstance(L_, list) and any(str(x).startswith(V + ':') for x in L_): d['sig'][k_] = list(dict.fromkeys([(R + str(x)[len(V):]) if str(x).startswith(V + ':') else x for x in L_])); tocado = True
+    for key in ('alias', 'foto'):
+        if V in (d.get(key) or {}): d[key].pop(V, None); tocado = True
+    for key in ('visto', 'borr'):
+        D_ = d.get(key) or {}
+        if V in D_: D_.pop(V); tocado = True   # lo que «caria» había visto/borrado no importa
+        for v2 in D_.values():
+            if isinstance(v2, dict) and V in v2: v2[R] = max(float(v2.get(R) or 0), float(v2.pop(V) or 0)); tocado = True
+    if tocado: plog('comunidad: la Aria de muestra («caria») se ha fundido en la cuenta real de Aria')
+    return tocado
 # ---- 🔔 AVISOS PUSH (v375, solo servidor): con la web cerrada, al llegar un mensaje o una solicitud de colaboración. Web Push estándar (RFC 8291 aes128gcm + VAPID RFC 8292).
 #      Las claves VAPID nacen solas la primera vez y viven en el disco de datos (vapid.pem, 0600). Las suscripciones, por cuenta, en push.json.
 def _b64u(b): return base64.urlsafe_b64encode(b).rstrip(b'=').decode()
@@ -2375,6 +2408,32 @@ def _push_envia(sub, d):   # → código HTTP del servicio de avisos (201 = entr
     try:
         with urllib.request.urlopen(rq, timeout=20) as r: return r.status
     except urllib.error.HTTPError as e: return e.code
+_FCM_T = {'t': 0.0, 'v': ''}
+def _fcm_token():   # v402: token OAuth2 de la cuenta de servicio de Firebase (env FCM_SA = el JSON entero) · JWT RS256 a mano
+    sa = os.environ.get('FCM_SA') or ''
+    if not sa: return None, None
+    sa = json.loads(sa)
+    if time.time() < _FCM_T['t'] and _FCM_T['v']: return _FCM_T['v'], sa['project_id']
+    from cryptography.hazmat.primitives import serialization, hashes
+    from cryptography.hazmat.primitives.asymmetric import padding
+    k = serialization.load_pem_private_key(sa['private_key'].encode(), password=None); ahora = int(time.time()); js = lambda o: _b64u(json.dumps(o, separators=(',', ':')).encode())
+    fir = js({'alg': 'RS256', 'typ': 'JWT'}) + '.' + js({'iss': sa['client_email'], 'scope': 'https://www.googleapis.com/auth/firebase.messaging', 'aud': 'https://oauth2.googleapis.com/token', 'iat': ahora, 'exp': ahora + 3600})
+    jwt = fir + '.' + _b64u(k.sign(fir.encode(), padding.PKCS1v15(), hashes.SHA256()))
+    rq = urllib.request.Request('https://oauth2.googleapis.com/token', data=urllib.parse.urlencode({'grant_type': 'urn:ietf:params:oauth:grant-type:jwt-bearer', 'assertion': jwt}).encode(), headers={'Content-Type': 'application/x-www-form-urlencoded', 'User-Agent': UA})
+    with urllib.request.urlopen(rq, timeout=20) as r: j = json.loads(r.read() or b'{}')
+    _FCM_T.update({'t': time.time() + int(j.get('expires_in') or 3600) - 300, 'v': str(j.get('access_token') or '')}); return _FCM_T['v'], sa['project_id']
+def _fcm_envia(token, d):   # v402: un aviso a un aparato con la app (FCM HTTP v1) → código HTTP (404 = token muerto)
+    try: at, proj = _fcm_token()
+    except Exception as e: plog('fcm token ✕ ' + str(e)[:120]); return 500
+    if not at: return 503
+    msg = {'message': {'token': token, 'notification': {'title': str(d.get('titulo') or 'ARIA STUDIO')[:80], 'body': str(d.get('cuerpo') or '')[:200]}, 'data': {k: str(v) for k, v in d.items() if k in ('abre', 'tag', 'url')}, 'android': {'priority': 'high', 'notification': {'channel_id': 'aria', 'tag': str(d.get('tag') or 'aria')[:40]}}}}
+    rq = urllib.request.Request(f'https://fcm.googleapis.com/v1/projects/{proj}/messages:send', data=json.dumps(msg).encode(), method='POST', headers={'Authorization': 'Bearer ' + at, 'Content-Type': 'application/json', 'User-Agent': UA})
+    try:
+        with urllib.request.urlopen(rq, timeout=20) as r: return r.status
+    except urllib.error.HTTPError as e:
+        try: t_ = e.read().decode('utf-8', 'replace')
+        except Exception: t_ = ''
+        return 404 if (e.code == 404 or 'UNREGISTERED' in t_) else e.code
 def _push_lee():
     try: P = json.load(open(PUSH_F, encoding='utf-8'))
     except Exception: P = {}
@@ -2386,12 +2445,12 @@ def _push_a(u, d):   # manda un aviso a todos los aparatos de una cuenta; las su
     with _push_l: L = list(_push_lee().get(u) or [])
     muertas = []
     for sub in L:
-        try: c = _push_envia(sub, d)
+        try: c = _fcm_envia(sub['fcm'], d) if sub.get('fcm') else _push_envia(sub, d)   # v402: la app va por FCM
         except Exception as e: plog('aviso push ✕ ' + str(e)[:120]); continue
-        if c in (404, 410): muertas.append(sub.get('endpoint'))   # solo las que el navegador da por muertas
+        if c in (404, 410): muertas.append(sub.get('endpoint') or sub.get('fcm'))   # solo las que el navegador da por muertas
         elif c >= 300: plog(f'aviso push → {c}')
     if muertas:
-        with _push_l: P = _push_lee(); P[u] = [x for x in (P.get(u) or []) if x.get('endpoint') not in muertas]; _push_guarda(P)
+        with _push_l: P = _push_lee(); P[u] = [x for x in (P.get(u) or []) if (x.get('endpoint') or x.get('fcm')) not in muertas]; _push_guarda(P)
     return len(L) - len(muertas)
 def _push_vigia():   # cada 12 s: lo nuevo de la Comunidad (mensajes y solicitudes) → aviso a quien lo recibe, si tiene avisos en algún aparato
     fp = os.path.join(DATOS, 'push_t.json')
@@ -3006,7 +3065,7 @@ class H(SimpleHTTPRequestHandler):
         if self.command != 'HEAD': return self._json(code, {'error': msg})
         self.send_response(code); self.send_header('Content-Length', '0'); self.end_headers()
     def _pasa(self, fn):   # TODA petición (GET, POST y HEAD) entra por aquí: guarda de origen y, en servidor, tope de tamaño + sesión + cuenta del hilo
-        self._cc = self._fijo = None; _ctx.lectura = 0; _ctx.prestamo_ok = False; _ctx.prest = None; _ctx.ver_miembro = False
+        self._cc = self._fijo = None; _ctx.lectura = 0; _ctx.prestamo_ok = False; _ctx.prest = None; _ctx.ver_miembro = False; _ctx.app = re.sub(r'[^a-z]', '', (self.headers.get('X-Aria-App') or '').lower())[:16]   # v402: 'android'/'ios' si viene de la app
         if not self._guard(): return self._corta(403, 'origen no permitido')
         if not SERVIDOR: return fn()
         if self.command == 'GET' and self.path.startswith('/api/admin/copia'): return self._copia()
@@ -3222,7 +3281,7 @@ class H(SimpleHTTPRequestHandler):
             try: return self._json(200, {'ok': True, 'clave': _vapid()[1]})
             except Exception as e: return self._json(500, {'error': 'avisos no disponibles: ' + str(e)[:80]})
         if u.path == '/api/ping':
-            return self._json(200, {'ok': True, **({'espacio': {'usado': espacio(), 'tope': CUOTA}, 'aria_mia': not aria_fija(), 'nsfw': nsfw_ok()} if SERVIDOR else {}), 'model': MODEL, 'default': CASA_DEF if casa_on() else 'mstudio', 'models': model_list(), 'unavailable': unavailable(), 'ws': bool(load_ws()) or casa_on(), 'casa': casa_info() or casa_info_aunque(), 'regalo_nuevo': _regalos_nuevos(), 'aspects': ASPECTS, 'key': _hf_listo(), 'ark': bool(load_ark()[0]), 'ark_usd': ARK_USD, 'genjutsu': (not SERVIDOR) or GJ_WEB, 'interno': bool(getattr(_ctx, 'interno', False)) if SERVIDOR else os.path.isfile(os.path.expanduser('~/.claude/notion.env')), **({'servidor': True} if SERVIDOR else {})})   # interno = el ordenador de Max: enseña «Workflows» (en la web alojada, solo las cuentas autorizadas)
+            return self._json(200, {'ok': True, **({'espacio': {'usado': espacio(), 'tope': CUOTA}, 'aria_mia': not aria_fija(), 'nsfw': nsfw_ok()} if SERVIDOR else {}), 'model': MODEL, 'default': CASA_DEF if casa_on() else 'mstudio', 'models': model_list(), 'unavailable': unavailable(), 'ws': bool(load_ws()) or casa_on(), 'casa': casa_info() or casa_info_aunque(), 'regalo_nuevo': _regalos_nuevos(), 'primera': int(((_VISTO.get(uid() or '') or {}) if SERVIDOR else {}).get('primera') or 0), 'aspects': ASPECTS, 'key': _hf_listo(), 'ark': bool(load_ark()[0]), 'ark_usd': ARK_USD, 'genjutsu': (not SERVIDOR) or GJ_WEB, 'interno': bool(getattr(_ctx, 'interno', False)) if SERVIDOR else os.path.isfile(os.path.expanduser('~/.claude/notion.env')), **({'servidor': True} if SERVIDOR else {})})   # interno = el ordenador de Max: enseña «Workflows» (en la web alojada, solo las cuentas autorizadas)
         if u.path == '/api/live':   # lo ya generado por la API (assets/live/<item>_<rid>.ext) → la app lo enseña sin volver a generar
             files = {}; allf = []; ld, vd = live_dir(), video_dir()
             for fn in sorted(os.listdir(ld), key=lambda f: os.path.getmtime(os.path.join(ld, f))):
@@ -3331,7 +3390,8 @@ class H(SimpleHTTPRequestHandler):
             cuentas = []
             for cid, uu in _com_cuentas().items():
                 pjs = _com_personajes(uu, cid == yo)
-                if pjs or cid == yo: cuentas.append({'cid': cid, 'alias': str(d['alias'].get(cid) or '')[:40], 'yo': cid == yo, 'personajes': pjs, 'foto': int(d['foto'].get(cid) or 0)})
+                if cid == ARIA_CID and not any(p.get('pid') == 'aria' for p in pjs): pjs = [_com_aria_pj()] + pjs   # v404: la Aria publicada, siempre en su cuenta
+                if pjs or cid == yo: cuentas.append({'cid': cid, 'alias': str(d['alias'].get(cid) or '')[:40], 'yo': cid == yo, 'aria': cid == ARIA_CID, 'personajes': pjs, 'foto': int(d['foto'].get(cid) or 0)})   # v404: aria = la cuenta real de Aria
             cuentas.sort(key=lambda c: (not c['yo'], (c['alias'] or 'zzz').lower()))
             nsig = {}
             for L_ in d['sig'].values():
@@ -3349,7 +3409,7 @@ class H(SimpleHTTPRequestHandler):
                 if not M: continue
                 chats.append({'con': otra, 'ultimo': M[-1], 'sin_leer': sum(1 for m in M if m.get('de') != yo and m.get('t', 0) > visto)})
             chats.sort(key=lambda c: -c['ultimo'].get('t', 0))
-            return self._json(200, {'ok': True, 'yo': yo, 'alias': str(d['alias'].get(yo) or ''), 'cuentas': cuentas, 'solicitudes': [x for x in d['sol'] if yo in (x.get('de'), x.get('para'))][-200:], 'soy_aria': uid() == ARIA_UID, 'escriben': [k_[0] for k_, t_ in list(_ESC.items()) if k_[1] == yo and time.time() - t_ < 7], 'chats': chats, 'borrados': (d['borr'].get(yo) or {}), 'avisos': _com_avisos(d, yo), 'denuncias': (0 if aria_fija() else sum(1 for v in (d.get('den') or {}).values() if not (isinstance(v, dict) and v.get('vista')))), 'siguiendo': [x for x in d['sig'].get(yo) or [] if isinstance(x, str)], 'carpetas': _comp_lista(d, yo), 'prestados': _prest_lista(d, yo)})
+            return self._json(200, {'ok': True, 'yo': yo, 'alias': str(d['alias'].get(yo) or ''), 'cuentas': cuentas, 'solicitudes': [x for x in d['sol'] if yo in (x.get('de'), x.get('para'))][-200:], 'soy_aria': uid() == ARIA_UID, 'aria_cid': ARIA_CID, 'escriben': [k_[0] for k_, t_ in list(_ESC.items()) if k_[1] == yo and time.time() - t_ < 7], 'chats': chats, 'borrados': (d['borr'].get(yo) or {}), 'avisos': _com_avisos(d, yo), 'denuncias': (0 if aria_fija() else sum(1 for v in (d.get('den') or {}).values() if not (isinstance(v, dict) and v.get('vista')))), 'siguiendo': [x for x in d['sig'].get(yo) or [] if isinstance(x, str)], 'carpetas': _comp_lista(d, yo), 'prestados': _prest_lista(d, yo)})
         if u.path == '/api/comunidad/avisos':   # (la solicitud de ejemplo de Aria nace aquí también: así el aviso sale sin haber abierto la comunidad)
             yo = _cid()
             with _com_l:
@@ -3794,7 +3854,6 @@ class H(SimpleHTTPRequestHandler):
                     if con != ARIA_CID and not _demo_cid(con) and not _com_personajes(CU[con]) and not any(x for x in d['sol'] if {x.get('de'), x.get('para')} == {yo, con} and x.get('estado') in ('pendiente', 'aceptada')): return self._json(403, {'error': 'para escribirle, primero pídele una colaboración'})
                     if not _com_tope('msg', 120): return self._json(429, {'error': 'demasiados mensajes seguidos: prueba dentro de un rato'})
                     M = d['msgs'].setdefault(_com_par(yo, con), []); M.append({'de': yo, 'x': txt, 't': time.time()})
-                    if con == ARIA_CID and not any(m.get('x') in (ARIA_RESP, ARIA_RESP_V) for m in M): M.append({'de': ARIA_CID, 'x': ARIA_RESP, 't': time.time() + 1})
                     del M[:-500]; _com_guarda(d); return self._json(200, {'ok': True})
             return self._json(400, {'error': 'acción desconocida'})
         if self.path == '/api/video/precio':   # v314: el precio EXACTO de WaveSpeed para ese modelo, modo, duración, resolución, formato y audio (no genera ni cobra; con la clave de la cuenta)
@@ -4922,6 +4981,15 @@ class H(SimpleHTTPRequestHandler):
             n = int(self.headers.get('Content-Length') or 0); body = json.loads(self.rfile.read(n) or b'{}') if n else {}; u_ = uid()
             if self.path == '/api/push/prueba':
                 ok_ = _push_a(u_, {'titulo': 'ARIA STUDIO', 'cuerpo': '🔔 Así te llegarán los avisos', 'tag': 'aria-prueba'}); return self._json(200, {'ok': True, 'aparatos': ok_})
+            fcm_ = str((body or {}).get('fcm') or '')[:400]
+            if fcm_:   # v402: un aparato con la app (token de FCM) · alta o baja
+                if not re.fullmatch(r'[A-Za-z0-9_:\-]{60,400}', fcm_): return self._json(400, {'error': 'token no válido'})
+                with _push_l:
+                    P = _push_lee()
+                    for k_ in list(P): P[k_] = [x for x in P[k_] if x.get('fcm') != fcm_]
+                    if self.path == '/api/push/alta': P[u_] = (P.get(u_) or [])[-7:] + [{'fcm': fcm_, 'app': getattr(_ctx, 'app', '') or 'android', 't': int(time.time())}]
+                    P = {k_: v_ for k_, v_ in P.items() if v_}; _push_guarda(P)
+                return self._json(200, {'ok': True, 'aparatos': len(P.get(u_) or [])})
             ep = str((body or {}).get('endpoint') or '')[:800]; ks = (body or {}).get('keys') or {}
             with _push_l:
                 P = _push_lee()
