@@ -43,7 +43,7 @@ MAX_CUERPO = 40 * 1024 * 1024    # tope de una petición en modo servidor
 MAX_BIBLIO = 200 * 1024 * 1024   # tope de un fichero de la biblioteca común al copiarlo
 KINDS = ('vestidor', 'hair', 'expr')   # las bibliotecas a las que una cuenta puede añadir lo suyo
 _UUID = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
-VERSION = 392
+VERSION = 393
 _ctx = threading.local()   # la cuenta del hilo: la pone cada petición (y, a mano, cada hilo de fondo)
 def uid(): return getattr(_ctx, 'uid', None)   # en local siempre None
 DUENOS = tuple(e.strip().lower() for e in (os.environ.get('ARIA_DUENOS') or 'mix1994max@gmail.com').split(',') if e.strip())   # cuentas que pueden cambiar a Aria Cruz (en la web, la de Max)
@@ -644,6 +644,7 @@ def _adm_cuenta(u):
     _ADM_C[u] = (time.time(), r); return r
 _ADM_P = [0.0, None]
 def _adm_panel():
+    AP = _apodos_lee()   # v393
     if _ADM_P[1] and time.time() - _ADM_P[0] < 20: return _ADM_P[1]
     L = _mi_lista(); por_mail = {m['email']: m for m in L}
     try: us = (_sb_adm('GET', '/auth/v1/admin/users?page=1&per_page=1000') or {}).get('users') or []
@@ -657,7 +658,7 @@ def _adm_panel():
         m = por_mail.get(e) or {}; a = auth.get(e) or {}; u = uid_de.get(e) or ''
         v = vis.get(u) or {}; tiene = bool(u and _UUID.fullmatch(u) and os.path.isdir(os.path.join(DATOS, 'usuarios', u)))
         x = _adm_cuenta(u) if tiene else {}
-        filas.append(dict({'email': e, 'acceso': e in por_mail, 'ignorado': e in ig and e not in por_mail, 'interno': bool(m.get('interno')), 'dueno': e in DUENOS, 'precio': m.get('precio'), 'alta': m.get('alta') or '',
+        filas.append(dict({'email': e, 'apodo': AP.get(e, ''), 'acceso': e in por_mail, 'ignorado': e in ig and e not in por_mail, 'interno': bool(m.get('interno')), 'dueno': e in DUENOS, 'precio': m.get('precio'), 'alta': m.get('alta') or '',
                            'cid': _cid(u) if tiene else '', 'alias': str(d['alias'].get(_cid(u)) or '')[:40] if tiene else '',
                            'registro': str(a.get('created_at') or '')[:19], 'login': str(a.get('last_sign_in_at') or '')[:19],
                            'visto': int(v.get('t') or 0), 'dias': int(v.get('dias') or 0), 'primera': int(v.get('primera') or 0), 'online': bool(v.get('t') and ahora - v['t'] < 180), 'movil': bool(v.get('movil'))}, **x))
@@ -2714,6 +2715,12 @@ class _Trozo:   # v290: un trozo de un fichero (respuesta 206)
         k = self.n if k is None or k < 0 else min(k, self.n); d = self.f.read(k); self.n -= len(d); return d
     def close(self): self.f.close()
 _AV = [0.0, None]
+def _apodos_fp(): return os.path.join(DATOS, 'adm_apodos.json')
+def _apodos_lee():   # v393: apodo interno por correo (solo lo ve el equipo)
+    try: d = json.load(open(_apodos_fp(), encoding='utf-8')); return {str(k).lower(): str(v)[:40] for k, v in d.items() if isinstance(k, str) and v}
+    except Exception: return {}
+def _apodos_guarda(d):
+    fp = _apodos_fp(); open(fp + '.tmp', 'w', encoding='utf-8').write(json.dumps(d, ensure_ascii=False)); os.replace(fp + '.tmp', fp)
 def _ign_fp(): return os.path.join(DATOS, 'adm_ignorados.json')
 def _ign_lee():   # v292: correos que el equipo ha decidido ignorar (no cuentan en la burbuja)
     try: d = json.load(open(_ign_fp(), encoding='utf-8')); return set(x for x in d if isinstance(x, str))
@@ -4333,6 +4340,11 @@ class H(SimpleHTTPRequestHandler):
             ac = body.get('accion'); quien = getattr(_ctx, 'email', '')
             try:
                 L = _mi_lista(); equipo = {m['email'] for m in L if m['interno']} | {e.lower() for e in DUENOS}; ya = {m['email'] for m in L}
+                if ac == 'apodo':   # v393: {accion:'apodo', email, apodo} (vacío = quitar)
+                    e = str(body.get('email') or '').strip().lower(); ap = re.sub(r'\s+', ' ', str(body.get('apodo') or '')).strip()[:40]
+                    if not re.fullmatch(r'[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}', e): return self._json(400, {'error': 'correo no válido'})
+                    d_ = _apodos_lee(); (d_.__setitem__(e, ap) if ap else d_.pop(e, None)); _apodos_guarda(d_); _ADM_P[1] = None; _ADM_C.clear(); plog(f'apodo {e} → {ap or "(quitado)"} ({quien})')
+                    return self._json(200, {'ok': True, 'apodo': ap})
                 if ac == 'alta':
                     em = sorted({e.lower().strip('.') for e in re.findall(r'[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}', str(body.get('emails') or ''))})
                     if not em: return self._json(400, {'error': 'No veo ningún correo en lo que has pegado.'})
