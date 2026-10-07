@@ -43,7 +43,7 @@ MAX_CUERPO = 40 * 1024 * 1024    # tope de una petición en modo servidor
 MAX_BIBLIO = 200 * 1024 * 1024   # tope de un fichero de la biblioteca común al copiarlo
 KINDS = ('vestidor', 'hair', 'expr')   # las bibliotecas a las que una cuenta puede añadir lo suyo
 _UUID = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
-VERSION = 365
+VERSION = 366
 _ctx = threading.local()   # la cuenta del hilo: la pone cada petición (y, a mano, cada hilo de fondo)
 def uid(): return getattr(_ctx, 'uid', None)   # en local siempre None
 DUENOS = tuple(e.strip().lower() for e in (os.environ.get('ARIA_DUENOS') or 'mix1994max@gmail.com').split(',') if e.strip())   # cuentas que pueden cambiar a Aria Cruz (en la web, la de Max)
@@ -2325,10 +2325,7 @@ def _den_oculta(v):   # v260: una creación denunciada se retira cuando la denun
 def _com_avisos(d, yo):
     n = sum(1 for x in d['sol'] if x.get('para') == yo and x.get('estado') == 'pendiente')
     try:
-        if SERVIDOR and not aria_fija(): n += sum(1 for v in (d.get('den') or {}).values() if not (isinstance(v, dict) and v.get('vista')))   # v260: al equipo le llegan las denuncias por revisar
-        if SERVIDOR and not aria_fija():
-            sb = _bolsa_saldo()
-            if sb is not None and sb < float(_bolsa_lee().get('aviso') or 0): n += 1   # v269: la bolsa del saldo regalo, por debajo del aviso
+        pass   # v366: las denuncias y la bolsa baja ya NO suman en Mensajes: van al aviso de ⚙️ Admin
     except Exception: pass
     for k, M in d['msgs'].items():
         if yo in k.split('|'):
@@ -2979,7 +2976,11 @@ class H(SimpleHTTPRequestHandler):
                         except Exception: continue
                         if t_ > fbd: fbn += 1
             except FileNotFoundError: pass
-            try: r_ = dict(_adm_avisos()); r_['feedback'] = fbn; r_['total'] = int(r_.get('total') or 0) + fbn; return self._json(200, dict({'ok': True}, **r_))
+            try:
+                r_ = dict(_adm_avisos()); r_['feedback'] = fbn
+                den_ = sum(1 for v in (_com_lee().get('den') or {}).values() if not (isinstance(v, dict) and v.get('vista')))   # v366: denuncias por revisar
+                sb_ = _bolsa_saldo(); bol_ = 1 if (sb_ is not None and sb_ < float(_bolsa_lee().get('aviso') or 0)) else 0   # v366: la bolsa del saldo regalo, baja
+                r_['denuncias'] = den_; r_['bolsa_baja'] = bol_; r_['total'] = int(r_.get('sin_acceso') or 0) + fbn + den_ + bol_; return self._json(200, dict({'ok': True}, **r_))
             except Exception: return self._json(200, {'ok': True, 'total': 0})
         if u.path == '/api/admin/feedback':   # v342: 💡 lo que deja la gente con el botón de feedback (solo el equipo)
             if not SERVIDOR or aria_fija(): return self._json(403, {'error': 'solo el equipo'})
