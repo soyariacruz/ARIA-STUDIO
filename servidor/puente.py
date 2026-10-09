@@ -43,7 +43,7 @@ MAX_CUERPO = 40 * 1024 * 1024    # tope de una petición en modo servidor
 MAX_BIBLIO = 200 * 1024 * 1024   # tope de un fichero de la biblioteca común al copiarlo
 KINDS = ('vestidor', 'hair', 'expr')   # las bibliotecas a las que una cuenta puede añadir lo suyo
 _UUID = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
-VERSION = 451
+VERSION = 457
 _ctx = threading.local()   # la cuenta del hilo: la pone cada petición (y, a mano, cada hilo de fondo)
 def uid(): return getattr(_ctx, 'uid', None)   # en local siempre None
 DUENOS = tuple(e.strip().lower() for e in (os.environ.get('ARIA_DUENOS') or 'mix1994max@gmail.com').split(',') if e.strip())   # cuentas que pueden cambiar a Aria Cruz (en la web, la de Max)
@@ -1093,7 +1093,11 @@ def ws_upload(data, ctype):
     ext = {'image/png': 'png', 'image/webp': 'webp', 'video/mp4': 'mp4', 'video/quicktime': 'mov', 'video/webm': 'webm', 'audio/mpeg': 'mp3', 'audio/wav': 'wav', 'audio/x-wav': 'wav', 'audio/mp4': 'm4a', 'audio/x-m4a': 'm4a'}.get(ctype, 'jpg')
     raw = b'--WSB\r\nContent-Disposition: form-data; name="file"; filename="a.' + ext.encode() + b'"\r\nContent-Type: ' + ctype.encode() + b'\r\n\r\n' + data + b'\r\n--WSB--\r\n'
     _ctx.sube_ct = ctype
-    try: u = ws('POST', '/api/v3/media/upload/binary', raw=raw, ctype='multipart/form-data; boundary=WSB')
+    try:
+        try: u = ws('POST', '/api/v3/media/upload/binary', raw=raw, ctype='multipart/form-data; boundary=WSB')
+        except Exception as e:   # v453: WaveSpeed a veces corta la subida de un vídeo («Remote end closed connection»): un segundo intento antes de rendirse
+            if not re.search(r'Remote end closed|Connection reset|timed out|Broken pipe|502|503|504', str(e)): raise
+            plog('subida a WaveSpeed ✕ ' + str(e)[:80] + ' · reintento'); time.sleep(3); u = ws('POST', '/api/v3/media/upload/binary', raw=raw, ctype='multipart/form-data; boundary=WSB')
     finally: _ctx.sube_ct = ''
     _ws_uploads[h] = u['data']['download_url']; return _ws_uploads[h]
 def resolve_ws(img):
@@ -1123,6 +1127,19 @@ GJ_EP = {'mt': 'higgsfield/genjutsu/motion-transfer/v1.0', 'sw': 'higgsfield/gen
 #   vídeo → profundidad (depth-anything-v3, inferno) + silueta (SAM 3 «person») + voz aislada (vocal-isolator) → silueta de profundidad sobre el fondo original,
 #   con la voz 3 semitonos más aguda dentro → Seedance video-edit con las fichas del personaje → se le devuelve el audio original. Solo la cuenta de Aria por ahora.
 RV_VER = {'2.0': 'bytedance/seedance-2.0/video-edit', '2.5': 'bytedance/seedance-2.5/video-edit'}
+RV_MOTORES = {   # v456: motores de motion control (WaveSpeed) para el método normal · 'uno' = una sola imagen de personaje (la foto de cuerpo entero); si no, lista de referencias
+    'kling26':    {'ep': 'kwaivgi/kling-v2.6-std/motion-control', 'nombre': 'Kling 2.6 Motion Control', 'uno': True,  'tope': 30},
+    'kling26pro': {'ep': 'kwaivgi/kling-v2.6-pro/motion-control', 'nombre': 'Kling 2.6 Pro Motion Control', 'uno': True, 'tope': 30},
+    'kling30':    {'ep': 'kwaivgi/kling-v3.0-std/motion-control', 'nombre': 'Kling 3.0 Motion Control', 'uno': True,  'tope': 30},
+    'kling30pro': {'ep': 'kwaivgi/kling-v3.0-pro/motion-control', 'nombre': 'Kling 3.0 Pro Motion Control', 'uno': True, 'tope': 30},
+    'wan':        {'ep': 'wavespeed-ai/wan-2.2/animate-2',        'nombre': 'Wan 2.2 Animate 2',        'uno': True,  'tope': 30},
+    'pvideo':     {'ep': 'pruna-ai/p-video/replace',              'nombre': 'P-Video Replace',          'uno': False, 'tope': 30},
+    'sd20':       {'ep': 'bytedance/seedance-2.0/text-to-video',  'nombre': 'Seedance 2.0 · referencias', 'uno': False, 'tope': 15},
+    'sd25':       {'ep': 'bytedance/seedance-2.5/text-to-video',  'nombre': 'Seedance 2.5 · referencias', 'uno': False, 'tope': 30},
+}
+def _rv_aspecto(w, h):   # el formato del vídeo de referencia → el más parecido de los que admite Seedance
+    if not (w and h): return '9:16'
+    return min(['16:9', '9:16', '4:3', '3:4', '1:1'], key=lambda a: abs((lambda p, q: p / q)(*map(int, a.split(':'))) - w / h))
 RV_PRE_USD = 0.06   # lo que cobra WaveSpeed por el análisis (profundidad 0,005 + SAM 3 0,05 + voz 0,001), además de Seedance
 _RV_VIVOS = set()   # rids cuyo hilo sigue corriendo en este proceso (si el servidor se reinicia a medias, el trabajo se da por perdido)
 def _rv_puede(): return (not SERVIDOR) or (uid() == ARIA_UID)
@@ -1193,7 +1210,7 @@ def _rv_malla(orig, comp, out, paso=None):   # v436: la malla facial de 478 punt
     plog(f'malla facial: {vistos}/{n} fotogramas con cara')
     if not n or ff.returncode: raise RuntimeError('no se pudo dibujar la malla facial')
     return vistos > n * 0.5   # con la cara en menos de la mitad de los fotogramas, mejor sin malla
-def _rv_corre(rid, vd, vct, imgs, prompt, ver, res, c, modo='persona'):
+def _rv_corre(rid, vd, vct, imgs, prompt, ver, res, c, modo='persona', motor='kling26', foto=None):
     import tempfile
     j = jobs.get(rid); d = tempfile.mkdtemp(prefix='rv_'); _RV_VIVOS.add(rid)
     def mem():   # v448: memoria de este proceso y pico de los ffmpeg ya terminados (en MB), para el log de Render
@@ -1212,8 +1229,13 @@ def _rv_corre(rid, vd, vct, imgs, prompt, ver, res, c, modo='persona'):
                 if dur < 1 or not w0: raise RuntimeError('no se puede leer ese vídeo: prueba con un MP4')
                 orig = os.path.join(d, 'original.mp4')   # hasta 30 s, 24 fps, lado largo ≤ 1280
                 X = ('-c:v', 'libx264', '-preset', 'veryfast', '-x264-params', 'rc-lookahead=10:threads=2')   # v448: x264 con poca memoria (medido: 130 MB la preparación, 205 MB el montaje)
-                _ff('-threads', '2', '-i', src, '-t', '15' if ver == '2.0' else '30', '-vf', "scale='if(gt(iw,ih),min(960,iw),-2)':'if(gt(iw,ih),-2,min(960,ih))':force_divisible_by=2", '-r', '24', *X, '-crf', '22', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-b:a', '128k', orig)
+                tope_ = (15 if ver == '2.0' else 30) if modo != 'cosa' else RV_MOTORES.get(motor, {}).get('tope', 30)   # v456: cada motor tiene su máximo
+                _ff('-threads', '2', '-i', src, '-t', str(tope_), '-vf', "scale='if(gt(iw,ih),min(960,iw),-2)':'if(gt(iw,ih),-2,min(960,ih))':force_divisible_by=2", '-r', '24', *X, '-crf', '22', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-b:a', '128k', orig)
                 dur, w0, h0, con_audio = _ff_info(orig)
+                try:   # v455: el vídeo de referencia se queda en la cuenta, con carátula, para «Con qué se hizo»
+                    fn_ = f'mc_{rid[-8:]}.mp4'; shutil.copyfile(orig, os.path.join(refs_dir(), fn_)); po_ = poster_for(os.path.join(refs_dir(), fn_))
+                    j.setdefault('meta', {}).setdefault('fuentes', []).insert(0, {'kind': 'video', 'name': 'Vídeo de referencia', 'file': 'assets/refs/' + fn_, 'poster': ('assets/refs/' + os.path.basename(po_)) if po_ else ''})
+                except Exception as e: plog('fuente vídeo ✕ ' + str(e)[:80])
                 if modo == 'cosa':   # v436: «otra cosa» (ropa, lugar, un objeto): el vídeo tal cual a Seedance, sin análisis
                     entrada = orig; vurl = None
                 else: paso('Subiendo el vídeo a WaveSpeed…'); vurl = ws_upload(open(orig, 'rb').read(), 'video/mp4')
@@ -1251,12 +1273,19 @@ def _rv_corre(rid, vd, vct, imgs, prompt, ver, res, c, modo='persona'):
                         voz0 = os.path.join(d, 'voz.mp3'); _rv_baja(out['voz'], voz0)
                         _ff('-i', comp, '-i', voz0, '-map', '0:v', '-map', '1:a', '-af', agudo, '-c:v', 'copy', '-c:a', 'aac', '-b:a', '160k', '-shortest', entrada)
                     else: _ff('-i', comp, '-i', orig, '-map', '0:v', '-map', '1:a', '-af', agudo, '-c:v', 'copy', '-c:a', 'aac', '-b:a', '160k', '-shortest', entrada)   # sin voz aislada: el audio entero, más agudo
-                paso('Subiendo a Seedance…'); eurl = ws_upload(open(entrada, 'rb').read(), 'video/mp4') if entrada != orig or vurl is None else vurl
-                payload = dict({'video': eurl, 'prompt': prompt, 'resolution': res, 'generate_audio': False}, **({'reference_images': imgs} if imgs else {}))
-                try: dd = (ws('POST', '/api/v3/model/price', {'model_id': RV_VER[ver], 'inputs': payload}) or {}).get('data') or {}; j['usd_sd'] = float(dd['discounted_price']) if dd.get('discounted_price') is not None else float(dd.get('price') or 0)
+                paso('Subiendo el vídeo…'); eurl = ws_upload(open(entrada, 'rb').read(), 'video/mp4') if entrada != orig or vurl is None else vurl
+                if modo != 'cosa':   # método silueta: Seedance video-edit sobre la silueta
+                    ep, nombre_ = RV_VER[ver], f'Seedance {ver}'; payload = dict({'video': eurl, 'prompt': prompt, 'resolution': res, 'generate_audio': False}, **({'reference_images': imgs} if imgs else {}))
+                else:   # v456: método normal → un motor de motion control
+                    M_ = RV_MOTORES.get(motor) or RV_MOTORES['sd20']; ep, nombre_ = M_['ep'], M_['nombre']; una = foto or (imgs[0] if imgs else None)
+                    if motor.startswith('kling'): payload = {'image': una, 'video': eurl, 'prompt': prompt, 'character_orientation': 'video', 'keep_original_sound': True}
+                    elif motor == 'wan': payload = {'image': una, 'video': eurl, 'prompt': prompt, 'resolution': res if res in ('480p', '720p') else '720p'}
+                    elif motor == 'pvideo': payload = {'video': eurl, 'images': ([una] if una else []) + [x for x in imgs if x != una][:2], 'prompt': prompt, 'resolution': res if res in ('720p', '1080p') else '720p', 'save_audio': True}
+                    else: payload = {'prompt': prompt, 'reference_videos': [eurl], 'reference_images': imgs[:9], 'duration': max(4, min(M_['tope'], int(round(dur)))), 'resolution': res if res in ('480p', '720p', '1080p') else '720p', 'aspect_ratio': _rv_aspecto(w0, h0), 'generate_audio': False}
+                try: dd = (ws('POST', '/api/v3/model/price', {'model_id': ep, 'inputs': payload}) or {}).get('data') or {}; j['usd_sd'] = float(dd['discounted_price']) if dd.get('discounted_price') is not None else float(dd.get('price') or 0)
                 except Exception: pass
-                paso(f'Seedance {ver} está recreando el vídeo…'); j['rv_entrada'] = time.time()
-                gen = _rv_espera(RV_VER[ver], payload, 'Seedance', 600)[0]; gfp = os.path.join(d, 'gen.mp4'); _rv_baja(gen, gfp)
+                paso(f'{nombre_} está recreando el vídeo…'); j['rv_entrada'] = time.time(); plog(f'recrear {rid[-8:]} · {ep} · ' + json.dumps({k_: v_ for k_, v_ in payload.items() if k_ not in ('image', 'video', 'images', 'reference_videos', 'reference_images')})[:400])
+                gen = _rv_espera(ep, payload, nombre_, 600)[0]; gfp = os.path.join(d, 'gen.mp4'); _rv_baja(gen, gfp)
                 paso('Devolviendo el audio original…'); fn = f"{_safe_item(j['item'])}__{rid[-8:]}.mp4"; final = os.path.join(video_dir(), fn)
                 if con_audio: _ff('-i', gfp, '-i', orig, '-map', '0:v', '-map', '1:a', '-c:v', 'copy', '-c:a', 'aac', '-b:a', '192k', '-shortest', final)
                 else: shutil.copyfile(gfp, final)
@@ -2270,8 +2299,9 @@ def poster_for(path):   # fotograma del vídeo para la galería (ffmpeg si está
     if os.path.exists(out): return out
     try:
         import subprocess, shutil
-        if not shutil.which('ffmpeg'): return None   # sin ffmpeg (p. ej. en el servidor) no hay carátula, y no pasa nada
-        subprocess.run(['ffmpeg', '-v', 'error', '-y', '-ss', '0.5', '-i', path, '-frames:v', '1', '-vf', 'scale=720:-2', out], timeout=60); return out if os.path.exists(out) else None
+        try: ffb = _ffmpeg()   # v455: en el servidor, el ffmpeg de imageio
+        except Exception: return None
+        subprocess.run([ffb, '-v', 'error', '-y', '-ss', '0.5', '-i', path, '-frames:v', '1', '-vf', 'scale=720:-2', out], timeout=60); return out if os.path.exists(out) else None
     except Exception: return None
 def _mini_make(names, u=None):   # miniaturas de las creaciones (560 px) en segundo plano: la galería deja de cargar los originales enteros (hilo aparte → se le dice de qué cuenta)
     with como(u):
@@ -5479,16 +5509,27 @@ class H(SimpleHTTPRequestHandler):
                 vd, vct = img_bytes(v_)
                 if not str(vct).startswith('video/'): raise RuntimeError('eso no es un vídeo')
                 if len(vd) > 200 * 1024 * 1024: raise RuntimeError('el vídeo pesa demasiado (máximo 200 MB)')
-                imgs = [resolve_ws(r) for r in by_kind(body.get('refs') or [], 'image')][:9]
+                imgs = [resolve_ws(r) for r in by_kind(body.get('refs') or [], 'image') if r.get('rol') != 'foto'][:9]
                 if not imgs and body.get('rvmodo') != 'cosa': raise RuntimeError('hace falta al menos una imagen: tu personaje')
+                fu = [{'kind': 'image', 'name': str(f.get('name') or '')[:60], 'file': f['file'], 'thumb': str(f.get('thumb') or f['file'])[:200]} for f in ((body.get('meta') or {}).get('fuentes') or []) if isinstance(f, dict) and re.fullmatch(r'assets/[A-Za-z0-9_./ -]+', str(f.get('file') or '')) and '..' not in str(f.get('file'))][:8]   # v455: con qué se hizo
+                for r_ in by_kind(body.get('refs') or [], 'image'):
+                    if r_.get('data') and r_.get('rvimg'):
+                        try: dd_, ct_ = img_bytes(r_); fn_ = f"mc_{int(time.time())}_ref.jpg"; open(os.path.join(refs_dir(), fn_), 'wb').write(dd_); fu.append({'kind': 'image', 'name': str(r_.get('nombre') or 'Referencia')[:60], 'file': 'assets/refs/' + fn_, 'thumb': 'assets/refs/' + fn_})
+                        except Exception as e: plog('fuente ✕ ' + str(e)[:80])
                 ver = body.get('vmodel') if body.get('vmodel') in RV_VER else '2.0'; res = body.get('resolution') if body.get('resolution') in ('480p', '720p', '1080p') else '720p'
+                motor = body.get('motor') if body.get('motor') in RV_MOTORES else 'sd20'; foto = None   # v456
+                for r_ in by_kind(body.get('refs') or [], 'image'):
+                    if r_.get('rol') == 'foto':
+                        try: foto = resolve_ws(r_)
+                        except Exception as e: plog('foto ✕ ' + str(e)[:80])
                 modo = 'cosa' if body.get('rvmodo') in ('cosa', 'normal') else 'persona'   # v436 · v450: «normal» = directo a Seedance (como Genjutsu); «persona» = silueta
                 if body.get('nsfw') and _wfsn() and _wfsn() not in str(body.get('prompt') or ''): body['prompt'] = (str(body.get('prompt') or '').rstrip() + ' ' + _wfsn()).strip()   # v451: 🔥 también en Motion control (la barrera de Aria ya se miró arriba)
                 body['video'] = None; v_ = None   # v447: el base64 del vídeo ya no hace falta (memoria)
                 rid = 'rv-' + hashlib.sha1(os.urandom(16)).hexdigest()[:24]
-                jobs[rid] = {'t0': time.time(), 'item': body.get('item', 'video'), 'kind': 'video', 'model': 'rv-' + ver, 'prov': 'rv', 'rvmodo': modo, 'rv_st': 'in_progress', 'paso': 'Preparando…', 'usd': body.get('usd'), 'credits': None, 'meta': body.get('meta') or {}}
+                (body.get('meta') or {})['fuentes'] = fu   # v455
+                jobs[rid] = {'t0': time.time(), 'item': body.get('item', 'video'), 'kind': 'video', 'model': ('mc-' + motor) if modo == 'cosa' else ('rv-' + ver), 'prov': 'rv', 'rvmodo': modo, 'motor': motor, 'rv_st': 'in_progress', 'paso': 'Preparando…', 'usd': body.get('usd'), 'credits': None, 'meta': body.get('meta') or {}}
                 c = (getattr(_ctx, 'uid', None), getattr(_ctx, 'email', ''), getattr(_ctx, 'interno', False))
-                threading.Thread(target=_rv_corre, args=(rid, vd, vct, imgs, str(body.get('prompt') or '')[:5000], ver, res, c, modo), daemon=True).start()
+                threading.Thread(target=_rv_corre, args=(rid, vd, vct, imgs, str(body.get('prompt') or '')[:5000], ver, res, c, modo, motor, foto), daemon=True).start()
                 return self._json(200, {'request_id': rid, 'model': RV_VER[ver], 'usd': body.get('usd'), 'payload': {'prompt': str(body.get('prompt') or '')[:5000], 'resolution': res, 'modelo': RV_VER[ver], 'imagenes': len(imgs), 'modo': modo, 'cadena': ('depth-anything-v3 + sam3-video + malla facial + audio-vocal-isolator → video-edit' if modo == 'persona' else 'video-edit directo')}})
             if body.get('provider') == 'gj':   # v378: 🎭 Genjutsu — un vídeo de 4-30 s + 1-8 imágenes (tu personaje, su ropa, el lugar) → el mismo vídeo con lo tuyo
                 if SERVIDOR and not GJ_WEB: raise RuntimeError('Recrear un vídeo todavía no está disponible')
