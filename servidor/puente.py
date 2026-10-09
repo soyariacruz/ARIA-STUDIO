@@ -43,7 +43,7 @@ MAX_CUERPO = 40 * 1024 * 1024    # tope de una petición en modo servidor
 MAX_BIBLIO = 200 * 1024 * 1024   # tope de un fichero de la biblioteca común al copiarlo
 KINDS = ('vestidor', 'hair', 'expr')   # las bibliotecas a las que una cuenta puede añadir lo suyo
 _UUID = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
-VERSION = 445
+VERSION = 446
 _ctx = threading.local()   # la cuenta del hilo: la pone cada petición (y, a mano, cada hilo de fondo)
 def uid(): return getattr(_ctx, 'uid', None)   # en local siempre None
 DUENOS = tuple(e.strip().lower() for e in (os.environ.get('ARIA_DUENOS') or 'mix1994max@gmail.com').split(',') if e.strip())   # cuentas que pueden cambiar a Aria Cruz (en la web, la de Max)
@@ -1198,7 +1198,7 @@ def _rv_corre(rid, vd, vct, imgs, prompt, ver, res, c, modo='persona'):
                 paso('Preparando el vídeo…'); dur, w0, h0, con_audio = _ff_info(src)
                 if dur < 1 or not w0: raise RuntimeError('no se puede leer ese vídeo: prueba con un MP4')
                 orig = os.path.join(d, 'original.mp4')   # hasta 30 s, 24 fps, lado largo ≤ 1280
-                _ff('-i', src, '-t', '30', '-vf', "scale='if(gt(iw,ih),min(1280,iw),-2)':'if(gt(iw,ih),-2,min(1280,ih))':force_divisible_by=2", '-r', '24', '-c:v', 'libx264', '-crf', '18', '-preset', 'fast', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-b:a', '160k', orig)
+                _ff('-i', src, '-t', '15' if ver == '2.0' else '30', '-vf', "scale='if(gt(iw,ih),min(1280,iw),-2)':'if(gt(iw,ih),-2,min(1280,ih))':force_divisible_by=2", '-r', '24', '-c:v', 'libx264', '-crf', '18', '-preset', 'fast', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-b:a', '160k', orig)
                 dur, w0, h0, con_audio = _ff_info(orig)
                 if modo == 'cosa':   # v436: «otra cosa» (ropa, lugar, un objeto): el vídeo tal cual a Seedance, sin análisis
                     entrada = orig; vurl = None
@@ -5466,7 +5466,7 @@ class H(SimpleHTTPRequestHandler):
                 if len(vd) > 200 * 1024 * 1024: raise RuntimeError('el vídeo pesa demasiado (máximo 200 MB)')
                 imgs = [resolve_ws(r) for r in by_kind(body.get('refs') or [], 'image')][:9]
                 if not imgs and body.get('rvmodo') != 'cosa': raise RuntimeError('hace falta al menos una imagen: tu personaje')
-                ver = body.get('vmodel') if body.get('vmodel') in RV_VER else '2.5'; res = body.get('resolution') if body.get('resolution') in ('480p', '720p', '1080p') else '720p'
+                ver = body.get('vmodel') if body.get('vmodel') in RV_VER else '2.0'; res = body.get('resolution') if body.get('resolution') in ('480p', '720p', '1080p') else '720p'
                 modo = 'cosa' if body.get('rvmodo') == 'cosa' else 'persona'   # v436
                 rid = 'rv-' + hashlib.sha1(os.urandom(16)).hexdigest()[:24]
                 jobs[rid] = {'t0': time.time(), 'item': body.get('item', 'video'), 'kind': 'video', 'model': 'rv-' + ver, 'prov': 'rv', 'rvmodo': modo, 'rv_st': 'in_progress', 'paso': 'Preparando…', 'usd': body.get('usd'), 'credits': None, 'meta': body.get('meta') or {}}
