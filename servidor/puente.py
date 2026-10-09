@@ -43,7 +43,7 @@ MAX_CUERPO = 40 * 1024 * 1024    # tope de una petición en modo servidor
 MAX_BIBLIO = 200 * 1024 * 1024   # tope de un fichero de la biblioteca común al copiarlo
 KINDS = ('vestidor', 'hair', 'expr')   # las bibliotecas a las que una cuenta puede añadir lo suyo
 _UUID = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
-VERSION = 417
+VERSION = 418
 _ctx = threading.local()   # la cuenta del hilo: la pone cada petición (y, a mano, cada hilo de fondo)
 def uid(): return getattr(_ctx, 'uid', None)   # en local siempre None
 DUENOS = tuple(e.strip().lower() for e in (os.environ.get('ARIA_DUENOS') or 'mix1994max@gmail.com').split(',') if e.strip())   # cuentas que pueden cambiar a Aria Cruz (en la web, la de Max)
@@ -1855,7 +1855,7 @@ def _pub_cuenta(u):   # {ruta: ficha} de lo que una cuenta tiene publicado
             if not (_dentro(base, full) and os.path.isfile(full)): continue
             try: m = json.load(open(full + '.json'))
             except Exception: continue   # v260: sin su ficha no se sabe si es oculta, NSFW o de colaboración → no se publica
-            if m.get('hidden') or m.get('nsfw') or m.get('colab') or m.get('importada') or _es_nsfw(m.get('prompt')): continue
+            if m.get('hidden') or m.get('nsfw') or m.get('importada') or _es_nsfw(m.get('prompt')): continue   # v417 (Max): las colaboraciones sí se publican
             out[r] = m
     return out
 _EFX_L = threading.Lock()   # v300: ✨ Efectos — los vídeos de la Filmoteca que el equipo elige como efecto ({id: {nombre, t}})
@@ -1964,7 +1964,7 @@ def _pub_lista():   # todo lo publicado por todas las cuentas, lo más nuevo pri
             e = m.get('escena') if isinstance(m.get('escena'), dict) else {}
             ch_ = [str(x) for x in (m.get('chars') if isinstance(m.get('chars'), list) else ([m['char']] if m.get('char') else []))]   # v303 · v317: los influencers que salen (para sus circulitos)
             if pjs_ is None: pjs_ = {p['pid']: p['nombre'] for p in _com_personajes(u)}
-            pids_ = [x for x in ch_ if x == 'aria' or x in pjs_] or [k_ for k_, n_ in pjs_.items() if n_ and n_ in str(m.get('charName') or '')][:2]
+            pids_ = [x for x in ch_ if x == 'aria' or x in pjs_ or re.fullmatch(r'com:[0-9a-f]{6,40}:[A-Za-z0-9_.-]{1,60}', x)] or [k_ for k_, n_ in pjs_.items() if n_ and n_ in str(m.get('charName') or '')][:2]
             pid_ = pids_[0] if pids_ else ''
             out.append({'f': 'assets/publica/' + k, 'kind': 'video' if P[1] == 'video' else 'image', 'cid': cid, 'pid': pid_, 'pids': pids_[:2], 'comp': {k_: str(v_)[:80] for k_, v_ in (m.get('compIds') or {}).items() if k_ in ('vestidor', 'hair') and v_} if isinstance(m.get('compIds'), dict) else {}, 'hairCol': m.get('hairCol') if isinstance(m.get('hairCol'), dict) else None, 'subida': bool(m.get('subida')), 'alias': str(d['alias'].get(cid) or '')[:40], 'prompt': m['prompt'][:8000] if isinstance(m.get('prompt'), str) else '',
                         'escena': {q: e[q][:4000] for q in ('d', 'r', 'f') if isinstance(e.get(q), str)}, 'modelo': str(m.get('model') or '')[:60], 'personaje': str(m.get('charName') or '')[:80], 't': m.get('t') or 0, 'ancho': m.get('width'), 'alto': m.get('height'), 'comp': {str(k)[:30]: str(v)[:80] for k, v in (m.get('comp') or {}).items()} if isinstance(m.get('comp'), dict) else None})
@@ -2230,6 +2230,105 @@ def _estado(rid):   # estado de un trabajo; si ha terminado, lo descarga a la ca
         except Exception: pass
     out['file'] = j.get('file'); out['kind'] = j.get('kind', 'image'); out['prenda'] = j.get('prenda'); out['nf'] = j.get('nf_item'); out['estilo'] = j.get('estilo'); out['raw'] = {k: st.get(k) for k in ('status', 'request_id')}
     return 200, out
+
+# ---- 📈 INSTAGRAM (v418): la cuenta de Instagram de Aria por la API oficial (inicio de sesión de Instagram, solo lectura). Token en <casa>/ig.json.
+IG_SCOPE = 'instagram_business_basic,instagram_business_manage_insights'
+IG_GRAPH = 'https://graph.instagram.com'
+def _ig_fp(): return os.path.join(_dir(), 'ig.json')
+def _ig_lee():
+    try: d = json.load(open(_ig_fp(), encoding='utf-8'))
+    except Exception: d = {}
+    return d if isinstance(d, dict) else {}
+def _ig_guarda(d):
+    fp = _ig_fp()
+    with open(fp + '.tmp', 'w', encoding='utf-8') as f: json.dump(d, f, ensure_ascii=False, indent=1)
+    os.replace(fp + '.tmp', fp)
+def _ig_puede(): return bool(uid()) and (uid() == ARIA_UID or bool(getattr(_ctx, 'interno', False)))   # de momento: Aria y el equipo
+def _ig_sec(): return SECRETO or (os.environ.get('ARIA_ADMIN') or 'local').encode()
+def _ig_state(destino):   # uid.destino(b64).hasta.hmac — lo firma este servidor; lo verifica este servidor
+    hasta = int(time.time()) + 900; cuerpo = f'{uid()}.' + base64.urlsafe_b64encode(destino.encode()).decode().rstrip('=') + f'.{hasta}'
+    return cuerpo + '.' + hmac.new(_ig_sec(), cuerpo.encode(), hashlib.sha256).hexdigest()[:32]
+def _ig_state_lee(t, verificar=True):
+    try:
+        u, db, hasta, mac = t.split('.'); cuerpo = f'{u}.{db}.{hasta}'
+        if verificar and (not hmac.compare_digest(mac, hmac.new(_ig_sec(), cuerpo.encode(), hashlib.sha256).hexdigest()[:32]) or int(hasta) < time.time()): return None
+        return u, base64.urlsafe_b64decode(db + '=' * (-len(db) % 4)).decode()
+    except Exception: return None
+def _ig_json(url, timeout=40):
+    rq = urllib.request.Request(url, headers={'User-Agent': UA})
+    try:
+        with urllib.request.urlopen(rq, timeout=timeout) as r: return json.loads(r.read().decode('utf-8', 'replace') or '{}')
+    except urllib.error.HTTPError as e:
+        cuerpo = e.read().decode('utf-8', 'replace')[:300]
+        try: msg = (json.loads(cuerpo).get('error') or {}).get('message') or cuerpo
+        except Exception: msg = cuerpo
+        raise RuntimeError(f'Instagram respondió {e.code}: {msg}')
+def _ig_get(path, tok, **params):
+    params['access_token'] = tok; return _ig_json(f'{IG_GRAPH}/{path}?' + urllib.parse.urlencode(params))
+def _ig_cambia_codigo(code):   # code → token corto → token largo (60 días)
+    app_id, sec = _param('META_APP_ID'), _param('META_APP_SECRET')
+    if not app_id or not sec: raise RuntimeError('faltan META_APP_ID / META_APP_SECRET')
+    data = urllib.parse.urlencode({'client_id': app_id, 'client_secret': sec, 'grant_type': 'authorization_code', 'redirect_uri': WEB_URL + '/api/ig/vuelta', 'code': code}).encode()
+    rq = urllib.request.Request('https://api.instagram.com/oauth/access_token', data=data, headers={'User-Agent': UA, 'Content-Type': 'application/x-www-form-urlencoded'})
+    try:
+        with urllib.request.urlopen(rq, timeout=40) as r: corto = json.loads(r.read().decode('utf-8', 'replace'))
+    except urllib.error.HTTPError as e: raise RuntimeError('Instagram no acepta el código: ' + e.read().decode('utf-8', 'replace')[:200])
+    tok = corto.get('access_token')
+    if not tok: raise RuntimeError('Instagram no devolvió token: ' + json.dumps(corto)[:200])
+    largo = _ig_json(f'{IG_GRAPH}/access_token?' + urllib.parse.urlencode({'grant_type': 'ig_exchange_token', 'client_secret': sec, 'access_token': tok}))
+    return {'token': largo.get('access_token') or tok, 'expira': int(time.time()) + int(largo.get('expires_in') or 3600), 'user_id': str(corto.get('user_id') or '')}
+def _ig_refresca(d):   # el token largo se renueva solo cuando le quedan menos de 10 días
+    if d.get('token') and d.get('expira', 0) - time.time() < 10 * 86400:
+        try:
+            r = _ig_json(f'{IG_GRAPH}/refresh_access_token?' + urllib.parse.urlencode({'grant_type': 'ig_refresh_token', 'access_token': d['token']}))
+            if r.get('access_token'): d['token'] = r['access_token']; d['expira'] = int(time.time()) + int(r.get('expires_in') or 3600)
+        except Exception as e: plog('ig refresh ✕ ' + str(e)[:160])
+    return d
+def _ig_sync(d):   # trae perfil, 28 días de alcance y las últimas 30 publicaciones con sus métricas → d['datos']
+    tok = d['token']; hoy = time.strftime('%Y-%m-%d', time.gmtime()); ahora = int(time.time()); hace28 = ahora - 28 * 86400
+    me = _ig_get('me', tok, fields='user_id,username,name,profile_picture_url,followers_count,follows_count,media_count')
+    serie = []; tot = {}
+    try:
+        r = _ig_get('me/insights', tok, metric='reach', period='day', since=hace28, until=ahora)
+        for m in r.get('data') or []:
+            if m.get('name') == 'reach': serie = [{'d': (v.get('end_time') or '')[:10], 'v': v.get('value') or 0} for v in m.get('values') or []]
+    except Exception as e: plog('ig insights reach ✕ ' + str(e)[:160])
+    for met in ('profile_views', 'accounts_engaged', 'total_interactions', 'views', 'reach'):
+        try:
+            r = _ig_get('me/insights', tok, metric=met, period='day', metric_type='total_value', since=hace28, until=ahora)
+            for m in r.get('data') or []: tot[m.get('name')] = ((m.get('total_value') or {}).get('value')) or 0
+        except Exception as e: plog(f'ig insights {met} ✕ ' + str(e)[:120])
+    posts = []
+    try:
+        r = _ig_get('me/media', tok, fields='id,caption,media_type,media_product_type,media_url,thumbnail_url,permalink,timestamp,like_count,comments_count', limit=30)
+        for m in (r.get('data') or [])[:30]:
+            p = {'id': m.get('id'), 'texto': str(m.get('caption') or '')[:160], 'tipo': m.get('media_product_type') or m.get('media_type') or '', 'img': m.get('thumbnail_url') or m.get('media_url') or '', 'url': m.get('permalink') or '', 't': m.get('timestamp') or '', 'likes': m.get('like_count') or 0, 'comentarios': m.get('comments_count') or 0, 'alcance': None, 'guardados': None, 'compartidos': None, 'vistas': None}
+            for mets in (('reach,saved,shares,views',), ('reach,saved,shares',), ('reach',)):
+                try:
+                    ri = _ig_get(f"{p['id']}/insights", tok, metric=mets[0])
+                    for x in ri.get('data') or []:
+                        v = (x.get('values') or [{}])[0].get('value') if x.get('values') else x.get('total_value', {}).get('value')
+                        p[{'reach': 'alcance', 'saved': 'guardados', 'shares': 'compartidos', 'views': 'vistas'}.get(x.get('name'), x.get('name'))] = v
+                    break
+                except Exception: continue
+            posts.append(p)
+    except Exception as e: plog('ig media ✕ ' + str(e)[:160])
+    hist = [h for h in (d.get('hist') or []) if isinstance(h, dict) and h.get('d') != hoy][-180:] + [{'d': hoy, 'seg': me.get('followers_count') or 0}]
+    d['hist'] = hist; d['t_sync'] = ahora
+    d['datos'] = {'usuario': me.get('username') or '', 'nombre': me.get('name') or '', 'foto': me.get('profile_picture_url') or '', 'seguidores': me.get('followers_count') or 0, 'siguiendo': me.get('follows_count') or 0, 'publicaciones': me.get('media_count') or 0, 'serie_alcance': serie, 'totales_28d': tot, 'posts': posts}
+    return d
+def _ig_datos(sync=False):
+    d = _ig_lee()
+    if not d.get('token'): return {'ok': True, 'conectado': False}
+    if sync or time.time() - (d.get('t_sync') or 0) > 12 * 3600:
+        d = _ig_refresca(d)
+        try: d = _ig_sync(d); _ig_guarda(d)
+        except Exception as e:
+            plog('ig sync ✕ ' + str(e)[:200]); _ig_guarda(d)
+            if not d.get('datos'): return {'ok': False, 'conectado': True, 'error': str(e)[:300]}
+            d['datos']['aviso'] = str(e)[:200]
+    return {'ok': True, 'conectado': True, 'datos': d.get('datos') or {}, 'hist': d.get('hist') or [], 't_sync': d.get('t_sync') or 0, 'expira': d.get('expira') or 0}
+
 # ---- 🤝 COMUNIDAD (v195): el directorio de influencers IA de todas las cuentas, las solicitudes de colaboración y los mensajes.
 #      Privacidad: de una cuenta solo se enseña su identificador opaco (`cid`, no reversible), el nombre de creador que ella ponga y sus personajes PÚBLICOS
 #      (nombre, usuario, edad, descripción, Instagram, nicho y su avatar). Nunca el correo ni sus creaciones. Sus fichas solo las usa el servidor al generar, y solo para quien tiene una colaboración aceptada (v202).
@@ -3114,6 +3213,7 @@ class H(SimpleHTTPRequestHandler):
             except ValueError: n = -1
             if n < 0 or n > MAX_CUERPO: self.close_connection = True; return self._corta(400 if n < 0 else 413, 'petición no válida' if n < 0 else 'petición demasiado grande')
         if self.command == 'POST' and self.path == '/api/invitado': return self._invitado()   # v396: la portada pregunta si un correo está invitado antes de mandarle el enlace
+        if self.command == 'GET' and self.path.startswith('/api/ig/vuelta'): return self._ig_vuelta()   # v418: vuelta de Instagram (sin sesión: la cuenta va firmada en state)
         try: c = _quien(self)
         except _NoEntra as e: return self._corta(e.code, e.msg)
         try: _visto_pon(c[0], c[1], self.headers.get('User-Agent'))   # v280: para el panel ⚙️ Admin (quién está conectado)
@@ -3126,6 +3226,25 @@ class H(SimpleHTTPRequestHandler):
                 plog(f'{self.command} {self.path[:80]} ✕ {type(e).__name__}: {e}')
                 try: return self._corta(500, 'error interno')
                 except Exception: return
+    def _ig_vuelta(self):   # v418: Instagram vuelve con ?code&state. Si el state apunta a localhost (pruebas), se reenvía tal cual; si no, se canjea aquí
+        q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query); code = (q.get('code') or [''])[0]; st = (q.get('state') or [''])[0]
+        def ir(url):
+            self.send_response(302); self.send_header('Location', url); self.send_header('Content-Length', '0'); self.end_headers()
+        sin = _ig_state_lee(st, verificar=False)
+        if sin and sin[1].startswith('http://localhost:') and not (self.headers.get('Host') or '').startswith('localhost'):
+            return ir(sin[1] + '/api/ig/vuelta?' + urllib.parse.urlencode({'code': code, 'state': st}))
+        ok = _ig_state_lee(st)
+        if not ok or not code: return self._corta(400, 'vuelta de Instagram no válida')
+        u, destino = ok
+        if not (destino in ORIGENES or destino.startswith('http://localhost:')): return self._corta(400, 'destino no permitido')
+        try:
+            with como(u):
+                d = _ig_lee(); d.update(_ig_cambia_codigo(code.split('#')[0])); _ig_guarda(d)
+                try: d = _ig_sync(d); _ig_guarda(d)
+                except Exception as e: plog('ig primera sync ✕ ' + str(e)[:200])
+            plog(f'📈 instagram conectado · {u[:8]}'); return ir(destino + '/?ig=ok#perfil')
+        except Exception as e:
+            plog('ig vuelta ✕ ' + str(e)[:200]); return ir(destino + '/?ig=' + urllib.parse.quote(str(e)[:160]) + '#perfil')
     _INV = {}   # v396: ip → [t…] (como mucho 20 preguntas por hora)
     def _invitado(self):   # v396 · POST {email} → {ok, invitado}: solo dice sí/no; la lista no sale de aquí
         ip = (self.headers.get('X-Forwarded-For') or self.client_address[0] or '').split(',')[0].strip(); ahora = time.time()
@@ -3287,6 +3406,17 @@ class H(SimpleHTTPRequestHandler):
             if u.path == '/api/calendario': return self._json(404, {'error': 'no disponible en el servidor'})
             if u.path in ('/api/liga', '/api/liga/zip') and not liga_puede(): return self._json(403, {'error': 'Los Workflows son solo para el equipo'})   # Notion y los duelos son del ordenador de Max
             if u.path == '/api/catalogo': return self._json(200, _cat_load()[1])   # el catálogo que ve esta cuenta: el común + su capa
+        if u.path == '/api/ig/conectar':   # v418: la URL de autorización de Instagram (solo Aria y el equipo)
+            if not _ig_puede(): return self._json(403, {'error': 'Solo para el equipo, de momento.'})
+            if not _param('META_APP_ID'): return self._json(400, {'error': 'Falta META_APP_ID en el servidor.'})
+            vuelta = (q.get('vuelta') or [''])[0].rstrip('/')
+            if not (vuelta in ORIGENES or vuelta.startswith('http://localhost:')): vuelta = next((o for o in ORIGENES if 'studio.ariacruz.com' in o), ORIGENES[0] if ORIGENES else WEB_URL)
+            url = 'https://www.instagram.com/oauth/authorize?' + urllib.parse.urlencode({'force_reauth': 'true', 'client_id': _param('META_APP_ID'), 'redirect_uri': WEB_URL + '/api/ig/vuelta', 'response_type': 'code', 'scope': IG_SCOPE, 'state': _ig_state(vuelta)})
+            return self._json(200, {'ok': True, 'url': url})
+        if u.path == '/api/ig/datos':   # v418
+            if not _ig_puede(): return self._json(403, {'error': 'Solo para el equipo, de momento.'})
+            try: return self._json(200, _ig_datos(sync=(q.get('sync') or [''])[0] == '1'))
+            except Exception as e: return self._json(200, {'ok': False, 'error': str(e)[:300]})
         if u.path == '/api/claves':   # estado de las APIs, sin enseñar nunca las claves
             A = _apis_estado(); w = A[0]
             return self._json(200, {'ok': True, 'apis': A, 'ws': w['on'], 'ws_fin': w['fin'], 'saldo': w['saldo'], 'casa': casa_info() or casa_info_aunque(), 'mcp': _mcp_estado(), 'mcp_url': MCP_BASE + '/mcp'})   # v357: también con su clave (se gasta primero) · v387: + MCP
@@ -3667,6 +3797,11 @@ class H(SimpleHTTPRequestHandler):
         if SERVIDOR and self.path in ('/api/describir', '/api/personas_img', '/api/acc_cajas', '/api/pj_analizar') and not _tope('lectura', 120, 3600): return self._json(429, {'error': 'Demasiadas lecturas seguidas: espera unos minutos.'})
         if self.path in ('/api/perfil', '/api/ficha_panel', '/api/fichas360') and aria_fija(): return self._json(403, {'error': FIJA, 'fija': True})   # todo esto escribe en la ficha de Aria
         if self.path == '/api/video': return self.do_video()
+        if self.path == '/api/ig/desconectar':   # v418: se borra el token y los datos
+            if not _ig_puede(): return self._json(403, {'error': 'Solo para el equipo, de momento.'})
+            try: os.remove(_ig_fp())
+            except OSError: pass
+            return self._json(200, {'ok': True})
         if self.path == '/api/monedero':   # v417: {primero: 'regalo'|'api'} qué se gasta antes cuando hay clave propia
             n = int(self.headers.get('Content-Length') or 0); body = json.loads(self.rfile.read(n) or b'{}')
             if _casa_base():
