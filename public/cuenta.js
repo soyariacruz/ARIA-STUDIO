@@ -152,7 +152,7 @@ html.sinapi #livedot,html.sinapi .meter{display:none!important}
   function aviso(on) {
     if (!on) { if (avisoEl) { avisoEl.remove(); avisoEl = null; verMira(true); } return; }
     if (avisoEl) return;
-    avisoEl = document.createElement('div'); avisoEl.innerHTML = '<div>Conectando con el servidor…</div><div>Tus datos están a salvo</div><div style="font-weight:500;font-size:11px;opacity:.85;margin-top:4px">Seguramente estamos actualizando ARIA STUDIO a una versión nueva: es un momento</div>';   // v370: en tres líneas   // v311
+    avisoEl = document.createElement('div'); avisoEl.innerHTML = '<div>Estamos actualizando ARIA STUDIO a una versión nueva</div><div style="font-weight:500;font-size:11px;opacity:.85;margin-top:4px">Conectando con el servidor… tus datos están a salvo. Es un momento.</div>';   /* v434 (Max) */   // v370: en tres líneas   // v311
     avisoEl.style.cssText = 'position:fixed;top:10px;left:50%;transform:translateX(-50%);z-index:100000;background:var(--acc);color:#fff;font:600 12.5px var(--sans);padding:9px 18px;border-radius:18px;box-shadow:0 8px 24px rgba(0,0,0,.3);text-align:center;max-width:92vw';
     document.body.appendChild(avisoEl);
   }

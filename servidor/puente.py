@@ -43,7 +43,7 @@ MAX_CUERPO = 40 * 1024 * 1024    # tope de una petición en modo servidor
 MAX_BIBLIO = 200 * 1024 * 1024   # tope de un fichero de la biblioteca común al copiarlo
 KINDS = ('vestidor', 'hair', 'expr')   # las bibliotecas a las que una cuenta puede añadir lo suyo
 _UUID = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
-VERSION = 424
+VERSION = 435
 _ctx = threading.local()   # la cuenta del hilo: la pone cada petición (y, a mano, cada hilo de fondo)
 def uid(): return getattr(_ctx, 'uid', None)   # en local siempre None
 DUENOS = tuple(e.strip().lower() for e in (os.environ.get('ARIA_DUENOS') or 'mix1994max@gmail.com').split(',') if e.strip())   # cuentas que pueden cambiar a Aria Cruz (en la web, la de Max)
@@ -645,6 +645,7 @@ def _adm_cuenta(u):
 _ADM_P = [0.0, None]
 def _adm_panel():
     AP = _apodos_lee()   # v393
+    CONS = _consola_lee()   # v433
     if _ADM_P[1] and time.time() - _ADM_P[0] < 20: return _ADM_P[1]
     L = _mi_lista(); por_mail = {m['email']: m for m in L}
     try: us = (_sb_adm('GET', '/auth/v1/admin/users?page=1&per_page=1000') or {}).get('users') or []
@@ -658,7 +659,7 @@ def _adm_panel():
         m = por_mail.get(e) or {}; a = auth.get(e) or {}; u = uid_de.get(e) or ''
         v = vis.get(u) or {}; tiene = bool(u and _UUID.fullmatch(u) and os.path.isdir(os.path.join(DATOS, 'usuarios', u)))
         x = _adm_cuenta(u) if tiene else {}
-        filas.append(dict({'email': e, 'apodo': AP.get(e, ''), 'acceso': e in por_mail, 'ignorado': e in ig and e not in por_mail, 'interno': bool(m.get('interno')), 'dueno': e in DUENOS, 'precio': m.get('precio'), 'alta': m.get('alta') or '',
+        filas.append(dict({'email': e, 'apodo': AP.get(e, ''), 'consola': e in CONS, 'acceso': e in por_mail, 'ignorado': e in ig and e not in por_mail, 'interno': bool(m.get('interno')), 'dueno': e in DUENOS, 'precio': m.get('precio'), 'alta': m.get('alta') or '',
                            'cid': _cid(u) if tiene else '', 'alias': str(d['alias'].get(_cid(u)) or '')[:40] if tiene else '',
                            'registro': str(a.get('created_at') or '')[:19], 'login': str(a.get('last_sign_in_at') or '')[:19],
                            'visto': int(v.get('t') or 0), 'dias': int(v.get('dias') or 0), 'primera': int(v.get('primera') or 0), 'online': bool(v.get('t') and ahora - v['t'] < 180), 'movil': bool(v.get('movil'))}, **x))
@@ -1118,6 +1119,102 @@ def unavailable():   # v362: los modelos que esta cuenta NO puede usar, para ens
     return out
 GJ_WEB = os.environ.get('ARIA_GENJUTSU') == '1'   # v378: 🎭 Genjutsu en la web publicada (apagado hasta que Max lo apruebe; en local, siempre)
 GJ_EP = {'mt': 'higgsfield/genjutsu/motion-transfer/v1.0', 'sw': 'higgsfield/genjutsu/object-swap/v1.0'}   # docs.higgsfield.ai · por segundo del vídeo de entrada: 480p 0,318 $ · 720p 0,681 $ · 1080p 1,632 $
+# v435: 🎭 Recrear vídeo con Seedance — la cadena de Genjutsu hecha en casa, toda por WaveSpeed (nada de revendedores ni hosts públicos):
+#   vídeo → profundidad (depth-anything-v3, inferno) + silueta (SAM 3 «person») + voz aislada (vocal-isolator) → silueta de profundidad sobre el fondo original,
+#   con la voz 3 semitonos más aguda dentro → Seedance video-edit con las fichas del personaje → se le devuelve el audio original. Solo la cuenta de Aria por ahora.
+RV_VER = {'2.0': 'bytedance/seedance-2.0/video-edit', '2.5': 'bytedance/seedance-2.5/video-edit'}
+RV_PRE_USD = 0.06   # lo que cobra WaveSpeed por el análisis (profundidad 0,005 + SAM 3 0,05 + voz 0,001), además de Seedance
+_RV_VIVOS = set()   # rids cuyo hilo sigue corriendo en este proceso (si el servidor se reinicia a medias, el trabajo se da por perdido)
+def _rv_puede(): return (not SERVIDOR) or (uid() == ARIA_UID)
+def _ffmpeg():
+    p = shutil.which('ffmpeg')
+    if p: return p
+    try:
+        import imageio_ffmpeg; return imageio_ffmpeg.get_ffmpeg_exe()
+    except Exception: raise RuntimeError('este servidor no tiene ffmpeg')
+def _ff(*args, timeout=900):
+    import subprocess
+    r_ = subprocess.run([_ffmpeg(), '-v', 'error', '-y', *args], capture_output=True, text=True, timeout=timeout)
+    if r_.returncode: raise RuntimeError('ffmpeg ✕ ' + (r_.stderr or '').strip()[-300:])
+def _ff_info(fp):   # (duración s, ancho, alto, tiene audio) leyendo la cabecera que imprime ffmpeg (sin ffprobe)
+    import subprocess
+    t = subprocess.run([_ffmpeg(), '-hide_banner', '-i', fp], capture_output=True, text=True).stderr or ''
+    m = re.search(r'Duration: (\d+):(\d+):([\d.]+)', t); dur = (int(m.group(1)) * 3600 + int(m.group(2)) * 60 + float(m.group(3))) if m else 0.0
+    v = re.search(r'Video:.*?(\d{2,5})x(\d{2,5})', t); w, h = (int(v.group(1)), int(v.group(2))) if v else (0, 0)
+    return dur, w, h, bool(re.search(r'Audio:', t))
+def _rv_espera(ep, body, nombre, tope=400):   # lanza un modelo de WaveSpeed y espera su resultado → URLs
+    r_ = ws('POST', '/api/v3/' + ep, body); rid = (r_.get('data') or {}).get('id')
+    if not rid: raise RuntimeError(nombre + ': WaveSpeed no devolvió id')
+    for _ in range(tope):
+        time.sleep(3); w_ = (ws('GET', f'/api/v3/predictions/{rid}/result').get('data') or {})
+        if w_.get('status') == 'completed': return [o for o in (w_.get('outputs') or []) if o]
+        if w_.get('status') == 'failed': raise RuntimeError(nombre + ' ✕ ' + str(w_.get('error') or 'falló')[:200])
+    raise RuntimeError(nombre + ': sin respuesta en ' + str(tope * 3 // 60) + ' min')
+def _rv_baja(url, fp): open(fp, 'wb').write(urllib.request.urlopen(urllib.request.Request(url, headers={'User-Agent': UA}), timeout=600).read())
+def _rv_corre(rid, vd, vct, imgs, prompt, ver, res, c):
+    import tempfile
+    j = jobs.get(rid); d = tempfile.mkdtemp(prefix='rv_'); _RV_VIVOS.add(rid)
+    def paso(t): j['paso'] = t; plog(f'recrear {rid[-8:]} · {t}')
+    try:
+        with como(*c):
+            try:
+                try: bal0 = float((ws('GET', '/api/v3/balance').get('data') or {}).get('balance'))
+                except Exception: bal0 = None
+                src = os.path.join(d, 'src.' + ('mov' if vct == 'video/quicktime' else 'webm' if vct == 'video/webm' else 'mp4')); open(src, 'wb').write(vd)
+                paso('Preparando el vídeo…'); dur, w0, h0, con_audio = _ff_info(src)
+                if dur < 1 or not w0: raise RuntimeError('no se puede leer ese vídeo: prueba con un MP4')
+                orig = os.path.join(d, 'original.mp4')   # hasta 30 s, 24 fps, lado largo ≤ 1280
+                _ff('-i', src, '-t', '30', '-vf', "scale='if(gt(iw,ih),min(1280,iw),-2)':'if(gt(iw,ih),-2,min(1280,ih))':force_divisible_by=2", '-r', '24', '-c:v', 'libx264', '-crf', '18', '-preset', 'fast', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-b:a', '160k', orig)
+                dur, w0, h0, con_audio = _ff_info(orig)
+                paso('Subiendo el vídeo a WaveSpeed…'); vurl = ws_upload(open(orig, 'rb').read(), 'video/mp4')
+                out, errs = {}, {}
+                def hilo(k, f):
+                    def go():
+                        with como(*c):
+                            try: out[k] = f()
+                            except Exception as e: errs[k] = str(e)[:200]
+                    return threading.Thread(target=go, daemon=True)
+                def voz():
+                    wav = os.path.join(d, 'audio.wav'); _ff('-i', orig, '-vn', '-ac', '2', '-ar', '44100', wav)
+                    return _rv_espera('wavespeed-ai/audio-vocal-isolator', {'audio': ws_upload(open(wav, 'rb').read(), 'audio/wav')}, 'voz')[0]
+                T = [hilo('depth', lambda: _rv_espera('wavespeed-ai/depth-anything-v3/video', {'video': vurl, 'colormap': 'inferno'}, 'profundidad')[0]),
+                     hilo('sam', lambda: _rv_espera('wavespeed-ai/sam3-video', {'video': vurl, 'prompt': 'person', 'apply_mask': True}, 'silueta (SAM 3)')[0])] + ([hilo('voz', voz)] if con_audio else [])
+                paso('Analizando el vídeo: profundidad, silueta y voz…')
+                for t in T: t.start()
+                for t in T: t.join()
+                if errs.get('depth') or errs.get('sam'): raise RuntimeError(errs.get('depth') or errs.get('sam'))
+                depth, sam = os.path.join(d, 'depth.mp4'), os.path.join(d, 'sam.mp4'); _rv_baja(out['depth'], depth); _rv_baja(out['sam'], sam)
+                paso('Montando la silueta sobre el fondo…'); comp = os.path.join(d, 'comp.mp4')   # donde SAM ve a la persona (no negro) va la profundidad; el resto, el fondo original
+                _ff('-i', orig, '-i', depth, '-i', sam, '-filter_complex', f"[0:v]format=gbrp[a];[1:v]scale={w0}:{h0},format=gbrp[b];[2:v]scale={w0}:{h0},format=gray,lutyuv=y='if(gt(val,6),255,0)',format=gbrp[m];[a][b][m]maskedmerge,format=yuv420p[v]", '-map', '[v]', '-an', '-c:v', 'libx264', '-crf', '18', '-preset', 'fast', comp)
+                entrada = comp; agudo = 'asetrate=44100*1.189207,aresample=44100,atempo=0.840896'   # +3 semitonos sin cambiar la duración
+                if con_audio:
+                    entrada = os.path.join(d, 'entrada.mp4')
+                    if out.get('voz'):
+                        voz0 = os.path.join(d, 'voz.mp3'); _rv_baja(out['voz'], voz0)
+                        _ff('-i', comp, '-i', voz0, '-map', '0:v', '-map', '1:a', '-af', agudo, '-c:v', 'copy', '-c:a', 'aac', '-b:a', '160k', '-shortest', entrada)
+                    else: _ff('-i', comp, '-i', orig, '-map', '0:v', '-map', '1:a', '-af', agudo, '-c:v', 'copy', '-c:a', 'aac', '-b:a', '160k', '-shortest', entrada)   # sin voz aislada: el audio entero, más agudo
+                paso('Subiendo a Seedance…'); eurl = ws_upload(open(entrada, 'rb').read(), 'video/mp4')
+                payload = {'video': eurl, 'prompt': prompt, 'reference_images': imgs, 'resolution': res, 'generate_audio': False}
+                try: dd = (ws('POST', '/api/v3/model/price', {'model_id': RV_VER[ver], 'inputs': payload}) or {}).get('data') or {}; j['usd_sd'] = float(dd['discounted_price']) if dd.get('discounted_price') is not None else float(dd.get('price') or 0)
+                except Exception: pass
+                paso(f'Seedance {ver} está recreando el vídeo…'); j['rv_entrada'] = time.time()
+                gen = _rv_espera(RV_VER[ver], payload, 'Seedance', 600)[0]; gfp = os.path.join(d, 'gen.mp4'); _rv_baja(gen, gfp)
+                paso('Devolviendo el audio original…'); fn = f"{_safe_item(j['item'])}__{rid[-8:]}.mp4"; final = os.path.join(video_dir(), fn)
+                if con_audio: _ff('-i', gfp, '-i', orig, '-map', '0:v', '-map', '1:a', '-c:v', 'copy', '-c:a', 'aac', '-b:a', '192k', '-shortest', final)
+                else: shutil.copyfile(gfp, final)
+                if bal0 is not None:
+                    try:
+                        bal1 = float((ws('GET', '/api/v3/balance').get('data') or {}).get('balance')); dlt = round(bal0 - bal1, 4)
+                        if 0 < dlt < 60: j['usd'] = dlt
+                    except Exception: pass
+                j['file'] = 'assets/video/' + fn; j['rv_st'] = 'completed'; j['t_end'] = time.time(); j['paso'] = None
+                write_meta(j, j['file'], rid, {'status': 'completed'}); _job_done(rid); poster_for(final); plog(f'recrear {rid[-8:]} ✓ {fn} · {j.get("usd")} $')
+            except Exception as e:
+                j['rv_st'] = 'failed'; j['failed'] = True; j['rv_err'] = str(e)[:300]; j['t_end'] = time.time(); j['paso'] = None; plog('recrear ✕ ' + str(e)[:300]); _job_done(rid)
+                try: fallida_apunta(dict((j.get('meta') or {}), tab='video'), str(e))
+                except Exception: pass
+    finally:
+        _RV_VIVOS.discard(rid); shutil.rmtree(d, ignore_errors=True)
 UA = 'aria-mirror/1.0 (puente local; +https://higgsfield.ai)'   # Cloudflare devuelve 403 «error code: 1010» al User-Agent por defecto de Python
 if not SERVIDOR:   # en local las carpetas de siempre existen desde el arranque; en servidor cada cuenta crea las suyas la primera vez (live_dir(), video_dir(), pers_dir(), refs_dir())
     for _d in ('live', 'video', 'personajes', 'refs'): os.makedirs(os.path.join(RAIZ, 'assets', _d), exist_ok=True)
@@ -1344,7 +1441,7 @@ def _seam_x(im):
         sd = ImageStat.Stat(g.crop((x, int(h * 0.05), x + 1, int(h * 0.95)))).stddev[0]
         if sd < 8 and (best is None or sd < bs - 1 or (abs(sd - bs) <= 1 and abs(x - w * 0.57) < abs(best - w * 0.57))): best = x; bs = sd
     return best
-def card_from(ficha_path, card_path):   # misma lógica que recortar_cards.py: vista principal (izquierda) recortada a 2:3
+def card_from(ficha_path, card_path, cx=50):   # misma lógica que recortar_cards.py: vista principal (izquierda) recortada a 2:3 · v429: cx = centro horizontal (0-100) elegido por el usuario
     from PIL import Image
     im = Image.open(ficha_path).convert('RGB'); w, h = im.size; x = _seam_x(im)
     if x and x > w * 0.3: src = im.crop((0, 0, max(1, x - 2), h))
@@ -1352,10 +1449,11 @@ def card_from(ficha_path, card_path):   # misma lógica que recortar_cards.py: v
     else: src = im.crop((0, 0, int(w * 0.62), h))   # ficha 9:16 de 4 paneles: la vista frontal ocupa el 60 % izquierdo
     from PIL import ImageStat
     sw, sh = src.size; tw = sh // 2   # card 1:2: panel entero en vertical; lados recortados o rellenados con el color del borde
-    if sw > tw + 2: x0 = (sw - tw) // 2; src = src.crop((x0, 0, x0 + tw, sh))
+    if sw > tw + 2: x0 = max(0, min(sw - tw, int(sw * (cx / 100.0) - tw / 2))); src = src.crop((x0, 0, x0 + tw, sh))
     elif sw < tw - 2:
         l = ImageStat.Stat(src.crop((0, 0, 4, sh))).mean; r = ImageStat.Stat(src.crop((sw - 4, 0, sw, sh))).mean; col = tuple(int((a + b) / 2) for a, b in zip(l, r))
         cv = Image.new('RGB', (tw, sh), col); cv.paste(src, ((tw - sw) // 2, 0)); src = cv
+    if card_path is None: return src.resize((240, 480), Image.LANCZOS)   # v429: vista previa
     src.resize((480, 960), Image.LANCZOS).save(card_path, quality=88)
 def add_prenda(j, live_path):
     with _cerrojo(): return _add_prenda(j, live_path)
@@ -1368,8 +1466,9 @@ def _add_prenda(j, live_path):   # la ficha generada pasa a assets/vestidor/n<nu
     vd, vr = mio('vestidor'); ficha = os.path.join(vd, f'n{num}_ficha.jpg'); card = os.path.join(vd, f'n{num}_card.jpg')
     from PIL import Image; Image.open(live_path).convert('RGB').save(ficha, quality=92); card_from(ficha, card)
     nm = (j.get('meta') or {}).get('name') or ''
-    if not nm or re.match(r'Prenda Nº \d+$', nm): nm = f'Prenda Nº {num}'   # el número real lo pone el puente (evita choques en lotes)
-    item = {'id': f'n{num}', 'name': nm, 'num': num, 'tags': list((j.get('meta') or {}).get('tags') or []), 'date': time.strftime('%Y-%m-%d'), 'card': f'{vr}n{num}_card.jpg', 'ficha': f'{vr}n{num}_ficha.jpg', 'looks': []}
+    nvis = max([int(v.get('nvis') or (v.get('num') if int(v.get('num') or 0) < 100000 else 0) or 0) for v in C['vestidor']] + [0]) + 1   # v426: número visible, siga la biblioteca (468, 469…)
+    if not nm or re.match(r'Prenda Nº \d+$', nm): nm = f'Prenda Nº {nvis}'   # el número real lo pone el puente (evita choques en lotes)
+    item = {'id': f'n{num}', 'name': nm, 'num': num, 'nvis': nvis, 'tags': list((j.get('meta') or {}).get('tags') or []), 'date': time.strftime('%Y-%m-%d'), 'card': f'{vr}n{num}_card.jpg', 'ficha': f'{vr}n{num}_ficha.jpg', 'looks': []}
     if (j.get('meta') or {}).get('parent'): item['parent'] = j['meta']['parent']   # variación de color de otra prenda
     C['vestidor'].append(item)
     _cat_save(head, C)
@@ -1776,7 +1875,7 @@ def _carp_fp(): return os.path.join(_dir(), 'carpetas.json')
 def _carp_lee():
     try: L = json.load(open(_carp_fp(), encoding='utf-8')).get('carpetas') or []
     except Exception: L = []
-    return [{'id': c['id'], 'nombre': str(c.get('nombre') or 'Carpeta')[:40], 't': c.get('t') or 0, 'items': [x for x in c.get('items') or [] if isinstance(x, str)], **({'colab': c['colab']} if isinstance(c.get('colab'), str) else {}), **({'padre': c['padre']} if isinstance(c.get('padre'), str) else {}), **({'pub': True} if c.get('pub') else {}), **({'pubauto': True} if c.get('pubauto') else {}), **({'comp': [x for x in c['comp'] if isinstance(x, str)]} if isinstance(c.get('comp'), list) and c['comp'] else {})} for c in L if isinstance(c, dict) and isinstance(c.get('id'), str)]
+    return [{'id': c['id'], 'nombre': str(c.get('nombre') or 'Carpeta')[:40], 't': c.get('t') or 0, 'items': [x for x in c.get('items') or [] if isinstance(x, str)], **({'colab': c['colab']} if isinstance(c.get('colab'), str) else {}), **({'padre': c['padre']} if isinstance(c.get('padre'), str) else {}), **({'pub': True} if c.get('pub') else {}), **({'pubauto': True} if c.get('pubauto') else {}), **({'pubt': {k: int(v) for k, v in c['pubt'].items() if isinstance(k, str)}} if isinstance(c.get('pubt'), dict) else {}), **({'comp': [x for x in c['comp'] if isinstance(x, str)]} if isinstance(c.get('comp'), list) and c['comp'] else {})} for c in L if isinstance(c, dict) and isinstance(c.get('id'), str)]
 def _carp_haz(b):   # crear · renombrar · borrar · meter · sacar → la lista entera, ya guardada
     ac = str(b.get('accion') or ''); nombre = ' '.join(str(b.get('nombre') or '').split())[:40]
     files = list(dict.fromkeys(x.split('?')[0] for x in (b.get('files') or []) if isinstance(x, str)))[:CARP_ITEMS]
@@ -1818,6 +1917,7 @@ def _carp_haz(b):   # crear · renombrar · borrar · meter · sacar → la list
             ya = set(c['items']); nuevos = [x for x in files if x not in ya and _creacion(x)]   # solo creaciones DE LA CUENTA
             if len(c['items']) + len(nuevos) > CARP_ITEMS: raise ValueError(f'Una carpeta admite hasta {CARP_ITEMS} creaciones.')
             c['items'] = nuevos + c['items']
+            if c.get('pub'): pt = c.setdefault('pubt', {}); [pt.__setitem__(x, int(time.time())) for x in nuevos]   # v425: cuándo se publicó cada una (para que salga primera)
         elif ac == 'sacar': q = set(files); c['items'] = [x for x in c['items'] if x not in q]
         elif ac == 'compartir':   # v220: con un creador con el que colaboro (on: false = dejar de compartir)
             con = str(b.get('con') or ''); on = bool(b.get('on', True)); yo = _cid()
@@ -1856,7 +1956,7 @@ def _pub_cuenta(u):   # {ruta: ficha} de lo que una cuenta tiene publicado
             try: m = json.load(open(full + '.json'))
             except Exception: continue   # v260: sin su ficha no se sabe si es oculta, NSFW o de colaboración → no se publica
             if m.get('hidden') or m.get('nsfw') or m.get('importada') or _es_nsfw(m.get('prompt')): continue   # v417 (Max): las colaboraciones sí se publican
-            out[r] = m
+            m['_tp'] = (c.get('pubt') or {}).get(r) or 0; out[r] = m
     return out
 _EFX_L = threading.Lock()   # v300: ✨ Efectos — los vídeos de la Filmoteca que el equipo elige como efecto ({id: {nombre, t}})
 def _efx_f(): return os.path.join(DATOS or ROOT, 'efectos.json')
@@ -1967,8 +2067,8 @@ def _pub_lista():   # todo lo publicado por todas las cuentas, lo más nuevo pri
             pids_ = [x for x in ch_ if x == 'aria' or x in pjs_ or re.fullmatch(r'com:[0-9a-f]{6,40}:[A-Za-z0-9_.-]{1,60}', x)] or [k_ for k_, n_ in pjs_.items() if n_ and n_ in str(m.get('charName') or '')][:2]
             pid_ = pids_[0] if pids_ else ''
             out.append({'f': 'assets/publica/' + k, 'kind': 'video' if P[1] == 'video' else 'image', 'cid': cid, 'pid': pid_, 'pids': pids_[:2], 'comp': {k_: str(v_)[:80] for k_, v_ in (m.get('compIds') or {}).items() if k_ in ('vestidor', 'hair') and v_} if isinstance(m.get('compIds'), dict) else {}, 'hairCol': m.get('hairCol') if isinstance(m.get('hairCol'), dict) else None, 'subida': bool(m.get('subida')), 'alias': str(d['alias'].get(cid) or '')[:40], 'prompt': m['prompt'][:8000] if isinstance(m.get('prompt'), str) else '',
-                        'escena': {q: e[q][:4000] for q in ('d', 'r', 'f') if isinstance(e.get(q), str)}, 'modelo': str(m.get('model') or '')[:60], 'personaje': str(m.get('charName') or '')[:80], 't': m.get('t') or 0, 'ancho': m.get('width'), 'alto': m.get('height'), 'comp': {str(k)[:30]: str(v)[:80] for k, v in (m.get('comp') or {}).items()} if isinstance(m.get('comp'), dict) else None})
-    out.sort(key=lambda x: -(x['t'] or 0))
+                        'escena': {q: e[q][:4000] for q in ('d', 'r', 'f') if isinstance(e.get(q), str)}, 'modelo': str(m.get('model') or '')[:60], 'personaje': str(m.get('charName') or '')[:80], 't': m.get('t') or 0, 'tp': m.get('_tp') or m.get('t') or 0, 'ancho': m.get('width'), 'alto': m.get('height'), 'compn': {str(k)[:30]: str(v)[:80] for k, v in (m.get('comp') or {}).items()} if isinstance(m.get('comp'), dict) else None})   # v427: nombres (el 'comp' de arriba son los ids de prenda/peinado)
+    out.sort(key=lambda x: -(x.get('tp') or x['t'] or 0))   # v425: por fecha de publicación
     with _PUB_L: _PUB['t'] = time.time(); _PUB['L'] = out
     return out
 def _publica(rel):   # 'assets/publica/<cid>/<live|video>/<fichero>' → el fichero real, solo si está publicado ahora mismo
@@ -2171,6 +2271,9 @@ def _estado(rid):   # estado de un trabajo; si ha terminado, lo descarga a la ca
                     if e.code >= 500 or e.code == 429: raise
                     st = {'status': 'nsfw' if re.search(r'nsfw|content.?(policy|moderation)|safety', str(e), re.I) else 'failed', 'request_id': rid, 'error': str(e)}
             if st['status'] != 'in_progress' and not j.get('t_end'): j['t_end'] = time.time()
+        elif j.get('prov') == 'rv':   # v435: lo lleva un hilo del puente (si el servidor se reinició a medias, se da por perdido)
+            if j.get('rv_st', 'in_progress') == 'in_progress' and rid not in _RV_VIVOS: j['rv_st'] = 'failed'; j['failed'] = True; j['rv_err'] = 'el servidor se reinició mientras se recreaba el vídeo'; j['paso'] = None; _job_done(rid)
+            st = {'status': j.get('rv_st') or 'in_progress', 'request_id': rid, 'error': j.get('rv_err')}
         elif j.get('prov') == 'el':   # v328: ya lo descarga el hilo
             st = {'status': j.get('el_st') or 'in_progress', 'request_id': rid, 'error': j.get('el_err')}
         elif j.get('prov') == 'ws':
@@ -2189,7 +2292,7 @@ def _estado(rid):   # estado de un trabajo; si ha terminado, lo descarga a la ca
         else: st = api('GET', f'/requests/{rid}/status')
     except Exception as e:   # un 429/5xx o un corte de red al preguntar NO es un trabajo perdido: la web vuelve a preguntar
         plog(f'estado {rid[:8]} ✕ {e}'); return 503, {'error': str(e), 'retry': True}
-    status = st.get('status'); out = {'status': status, 'usd': j.get('usd'), 'credits': j.get('credits'), 'model': j.get('model'), 'elapsed': round(time.time() - j['t0'], 1)}
+    status = st.get('status'); out = {'status': status, 'usd': j.get('usd'), 'credits': j.get('credits'), 'model': j.get('model'), 'elapsed': round(time.time() - j['t0'], 1), **({'paso': j['paso']} if j.get('paso') else {})}   # v435: el paso de la cadena
     if j.get('casa') and status == 'completed' and not j.get('cobrado'):   # 🎁 se cobra al terminar (si falla, no se cobra nada)
         j['cobrado'] = True
         try: casa_cobra(j.get('usd'), 'imagen', rid, j.get('model'))
@@ -2918,6 +3021,12 @@ def _apodos_lee():   # v393: apodo interno por correo (solo lo ve el equipo)
     except Exception: return {}
 def _apodos_guarda(d):
     fp = _apodos_fp(); open(fp + '.tmp', 'w', encoding='utf-8').write(json.dumps(d, ensure_ascii=False)); os.replace(fp + '.tmp', fp)
+def _consola_fp(): return os.path.join(DATOS, 'adm_consola.json')
+def _consola_lee():   # v433: correos (minúsculas) que ven la consola de desarrollador en la web (lo decide el equipo en Admin › Miembros)
+    try: return {str(e).lower() for e in json.load(open(_consola_fp(), encoding='utf-8')) if isinstance(e, str)}
+    except Exception: return set()
+def _consola_guarda(S):
+    fp = _consola_fp(); open(fp + '.tmp', 'w', encoding='utf-8').write(json.dumps(sorted(S))); os.replace(fp + '.tmp', fp)
 def _ign_fp(): return os.path.join(DATOS, 'adm_ignorados.json')
 def _ign_lee():   # v292: correos que el equipo ha decidido ignorar (no cuentan en la burbuja)
     try: d = json.load(open(_ign_fp(), encoding='utf-8')); return set(x for x in d if isinstance(x, str))
@@ -3460,7 +3569,7 @@ class H(SimpleHTTPRequestHandler):
             try: return self._json(200, {'ok': True, 'clave': _vapid()[1]})
             except Exception as e: return self._json(500, {'error': 'avisos no disponibles: ' + str(e)[:80]})
         if u.path == '/api/ping':
-            return self._json(200, {'ok': True, **({'espacio': {'usado': espacio(), 'tope': CUOTA}, 'aria_mia': not aria_fija(), 'nsfw': nsfw_ok()} if SERVIDOR else {}), 'model': MODEL, 'default': CASA_DEF if casa_on() else 'mstudio', 'models': model_list(), 'unavailable': unavailable(), 'ws': bool(load_ws()) or casa_on(), 'casa': casa_info() or casa_info_aunque(), 'regalo_nuevo': _regalos_nuevos(), 'wfsn': _wfsn_boton()[:400], 'primera': int(((_VISTO.get(uid() or '') or {}) if SERVIDOR else {}).get('primera') or 0), 'aspects': ASPECTS, 'key': _hf_listo(), 'ark': bool(load_ark()[0]), 'ark_usd': ARK_USD, 'genjutsu': (not SERVIDOR) or GJ_WEB, 'interno': bool(getattr(_ctx, 'interno', False)) if SERVIDOR else os.path.isfile(os.path.expanduser('~/.claude/notion.env')), **({'servidor': True} if SERVIDOR else {})})   # interno = el ordenador de Max: enseña «Workflows» (en la web alojada, solo las cuentas autorizadas)
+            return self._json(200, {'ok': True, **({'espacio': {'usado': espacio(), 'tope': CUOTA}, 'aria_mia': not aria_fija(), 'nsfw': nsfw_ok()} if SERVIDOR else {}), 'model': MODEL, 'default': CASA_DEF if casa_on() else 'mstudio', 'models': model_list(), 'unavailable': unavailable(), 'ws': bool(load_ws()) or casa_on(), 'casa': casa_info() or casa_info_aunque(), 'regalo_nuevo': _regalos_nuevos(), 'wfsn': _wfsn_boton()[:400], 'primera': int(((_VISTO.get(uid() or '') or {}) if SERVIDOR else {}).get('primera') or 0), 'aspects': ASPECTS, 'key': _hf_listo(), 'ark': bool(load_ark()[0]), 'ark_usd': ARK_USD, 'genjutsu': (not SERVIDOR) or GJ_WEB, 'recrear': _rv_puede(), 'consola': bool(SERVIDOR and (getattr(_ctx, 'email', '') or '').lower() in _consola_lee()), 'interno': bool(getattr(_ctx, 'interno', False)) if SERVIDOR else os.path.isfile(os.path.expanduser('~/.claude/notion.env')), **({'servidor': True} if SERVIDOR else {})})   # interno = el ordenador de Max: enseña «Workflows» (en la web alojada, solo las cuentas autorizadas)
         if u.path == '/api/live':   # lo ya generado por la API (assets/live/<item>_<rid>.ext) → la app lo enseña sin volver a generar
             files = {}; allf = []; ld, vd = live_dir(), video_dir()
             for fn in sorted(os.listdir(ld), key=lambda f: os.path.getmtime(os.path.join(ld, f))):
@@ -3706,7 +3815,9 @@ class H(SimpleHTTPRequestHandler):
                 for ln in reversed(lineas):
                     try: r_ = json.loads(ln)
                     except Exception: continue
-                    L.append({k_: r_.get(k_) for k_ in ('t', 'texto', 'tipo', 'via', 'seccion', 'usuario')})
+                    o_ = {k_: r_.get(k_) for k_ in ('t', 'texto', 'tipo', 'via', 'seccion', 'usuario')}
+                    if r_.get('uid') and r_.get('uid') != uid(): o_['cid'] = _cid(r_['uid'])   # v431: para escribirle por Mensajes (nunca el uid)
+                    L.append(o_)
             except FileNotFoundError: pass
             if L and L[0].get('t'):   # v389: abrir la pestaña Feedback = visto hasta el último, para esta cuenta, en el servidor
                 try: json.dump({'t': L[0]['t']}, open(os.path.join(casa(), 'fb_visto.json'), 'w'))
@@ -3824,6 +3935,30 @@ class H(SimpleHTTPRequestHandler):
             try: os.remove(_ig_fp())
             except OSError: pass
             return self._json(200, {'ok': True})
+        if self.path == '/api/comunidad/prenda_importar':   # v427: {cid, f, id} → copia a mi Vestidor la ficha de la prenda que el creador usó en una creación PUBLICADA
+            n = int(self.headers.get('Content-Length') or 0); body = json.loads(self.rfile.read(n) or b'{}')
+            if not SERVIDOR: return self._json(400, {'error': 'Esto solo funciona en la web'})
+            cid = str(body.get('cid') or '')[:40]; pid = str(body.get('id') or '')[:40]; f = str(body.get('f') or '')
+            u = _com_cuentas().get(cid); yo_u = uid()
+            if not u or not yo_u or u == yo_u or not re.fullmatch(r'n\d{1,8}', pid): return self._json(400, {'error': 'prenda no válida'})
+            partes = f.split('/'); rel = 'assets/' + '/'.join(partes[3:5]) if len(partes) == 5 and partes[0] == 'assets' and partes[1] == 'publica' and partes[2] == cid else ''
+            m = _pub_cuenta(u).get(rel) if rel else None
+            if not m or str((m.get('compIds') or {}).get('vestidor') or '') != pid: return self._json(403, {'error': 'Esa prenda no está en una creación publicada'})
+            try:
+                with como(u):
+                    head_, C_ = _cat_load(); v = next((x for x in C_['vestidor'] if x.get('id') == pid), None)
+                    if not v or not v.get('ficha'): raise RuntimeError('El creador ya no tiene esa prenda')
+                    full = busca(str(v['ficha']).split('?')[0]); alias = str((_com_lee().get('alias') or {}).get(cid) or 'otro creador')[:40]
+                    if not full or not os.path.isfile(full): raise RuntimeError('No encuentro la ficha de esa prenda')
+                    nombre, tags = str(v.get('name') or 'Prenda')[:40], [t for t in (v.get('tags') or []) if isinstance(t, str)]
+                    datos = open(full, 'rb').read()
+                if lleno(): raise RuntimeError(LLENO)
+                tmp = os.path.join(live_dir(), 'importada_prenda-' + hashlib.sha1(f'{cid}|{pid}|{time.time()}'.encode()).hexdigest()[:10] + '.jpg')
+                with open(tmp, 'wb') as o: o.write(datos)
+                item = add_prenda({'meta': {'name': (nombre + ' · de ' + alias)[:60], 'tags': tags, 'importada_de': cid, 'prenda': True}, 'usd': 0, 'model': 'importada'}, tmp)
+                _peso.pop(uid(), None); plog(f'prenda importada de {cid} · {pid} → {item.get("id") if isinstance(item, dict) else "?"}')
+                return self._json(200, {'ok': True, 'item': item})
+            except Exception as e: return self._json(400, {'error': str(e)[:200]})
         if self.path == '/api/monedero':   # v417: {primero: 'regalo'|'api'} qué se gasta antes cuando hay clave propia
             n = int(self.headers.get('Content-Length') or 0); body = json.loads(self.rfile.read(n) or b'{}')
             if _casa_base():
@@ -4621,6 +4756,11 @@ class H(SimpleHTTPRequestHandler):
             if not SERVIDOR or aria_fija(): return self._json(403, {'error': 'solo el equipo'})
             if not _tope('miembros', 60, 3600): return self._json(429, {'error': 'Demasiados cambios seguidos: espera un rato.'})
             ac = body.get('accion'); quien = getattr(_ctx, 'email', '')
+            if ac == 'consola':   # v433: {accion:'consola', email, on} → ese miembro ve la consola de desarrollador en la web
+                e = str(body.get('email') or '').strip().lower()
+                if not re.fullmatch(r'[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}', e): return self._json(400, {'error': 'correo no válido'})
+                S_ = _consola_lee(); (S_.add(e) if body.get('on') else S_.discard(e)); _consola_guarda(S_); _ADM_P[1] = None; plog(f'consola {e} → {"on" if body.get("on") else "off"} ({quien})')
+                return self._json(200, {'ok': True, 'consola': e in S_})
             try:
                 L = _mi_lista(); equipo = {m['email'] for m in L if m['interno']} | {e.lower() for e in DUENOS}; ya = {m['email'] for m in L}
                 if ac == 'apodo':   # v393: {accion:'apodo', email, apodo} (vacío = quitar)
@@ -5113,6 +5253,21 @@ class H(SimpleHTTPRequestHandler):
             d = os.path.join(pers_dir(), pid)
             trash = papelera(); shutil.move(d, os.path.join(trash, 'personaje_' + pid + '_' + str(int(time.time()))))
             plog(f'personaje {pid} → papelera'); return self._json(200, {'ok': True})
+        if self.path == '/api/prenda_card':   # v429: {id, cx, preview?} → recorta la tarjeta de la prenda centrada en cx (0-100); preview devuelve la imagen sin guardar
+            n = int(self.headers.get('Content-Length') or 0); body = json.loads(self.rfile.read(n) or b'{}'); pid = str(body.get('id') or '')
+            try: cx = max(0, min(100, int(body.get('cx', 50))))
+            except (TypeError, ValueError): cx = 50
+            with _cerrojo():
+                head, C = _cat_load(); it = next((v for v in C['vestidor'] if v['id'] == pid), None)
+                if not it: return self._json(404, {'error': 'prenda no encontrada'})
+                ficha = busca(str(it.get('ficha') or '').split('?')[0]); card = busca(str(it.get('card') or '').split('?')[0])
+                if not ficha or not os.path.isfile(ficha): return self._json(404, {'error': 'no encuentro su ficha'})
+                if body.get('preview'):
+                    import io, base64 as b64_; im = card_from(ficha, None, cx); buf = io.BytesIO(); im.save(buf, 'JPEG', quality=80)
+                    return self._json(200, {'ok': True, 'data': 'data:image/jpeg;base64,' + b64_.b64encode(buf.getvalue()).decode()})
+                if not card or (SERVIDOR and not _dentro(casa(), card)): return self._json(403, {'error': 'Esa prenda es de la biblioteca común: solo se pueden centrar las tuyas'})
+                card_from(ficha, card, cx); it['cx'] = cx; _cat_save(head, C)
+            return self._json(200, {'ok': True, 'cx': cx})
         if self.path == '/api/prenda_fav':   # marca/desmarca una prenda como favorita en el catálogo
             n = int(self.headers.get('Content-Length') or 0); body = json.loads(self.rfile.read(n) or b'{}'); pid = body.get('id', '')
             with _cerrojo():
@@ -5225,6 +5380,22 @@ class H(SimpleHTTPRequestHandler):
         try:
             mode = body.get('mode') if body.get('mode') in VIDEO_MODELS else 'i2v'; M = VIDEO_MODELS[mode]
             if body.get('provider') in ('ws', 'wsg') and casa_on(): raise RuntimeError('El vídeo todavía no entra en el saldo regalo: conecta tu propia clave en «Mis APIs».')   # v260: antes de subir nada
+            if body.get('provider') == 'rv':   # v435: 🎭 Recrear vídeo con Seedance (cadena propia por WaveSpeed; de momento solo la cuenta de Aria)
+                if not _rv_puede(): raise RuntimeError('Recrear un vídeo todavía no está disponible')
+                if not load_ws(): raise RuntimeError('Conecta tu API de WaveSpeed en «Mis APIs»')
+                v_ = body.get('video')
+                if not isinstance(v_, dict): raise RuntimeError('falta el vídeo a recrear')
+                vd, vct = img_bytes(v_)
+                if not str(vct).startswith('video/'): raise RuntimeError('eso no es un vídeo')
+                if len(vd) > 200 * 1024 * 1024: raise RuntimeError('el vídeo pesa demasiado (máximo 200 MB)')
+                imgs = [resolve_ws(r) for r in by_kind(body.get('refs') or [], 'image')][:9]
+                if not imgs: raise RuntimeError('hace falta al menos una imagen: tu personaje')
+                ver = body.get('vmodel') if body.get('vmodel') in RV_VER else '2.5'; res = body.get('resolution') if body.get('resolution') in ('480p', '720p', '1080p') else '720p'
+                rid = 'rv-' + hashlib.sha1(os.urandom(16)).hexdigest()[:24]
+                jobs[rid] = {'t0': time.time(), 'item': body.get('item', 'video'), 'kind': 'video', 'model': 'rv-' + ver, 'prov': 'rv', 'rv_st': 'in_progress', 'paso': 'Preparando…', 'usd': body.get('usd'), 'credits': None, 'meta': body.get('meta') or {}}
+                c = (getattr(_ctx, 'uid', None), getattr(_ctx, 'email', ''), getattr(_ctx, 'interno', False))
+                threading.Thread(target=_rv_corre, args=(rid, vd, vct, imgs, str(body.get('prompt') or '')[:5000], ver, res, c), daemon=True).start()
+                return self._json(200, {'request_id': rid, 'model': RV_VER[ver], 'usd': body.get('usd'), 'payload': {'prompt': str(body.get('prompt') or '')[:5000], 'resolution': res, 'modelo': RV_VER[ver], 'imagenes': len(imgs), 'cadena': 'depth-anything-v3 + sam3-video + audio-vocal-isolator → video-edit'}})
             if body.get('provider') == 'gj':   # v378: 🎭 Genjutsu — un vídeo de 4-30 s + 1-8 imágenes (tu personaje, su ropa, el lugar) → el mismo vídeo con lo tuyo
                 if SERVIDOR and not GJ_WEB: raise RuntimeError('Recrear un vídeo todavía no está disponible')
                 if not _hf_listo(): raise RuntimeError('Genjutsu es de Higgsfield: conecta tu API de Higgsfield en «Mis APIs»')

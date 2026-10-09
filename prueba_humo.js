@@ -53,6 +53,9 @@
       paso('prestado · nunca principal', () => { const a = CH().id; setChar(pr.id, true); if (CH().id !== a) throw new Error('se ha puesto de principal'); });
       paso('prestado · 🔥 disponible (v415: ya no hay desnudos, el 🔥 solo añade el parámetro)', () => { if (ariaSinNsfw()) throw new Error('ariaSinNsfw() tendría que ser false desde v415'); });
       paso('prestado · quitar', () => { removeExtra(pr.id); if (extraChars().some(c => c.id === pr.id)) throw new Error('no se quita'); }); } }
+  // 8) v435: 🎭 Recrear vídeo con Seedance (solo si el puente lo permite: en local siempre; en la web, la cuenta de Aria)
+  if (state.rvOn && window.rvControls) { const vp0 = state.vprov; paso('recrear vídeo · panel', () => { state.vprov = 'rv'; setTab('video'); renderSide(); if (!document.querySelector('.rvbtn')) throw new Error('sin botón «Recrear el vídeo»'); if (!document.querySelector('.gjvid')) throw new Error('sin recuadro del vídeo'); });
+    paso('recrear vídeo · prompt', () => { const p = rvPrompt(); if (!p || /undefined|NaN|\[object/.test(p)) throw new Error('prompt raro: ' + p.slice(0, 120)); }); paso('recrear vídeo · volver', () => { state.vprov = vp0; renderSide(); }); }
   // dejarlo como estaba
   paso('restaurar', () => { state.comp = guard.comp; state.compBy = guard.compBy; state.extras = guard.extras; saveExtras(); state.nsfw = guard.nsfw; setChar(guard.ch, true); setTab(guard.tab); });
   return { fallos, pasos: hecho.length, cuenta: window.CUENTA && CUENTA.web ? (WEBM() ? 'web · miembro' : 'web · dueño') : 'local', escala: window.ESCALA, ventana: innerWidth + '×' + innerHeight };
