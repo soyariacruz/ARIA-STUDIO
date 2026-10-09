@@ -30,7 +30,7 @@ LIGA_PY_SRV = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'liga', '
 # ---- «modo servidor» (ARIA_SERVIDOR=1): muchas cuentas a la vez; cada una con su casa, sus claves, sus trabajos y su capa sobre el catálogo común. Sin la variable NO cambia nada (un solo usuario, en local)
 SERVIDOR = os.environ.get('ARIA_SERVIDOR') == '1'
 HOST = (os.environ.get('ARIA_HOST') or '127.0.0.1') if SERVIDOR else '127.0.0.1'
-PORT = int(sys.argv[1]) if len(sys.argv) > 1 else int((SERVIDOR and os.environ.get('PORT')) or 8767)
+PORT = int(sys.argv[1]) if len(sys.argv) > 1 and sys.argv[1].isdigit() else int((SERVIDOR and os.environ.get('PORT')) or 8767)   # v447: `--malla` no es un puerto
 DATOS = os.path.abspath(os.environ['ARIA_DATOS']) if SERVIDOR and os.environ.get('ARIA_DATOS') else ''   # usuarios/<uid>/ · biblioteca/ (copia de lo común) · jobs.jsonl · puente.log · feedback.jsonl
 DEV = SERVIDOR and os.environ.get('ARIA_DEV') == '1' and HOST == '127.0.0.1'   # atajo de pruebas (cabecera X-Dev-Uid): solo existe si el servidor escucha en 127.0.0.1
 SB_URL = (os.environ.get('SB_URL') or 'https://uhscbgidrloskdjbevkn.supabase.co').rstrip('/')
@@ -43,7 +43,7 @@ MAX_CUERPO = 40 * 1024 * 1024    # tope de una petición en modo servidor
 MAX_BIBLIO = 200 * 1024 * 1024   # tope de un fichero de la biblioteca común al copiarlo
 KINDS = ('vestidor', 'hair', 'expr')   # las bibliotecas a las que una cuenta puede añadir lo suyo
 _UUID = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
-VERSION = 446
+VERSION = 447
 _ctx = threading.local()   # la cuenta del hilo: la pone cada petición (y, a mano, cada hilo de fondo)
 def uid(): return getattr(_ctx, 'uid', None)   # en local siempre None
 DUENOS = tuple(e.strip().lower() for e in (os.environ.get('ARIA_DUENOS') or 'mix1994max@gmail.com').split(',') if e.strip())   # cuentas que pueden cambiar a Aria Cruz (en la web, la de Max)
@@ -1150,7 +1150,15 @@ def _rv_espera(ep, body, nombre, tope=400):   # lanza un modelo de WaveSpeed y e
         if w_.get('status') == 'completed': return [o for o in (w_.get('outputs') or []) if o]
         if w_.get('status') == 'failed': raise RuntimeError(nombre + ' ✕ ' + str(w_.get('error') or 'falló')[:200])
     raise RuntimeError(nombre + ': sin respuesta en ' + str(tope * 3 // 60) + ' min')
-def _rv_baja(url, fp): open(fp, 'wb').write(urllib.request.urlopen(urllib.request.Request(url, headers={'User-Agent': UA}), timeout=600).read())
+def _rv_baja(url, fp):   # v447: a disco por trozos (no se carga el vídeo entero en memoria)
+    with urllib.request.urlopen(urllib.request.Request(url, headers={'User-Agent': UA}), timeout=600) as r_, open(fp, 'wb') as f: shutil.copyfileobj(r_, f, 1 << 20)
+RV_MALLA = os.environ.get('ARIA_MALLA', '' if SERVIDOR else '1') == '1'   # v447: en el servidor la malla facial (MediaPipe ≈ 300 MB) solo con ARIA_MALLA=1 (plan de Render con más memoria)
+def _rv_malla_sub(orig, comp, out, paso=None):   # v447: la malla en un proceso aparte: su memoria se libera al terminar
+    import subprocess
+    if paso: paso('Dibujando la malla facial…')
+    r_ = subprocess.run([sys.executable, os.path.abspath(__file__), '--malla', orig, comp, out], capture_output=True, text=True, timeout=1500, env=dict(os.environ, ARIA_SERVIDOR='', ARIA_DATOS=DATOS or ''))
+    if r_.returncode or not os.path.exists(out): raise RuntimeError('malla ✕ ' + (r_.stderr or r_.stdout or '').strip()[-200:])
+    return 'MALLA_OK' in (r_.stdout or '')
 _MP_URL = 'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/latest/face_landmarker.task'
 def _rv_malla(orig, comp, out, paso=None):   # v436: la malla facial de 478 puntos (MediaPipe) del vídeo original, dibujada sobre la silueta → Seedance clava la boca y la mirada
     try:
@@ -1198,7 +1206,7 @@ def _rv_corre(rid, vd, vct, imgs, prompt, ver, res, c, modo='persona'):
                 paso('Preparando el vídeo…'); dur, w0, h0, con_audio = _ff_info(src)
                 if dur < 1 or not w0: raise RuntimeError('no se puede leer ese vídeo: prueba con un MP4')
                 orig = os.path.join(d, 'original.mp4')   # hasta 30 s, 24 fps, lado largo ≤ 1280
-                _ff('-i', src, '-t', '15' if ver == '2.0' else '30', '-vf', "scale='if(gt(iw,ih),min(1280,iw),-2)':'if(gt(iw,ih),-2,min(1280,ih))':force_divisible_by=2", '-r', '24', '-c:v', 'libx264', '-crf', '18', '-preset', 'fast', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-b:a', '160k', orig)
+                _ff('-i', src, '-t', '15' if ver == '2.0' else '30', '-vf', "scale='if(gt(iw,ih),min(1280,iw),-2)':'if(gt(iw,ih),-2,min(1280,ih))':force_divisible_by=2", '-r', '24', '-c:v', 'libx264', '-crf', '22', '-preset', 'fast', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-b:a', '128k', orig)
                 dur, w0, h0, con_audio = _ff_info(orig)
                 if modo == 'cosa':   # v436: «otra cosa» (ropa, lugar, un objeto): el vídeo tal cual a Seedance, sin análisis
                     entrada = orig; vurl = None
@@ -1225,10 +1233,11 @@ def _rv_corre(rid, vd, vct, imgs, prompt, ver, res, c, modo='persona'):
                   depth, sam = os.path.join(d, 'depth.mp4'), os.path.join(d, 'sam.mp4'); _rv_baja(out['depth'], depth); _rv_baja(out['sam'], sam)
                   paso('Montando la silueta sobre el fondo…'); comp = os.path.join(d, 'comp.mp4')   # donde SAM ve a la persona (no negro) va la profundidad; el resto, el fondo original
                   _ff('-i', orig, '-i', depth, '-i', sam, '-filter_complex', f"[0:v]format=gbrp[a];[1:v]scale={w0}:{h0},format=gbrp[b];[2:v]scale={w0}:{h0},format=gray,lutyuv=y='if(gt(val,6),255,0)',format=gbrp[m];[a][b][m]maskedmerge,format=yuv420p[v]", '-map', '[v]', '-an', '-c:v', 'libx264', '-crf', '18', '-preset', 'fast', comp)
-                  paso('Dibujando la malla facial…'); malla = os.path.join(d, 'malla.mp4')   # v436
-                  try:
-                      if _rv_malla(orig, comp, malla, paso): comp = malla; j['malla'] = True
-                  except Exception as e: plog('malla facial ✕ ' + str(e)[:160])
+                  if RV_MALLA:   # v447: en un proceso aparte, y solo si este servidor tiene memoria para ello
+                      malla = os.path.join(d, 'malla.mp4')
+                      try:
+                          if _rv_malla_sub(orig, comp, malla, paso): comp = malla; j['malla'] = True
+                      except Exception as e: plog('malla facial ✕ ' + str(e)[:160])
                   entrada = comp
                 if modo != 'cosa' and con_audio:
                     entrada = os.path.join(d, 'entrada.mp4')
@@ -5468,6 +5477,7 @@ class H(SimpleHTTPRequestHandler):
                 if not imgs and body.get('rvmodo') != 'cosa': raise RuntimeError('hace falta al menos una imagen: tu personaje')
                 ver = body.get('vmodel') if body.get('vmodel') in RV_VER else '2.0'; res = body.get('resolution') if body.get('resolution') in ('480p', '720p', '1080p') else '720p'
                 modo = 'cosa' if body.get('rvmodo') == 'cosa' else 'persona'   # v436
+                body['video'] = None; v_ = None   # v447: el base64 del vídeo ya no hace falta (memoria)
                 rid = 'rv-' + hashlib.sha1(os.urandom(16)).hexdigest()[:24]
                 jobs[rid] = {'t0': time.time(), 'item': body.get('item', 'video'), 'kind': 'video', 'model': 'rv-' + ver, 'prov': 'rv', 'rvmodo': modo, 'rv_st': 'in_progress', 'paso': 'Preparando…', 'usd': body.get('usd'), 'credits': None, 'meta': body.get('meta') or {}}
                 c = (getattr(_ctx, 'uid', None), getattr(_ctx, 'email', ''), getattr(_ctx, 'interno', False))
@@ -5623,6 +5633,9 @@ def _raw_hook():
                     with _RAW_L: _RAW.append({'t': time.time(), 'metodo': m, 'url': url, 'cabeceras': _raw_cab(dict(req.header_items())), 'cuerpo': _raw_cuerpo(req.data), 'estado': r.status if r is not None else (err.code if err else None)}); del _RAW[:-60]
             except Exception: pass
     urllib.request.urlopen = urlopen
+if __name__ == '__main__' and len(sys.argv) > 4 and sys.argv[1] == '--malla':   # v447: `puente.py --malla original comp salida` → dibuja la malla facial y acaba
+    try: print('MALLA_OK' if _rv_malla(sys.argv[2], sys.argv[3], sys.argv[4]) else 'MALLA_POCA'); sys.exit(0)
+    except Exception as e: print('malla ✕ ' + str(e)[:200], file=sys.stderr); sys.exit(1)
 if __name__ == '__main__':
     _raw_hook()   # v411
     if SERVIDOR:   # nada de esto toca la carpeta del código ni su assets/
