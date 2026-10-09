@@ -43,7 +43,7 @@ MAX_CUERPO = 40 * 1024 * 1024    # tope de una petición en modo servidor
 MAX_BIBLIO = 200 * 1024 * 1024   # tope de un fichero de la biblioteca común al copiarlo
 KINDS = ('vestidor', 'hair', 'expr')   # las bibliotecas a las que una cuenta puede añadir lo suyo
 _UUID = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
-VERSION = 472
+VERSION = 474
 _ctx = threading.local()   # la cuenta del hilo: la pone cada petición (y, a mano, cada hilo de fondo)
 def uid(): return getattr(_ctx, 'uid', None)   # en local siempre None
 DUENOS = tuple(e.strip().lower() for e in (os.environ.get('ARIA_DUENOS') or 'mix1994max@gmail.com').split(',') if e.strip())   # cuentas que pueden cambiar a Aria Cruz (en la web, la de Max)
@@ -1318,7 +1318,7 @@ def _rv_corre(rid, vd, vct, imgs, prompt, ver, res, c, modo='persona', motor='kl
                 except Exception: pass
                 paso(f'{nombre_} está recreando el vídeo…'); j['rv_entrada'] = time.time(); plog(f'recrear {rid[-8:]} · {ep} · ' + json.dumps({k_: v_ for k_, v_ in payload.items() if k_ not in ('image', 'video', 'images', 'reference_videos', 'reference_images')})[:400])
                 j['ws_id'] = _rv_lanza(ep, payload, nombre_); j['ws_nombre'] = nombre_; j['con_audio'] = bool(con_audio); j['bal0'] = bal0; _job_apunta(rid)   # v463: apuntado → si el servidor se reinicia, se recoge igual
-                gen = _rv_poll(j['ws_id'], nombre_, 600)[0]; gfp = os.path.join(d, 'gen.mp4'); _rv_baja(gen, gfp)
+                gen = _rv_poll(j['ws_id'], nombre_, 2400)[0]; gfp = os.path.join(d, 'gen.mp4'); _rv_baja(gen, gfp)   # v473: hasta 2 h (con cola en WaveSpeed, 30 min se quedaban cortos)
                 _rv_acaba(rid, j, gfp, orig if con_audio else None, bal0, paso)
             except Exception as e:
                 j['rv_st'] = 'failed'; j['failed'] = True; j['rv_err'] = str(e)[:300]; j['t_end'] = time.time(); j['paso'] = None; plog('recrear ✕ ' + str(e)[:300]); _job_done(rid)
@@ -1345,7 +1345,7 @@ def _rv_reanuda(rid):   # v463: el servidor se reinició con Seedance/Kling/… 
         with como(j.get('owner'), j.get('email') or '', bool(j.get('interno'))):
             try:
                 nombre_ = j.get('ws_nombre') or 'Seedance'; paso(f'{nombre_} sigue recreando el vídeo (el servidor se reinició)…')
-                gen = _rv_poll(j['ws_id'], nombre_, 600)[0]; gfp = os.path.join(d, 'gen.mp4'); _rv_baja(gen, gfp)
+                gen = _rv_poll(j['ws_id'], nombre_, 2400)[0]; gfp = os.path.join(d, 'gen.mp4'); _rv_baja(gen, gfp)   # v473: hasta 2 h (con cola en WaveSpeed, 30 min se quedaban cortos)
                 orig = os.path.join(refs_dir(), f'mc_{rid[-8:]}.mp4') if j.get('con_audio') else None
                 _rv_acaba(rid, j, gfp, orig, j.get('bal0'), paso)
             except Exception as e:
@@ -4084,6 +4084,13 @@ class H(SimpleHTTPRequestHandler):
             except ValueError: d0 = 0.0
             with _RAW_L: L_ = [x for x in _RAW if x['t'] > d0]
             return self._json(200, {'ok': True, 'raw': L_[-20:]})
+        if u.path == '/api/en_marcha':   # v473: los vídeos de ESTA cuenta que el servidor sigue generando (la página los recupera tras recargar, aunque recargara antes de apuntarlos)
+            out = []
+            for rid, j in list(jobs.items()):
+                if j.get('owner') != uid() or j.get('kind') != 'video' or j.get('file') or j.get('failed') or j.get('rv_st') == 'failed' or time.time() - float(j.get('t0') or 0) > 3 * 3600: continue
+                m = j.get('meta') or {}; po = next((f.get('poster') for f in (m.get('fuentes') or []) if isinstance(f, dict) and f.get('kind') == 'video' and f.get('poster')), None)
+                out.append({'rid': rid, 'name': str(m.get('name') or 'Vídeo')[:80], 'hidden': bool(m.get('hidden')), 'poster': po or (m.get('source') if isinstance(m.get('source'), str) and m['source'].startswith('assets/') else ''), 'paso': j.get('paso'), 'edad': round(time.time() - float(j.get('t0') or 0), 1), 'model': str(m.get('model') or '')[:60], 'prov': j.get('prov')})
+            return self._json(200, {'ok': True, 'jobs': out})
         if u.path == '/api/pendientes':   # trabajos de personajes que la página aún no ha recogido (si se recarga, no se pierden)
             out = [{'rid': rid, 'item': j.get('item'), 'meta': {k: (j.get('meta') or {}).get(k) for k in ('personaje', 'pjKind', 'name', 'pjEditor')}, 'file': j.get('file'), 'usd': j.get('usd'), 'kind': j.get('kind', 'image'), 'edad': round(time.time() - j['t0'], 1)}
                    for rid, j in list(jobs.items()) if j.get('owner') == uid() and not j.get('claimed') and not j.get('failed') and str((j.get('meta') or {}).get('personaje') or '_').strip()[:1] not in ('_', '')]
