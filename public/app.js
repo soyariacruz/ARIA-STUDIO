@@ -562,8 +562,9 @@ function vFrames() { const m = vcur(); if (m) return { ini: !!m.ini, fin: !!m.fi
 function vMax() { const m = vcur(); if (m) return Object.assign({ img: 1, vid: 0, aud: 0 }, m.max || {}); return { img: 9, vid: 3, aud: 3 }; }   // Seedance 2.0: 9 imágenes, 3 vídeos, 3 audios
 function vChars() { const m = vcur(); return m ? (VLIM[m.id] || 0) : VLIM.sd; }
 function vcur() { return state.vprov === 'wsg' ? VMODS.find(m => m.id === state.vmod) || null : null; }
+function vMiembro() { return !!(window.CUENTA && CUENTA.web && !state.interno && !CUENTA.interno && !CUENTA.ariaMia); }   /* v477: un miembro normal de la web (no el equipo) */
 function vQue() { // v436: «Qué quieres hacer» en Crear vídeo: crear (de una imagen o texto) o recrear (un vídeo de una persona → tu personaje). Recrear solo si el puente lo permite
-  const puede = !!(state.rvOn || state.gjOn); if (state.vque === 'recrear' && !puede) state.vque = 'crear';
+  const puede = !!(state.rvOn || state.gjOn); if (state.vque === 'recrear' && !puede) state.vque = 'crear'; if (puede && state.vque !== 'recrear' && vMiembro()) state.vque = 'recrear';   /* v477 (Max): para los miembros, de momento solo Motion control */
   if (state.vque === 'recrear' && !((state.vprov === 'rv' && state.rvOn) || (state.vprov === 'gj' && state.gjOn))) state.vprov = state.rvOn ? 'rv' : 'gj';
   if (state.vque !== 'recrear' && (state.vprov === 'rv' || state.vprov === 'gj')) state.vprov = localStorage.getItem('am_vprov_crear') || 'ws';
   if (state.vque !== 'recrear' && state.vprov === 'hf' && WS && window.CUENTA && CUENTA.web && APIS_ON && !APIS_ON.has('hf')) state.vprov = 'ws';   /* v436: sin Higgsfield pero con WaveSpeed, Seedance 2.0 va por WaveSpeed */
@@ -578,9 +579,9 @@ function ddRow(o) { // v439 (Max): una fila como la del personaje (icono, títul
   ch.onclick = e => { if (e.target.closest('.chardd')) return; show(); }; return ch; }
 function vQueRow() { // v436: las dos opciones, arriba del todo del panel · v439: como selector (fila + desplegable), por defecto Crear vídeo
   const puede = !!(state.rvOn || state.gjOn); const q = vQue();
-  const OPS = [['crear', '🎬', 'Crear vídeo', 'De una imagen o de texto, con tu personaje'], ['recrear', '🎭', 'Motion control', 'Un vídeo de una persona → tu personaje haciendo lo mismo']].filter(x => x[0] !== 'recrear' || puede);
+  const miembro = vMiembro(); const OPS = [['recrear', '🎭', 'Motion control', 'Un vídeo de una persona → tu personaje haciendo lo mismo'], ['crear', '🎬', 'Crear vídeo', miembro ? 'Pronto' : 'De una imagen o de texto, con tu personaje']].filter(x => x[0] !== 'recrear' || puede);   /* v477 (Max): Motion control para todos, primero; Crear vídeo, «pronto» para los miembros */
   const cur_ = OPS.find(x => x[0] === q) || OPS[0];
-  return ddRow({ cls: 'vque', ico: cur_[1], titulo: cur_[2], sub: cur_[3], tip: 'Crear o recrear', cab: 'Qué quieres hacer', items: OPS.map(x => ({ k: x[0], ico: x[1], b: x[2], small: x[3], on: x[0] === q })),
+  return ddRow({ cls: 'vque', ico: cur_[1], titulo: cur_[2], sub: cur_[3], tip: 'Crear o recrear', cab: 'Qué quieres hacer', items: OPS.map(x => ({ k: x[0], ico: x[1], b: x[2], small: x[3], on: x[0] === q, off: miembro && x[0] === 'crear', offMsg: 'Crear vídeo: pronto. De momento, Motion control.' })),
     pick: k => { if (state.vque === k) return; if (state.vque !== 'recrear') persist('am_vprov_crear', state.vprov); state.vque = k; persist('am_vque', k); vQue(); persist('am_vprov', state.vprov); renderSide(); } }); }
 function vprov() { vQue(); if (state.vprov === 'rv' && state.rvOn) return 'rv';   /* v435 */ if (state.vprov === 'gj' && state.gjOn) return 'gj'; return (state.vprov === 'wsg' && WS && vcur()) ? 'wsg' : ((state.vprov === 'ws' || state.vprov === 'ark') && WS) ? 'ws' : 'hf'; }   // v316: BytePlus fuera del selector
 function vmodelName() { const m = vcur(); if (vprov() === 'wsg') return m.nombre + ' · WaveSpeed'; return vprov() === 'ark' ? `Seedance ${state.vmodel} · ByteDance directo` : vprov() === 'ws' ? 'Seedance 2.0 · WaveSpeed' : 'Seedance 2.0 · Higgsfield'; }
@@ -615,7 +616,7 @@ function cineShow(it, play) { const c = $('#cine'), v = $('#cineVid'); { const i
 function cineStep(d) { const L = videoList(); if (!L.length) return; cineShow(L[(L.indexOf(state.vplay) + d + L.length) % L.length], state.cinePlay !== false); }   /* v474: como estaba el anterior */
 function cineInit() { if (!state.vplay || !videoList().includes(state.vplay)) cineShow(null); else cineShow(state.vplay); }   /* v458: si lo seleccionado es una imagen, se ve · v463 (Max): al entrar o recargar, el último vídeo (parado); una imagen solo si la pulsas */
 $('#cinePrev').onclick = () => cineStep(-1); $('#cineNext').onclick = () => cineStep(1);
-$('#cine').addEventListener('click', e => { if (e.target.closest('.cnav')) return; if (state.k > 0.25) { e.preventDefault(); e.stopPropagation(); setCompact(false); return; } const v = $('#cineVid'); if (e.target === v && state.vplay) { const r = v.getBoundingClientRect(); if (e.clientY < r.bottom - 64) { e.preventDefault(); e.stopPropagation(); v.pause(); openGal(state.vplay); } } }, true);
+$('#cine').addEventListener('click', e => { if (e.target.closest('.cnav')) return; if (state.k > 0.25) { e.preventDefault(); e.stopPropagation(); setCompact(false); return; } const v = $('#cineVid'); if (e.target === v && state.vplay) { const r = v.getBoundingClientRect(); if (e.clientY < r.bottom - 64 && e.clientY > r.top + 60) { e.preventDefault(); e.stopPropagation(); v.pause(); openGal(state.vplay); } } }, true);   /* v476 (Max): los controles de arriba (volumen, pantalla completa) tampoco abren la ventana */
 mirror.addEventListener('click', e => { if (state.tab === 'crear' && state.k > 0.25 && !e.target.closest('button, a, .primera')) {   /* v384: «Conectar mi clave» es un enlace */ e.stopPropagation(); setCompact(false); } }, true);
 function recreateVideo(it) { // carga en el panel todo lo que llevó ese vídeo: referencias, prompt, ajustes y proveedor
   const m = it.meta || {}; state.vpool = []; const src = m.source && !String(m.source).startsWith('data:') ? m.source : null;
@@ -639,7 +640,7 @@ mirror.addEventListener('click', e => { // en la Fototeca o cuando el espejo ens
   { const b_ = state.comp.biblio; if (b_ && src && String(src).split('?')[0] === String(b_.image || b_.src || '').split('?')[0]) { state.galGroup = TABS.biblio.items.filter(i => !i.group); openGal(b_); return; } }   /* v384: la foto a recrear, en el visor de la Fototeca */ if (src && !mirror.classList.contains('vidmode')) lightbox(src, cur() ? cur().name : '');
 });
 function mirrorClickable() { const it = cur(); if (!it || state.tab === 'perfil' || state.tab === 'creaciones') return false; if (state.tab === 'biblio') return true; const src = (state.tab === 'crear' && it.custom) ? ((it._liveBy && it._liveBy[compSig()]) || it._last) : it.live; return !!src; }
-{ const v = $('#vid'); v.controls = true; v.addEventListener('click', e => { if (e.offsetY > v.clientHeight - 56) e.stopPropagation(); }); }   /* v464 (Max): reproductor nativo (play/pausa, volumen, silencio); la barra de abajo no abre la ventana */ $('#vidBtn').onclick = () => { const v = $('#vid'); v.muted = !v.muted; };
+{ const v = $('#vid'); v.controls = true; v.addEventListener('click', e => { if (e.offsetY > v.clientHeight - 60 || e.offsetY < 60) e.stopPropagation(); }); }   /* v464 (Max): reproductor nativo (play/pausa, volumen, silencio); la barra de abajo no abre la ventana · v476: tampoco los controles de arriba (volumen, pantalla completa) */ $('#vidBtn').onclick = () => { const v = $('#vid'); v.muted = !v.muted; };
 function aspectPicker(list, val, onchange) { // cuadraditos con la forma real del formato
   const w = el('div', 'aspects'); list.forEach(a => { const [x, y] = a.split(':').map(Number); const b = el('button', 'asp' + (a === val ? ' on' : '')); const r = x / y; const bw = r >= 1 ? 22 : Math.round(22 * r), bh = r >= 1 ? Math.round(22 / r) : 22; b.innerHTML = `<i style="width:${bw}px;height:${bh}px"></i><span>${a}</span>`; b.title = a; b.onclick = () => onchange(a); w.appendChild(b); }); return w; }
 function selHoja(sl) { // v381: EL desplegable del móvil (sirve para todos los <select>): hoja abajo, compacta, con ✓ en el elegido
@@ -3991,7 +3992,7 @@ async function pollJobs_() {
     const sec = Math.round((performance.now() - job.t0) / 1000);
     if (st.status === 'completed' && st.file) finishJob(job, st);
     else if (st.status === 'lost' || (st.error && !['queued', 'in_progress'].includes(st.status)) || ['failed', 'nsfw', 'canceled'].includes(st.status)) failJob(job, st.error || st.status);
-    else if (sec > 900) cancelJob(job, 'sin respuesta en 15 min: cancelada');
+    else if (sec > (job.kind === 'video' ? 7200 : 900)) cancelJob(job, job.kind === 'video' ? 'sin respuesta en 2 h: cancelada' : 'sin respuesta en 15 min: cancelada');   /* v477 (Max): Motion control tarda 7–15 min y el servidor sigue; la página no lo da por perdido a los 15 */
     else { const antes = job.status; job.status = st.status || 'queued'; if (antes !== job.status && (state.tab === 'creaciones' || state.tab === 'crear')) { try { renderRail(); } catch (e) {} }   // al pasar de «en cola» a «generándose» desaparece «Cancelar»
       if (st.poster && job.it && (!job.it.thumb || job.it.thumb === C.base.thumb)) { job.it.thumb = st.poster; try { jobsGuardar(); } catch (e) {} if (state.tab === 'video' || state.tab === 'creaciones') { try { renderRail(); } catch (e) {} } }   /* v471 (Max): la tarjeta del vídeo en marcha enseña el vídeo original */ if ((st.paso || null) !== (job.paso || null)) { job.paso = st.paso || null; if (state.tab === 'video') { try { renderRail(); } catch (e) {} } }   /* v435 · v450: el paso se ve en la tarjeta de la galería */
       if (cur() === job.it && state.tab !== 'perfil' && state.tab !== 'creaciones') updateQueueOverlay(job); }
