@@ -304,9 +304,9 @@
       const mini = (field, title, sub, html) => { const g = grp(title, upZone('pjtmini', d[field], html, v => { d[field] = v; saveDraft(); paintWiz(); }, 2000, () => { d[field] = null; paintWiz(); }), sub); return g; };
       const col = el('div', 'pjtcol');
       col.appendChild(mini('cuerpoUp', 'Su cuerpo completo', 'opcional', '<span>＋</span><b>Ficha de cuerpo</b><small>si ya la tienes</small>'));
-      col.appendChild(mini('foto', 'Una foto de su cara', 'opcional', '<span>＋</span><b>Foto de frente</b><small>solo si tu ficha no es de cuatro vistas</small>'));
+      col.appendChild(mini('foto', 'Una foto de su cara', d.ficha ? 'opcional' : 'o solo esto', '<span>＋</span><b>Foto de frente</b><small>si no tienes ficha, basta con esta: sus vistas se crean después</small>'));
       const row = el('div', 'pjtengo'); row.appendChild(big); row.appendChild(col); b.appendChild(row);
-      b.appendChild(el('p', 'pjnote pjtnote', an ? 'Unos segundos: está sacando su edad, sus rasgos y lo que lleva siempre.' : d.analisis ? '✓ ' + esc(d.analisis) : d.ficha ? 'Ficha cargada. Sus datos los rellenas en el paso siguiente.' : 'Al soltarla, la IA lee la ficha y rellena su edad, sus rasgos y lo que lleva siempre (gafas, pendientes…). No se genera ninguna imagen.'));
+      b.appendChild(el('p', 'pjnote pjtnote', an ? 'Unos segundos: está sacando su edad, sus rasgos y lo que lleva siempre.' : d.analisis ? '✓ ' + esc(d.analisis) : d.ficha ? 'Ficha cargada. Sus datos los rellenas en el paso siguiente.' : d.foto ? 'Solo con su foto de frente: al guardar, su perfil te ofrece crear sus cuatro vistas, su cuerpo y su ficha principal (≈ $0,24).' : 'Al soltarla, la IA lee la ficha y rellena su edad, sus rasgos y lo que lleva siempre (gafas, pendientes…). No se genera ninguna imagen. Si no tienes ficha, sube solo una foto de frente.'));
     }
     if (id === 'tdatos') {
       const g = el('div', 'pjtd'); const c1 = el('div', 'pjtdcol');
@@ -426,14 +426,14 @@
       const ft = el('div', 'pjacts'); const ok = el('button', 'btn acc big', '✓ Guardar'); const go = () => { const v = inp.value.trim(); if (!v) { inp.focus(); return; } d.nombre = v; d._err = null; changed(d); m0.remove(); savePersona(); }; ok.onclick = go; inp.onkeydown = e => { if (e.key === 'Enter') go(); };
       const no = el('button', 'btn', 'Cancelar'); no.onclick = () => m0.remove(); ft.appendChild(ok); ft.appendChild(no); bx.appendChild(ft); setTimeout(() => inp.focus(), 50); return; }
     const tengo = w.mode === 'tengo' && !w.editId;
-    if (tengo && !d.ficha) { toast('Falta su ficha 360'); w.step = 0; paintWiz(); updSide(); return; }
+    if (tengo && !d.ficha && !d.foto) { toast('Falta su ficha 360 o una foto de frente'); w.step = 0; paintWiz(); updSide(); return; }   /* v421: con solo la foto, las vistas se crean después */
     if (tengo && !d.okIA) { d._err = 'okIA'; toast('Marca la casilla de abajo para poder guardar'); paintWiz(); return; }
     if (tengo && pj.analizando) { toast('Un momento: la IA está terminando de leer su ficha'); return; }
     const old = w.editId ? pj.list.find(p => p.id === w.editId) : null;
     const p = Object.assign({}, old || {}, d, { id: w.editId || undefined, prompt: promptOf(d), promptEditado: !!d.promptManual, modo: old ? (old.modo || w.mode) : w.mode }); ['foto', 'ficha', '_err', 'inspo', 'peloRef', 'detImg', 'estiloRef', 'cuerpoUp', 'analisis', 'accAuto', 'okIA', 'frontal', 'layout'].forEach(k => delete p[k]);
     ['foto', 'ficha360', 'retrato', 'avatar', 'vista_frente', 'vista_perfil', 'vista_tres', 'vista_espalda', 'vistasOk', 'cuerpo', 'combo', 'explora', 'inspo'].forEach(k => { if (old && old[k]) p[k] = old[k]; });
     const files = {}; if (d.foto) files.foto = d.foto; if (d.ficha) files.ficha360 = d.ficha;
-    if (tengo) { if (!d.foto) files.foto = await cropData(d.ficha, d.layout === 'otro' ? (d.frontal || [0, 0, 1, 1]) : [0, 0, 0.5, 0.5]); if (d.cuerpoUp) files.cuerpo = d.cuerpoUp; } // su foto de frente = la vista frontal de su ficha
+    if (tengo) { if (!d.foto && d.ficha) files.foto = await cropData(d.ficha, d.layout === 'otro' ? (d.frontal || [0, 0, 1, 1]) : [0, 0, 0.5, 0.5]); if (d.cuerpoUp) files.cuerpo = d.cuerpoUp; if (!d.ficha) p.modo = 'fotos'; }   /* v421: sin ficha, entra como «desde una foto»: su perfil ofrece crear las vistas */ // su foto de frente = la vista frontal de su ficha
     ['peloRef', 'detImg', 'estiloRef'].forEach(k => { if (isData(d[k])) files[k] = d[k]; else if (d[k]) p[k] = d[k]; });
     arr(d.inspo).forEach((v, i) => { if (isData(v)) files['inspo_' + (i + 1)] = v; });
     let r; try { r = await fetch('/api/personaje', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ p, files }) }).then(x => x.json()); } catch (e) { r = { error: String(e) }; }
@@ -729,7 +729,8 @@
     const a2 = el('div', 'pjc2box', `<div class="pjc2img pjgenv">${job ? `<div class="spin"></div><b>Generando su cuerpo</b><small data-t0="${job.t0}">0 s</small>` : body ? `<img src="${body}" alt="">` : '<i>Aún sin generar</i>'}</div><small>Su cuerpo</small>`); if (body && !job) a2.querySelector('.pjc2img').onclick = () => lightbox(body, 'Cuerpo · ' + p.nombre); g.appendChild(a2); box.appendChild(g);
     const a = el('div', 'pjacts pjc2acts');
     if (!job) { if (p.cuerpoCand) { const y = el('button', 'btn acc big', '✓ Aprobar y montar su ficha principal'); y.onclick = () => aprobarCuerpo(p); a.appendChild(y); }
-      const gb = el('button', 'btn pr' + (p.cuerpoCand ? ' pinkline' : ' acc big'), `${p.cuerpoCand ? '↻ Generar otro' : 'Generar su ficha de cuerpo'}<i>${fmtUsd(m.usd[state.quality])}</i>`); gb.disabled = !!pj.sending; gb.onclick = () => cuerpoGen(p); a.appendChild(gb); }
+      const gb = el('button', 'btn pr' + (p.cuerpoCand ? ' pinkline' : ' acc big'), `${p.cuerpoCand ? '↻ Generar otro' : 'Generar su ficha de cuerpo'}<i>${fmtUsd(m.usd[state.quality])}</i>`); gb.disabled = !!pj.sending; gb.onclick = () => cuerpoGen(p); a.appendChild(gb);
+      if (!p.cuerpo && !p.cuerpoCand && p.ficha360) { const sk = el('button', 'btn', 'Terminar sin cuerpo'); sk.title = 'Con su cara ya se puede crear. El cuerpo se añade cuando quieras desde su perfil.'; sk.onclick = () => { pj.modalOff[p.id] = true; cierraModal(); toast('Listo: ya puedes crear con ' + (p.nombre || 'tu personaje') + '. Su cuerpo, cuando quieras.'); if (pj.paint) pj.paint(); }; a.appendChild(sk); }   /* v421 (Max): solo la cara también vale */ }
     box.appendChild(a); return box;
   }
   // ---- EDITOR DE FICHA (v198), para un personaje YA terminado: sus piezas a la izquierda, la elegida en grande y, a la derecha, qué hacer con ella.
@@ -972,7 +973,7 @@
     const nav = el('div', 'pjnav'); const first = w.step === 0;
     const bk = el('button', 'btn', first ? '✕ Salir' : '← Atrás'); bk.onclick = async () => { if (first) { if ((await pregunta('¿Salir del creador? El borrador se queda guardado.'))) { pj.wiz = null; renderProfile(); renderSide(); } return; } w.step--; saveDraft(); paintWiz(); updSide(); host.scrollTop = 0; }; nav.appendChild(bk);
     if (stp.id === 'fin' || stp.id === 'tdatos') { const sv = el('button', 'btn acc', w.editId ? '✓ Guardar cambios' : stp.id === 'tdatos' ? '✓ Guardar mi personaje' : '✓ Guardar y crear su imagen'); sv.onclick = () => savePersona(); nav.appendChild(sv); }
-    if (w.step < S.length - 1) { const nx = el('button', 'btn acc', 'Siguiente →'); nx.onclick = () => { if (stp.id === 'tficha' && !d.ficha) { toast('Sube primero su ficha 360'); return; } w.step++; saveDraft(); paintWiz(); updSide(); host.scrollTop = 0; }; nav.appendChild(nx); }
+    if (w.step < S.length - 1) { const nx = el('button', 'btn acc', 'Siguiente →'); nx.onclick = () => { if (stp.id === 'tficha' && !d.ficha && !d.foto) { toast('Sube su ficha 360 o, al menos, una foto de frente'); return; } w.step++; saveDraft(); paintWiz(); updSide(); host.scrollTop = 0; }; nav.appendChild(nx); }
     host.appendChild(nav); host.scrollTop = keep; // elegir una tarjeta no mueve la vista
   }
   function startWiz() {

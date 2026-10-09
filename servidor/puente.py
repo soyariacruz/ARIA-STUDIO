@@ -43,7 +43,7 @@ MAX_CUERPO = 40 * 1024 * 1024    # tope de una petición en modo servidor
 MAX_BIBLIO = 200 * 1024 * 1024   # tope de un fichero de la biblioteca común al copiarlo
 KINDS = ('vestidor', 'hair', 'expr')   # las bibliotecas a las que una cuenta puede añadir lo suyo
 _UUID = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
-VERSION = 418
+VERSION = 421
 _ctx = threading.local()   # la cuenta del hilo: la pone cada petición (y, a mano, cada hilo de fondo)
 def uid(): return getattr(_ctx, 'uid', None)   # en local siempre None
 DUENOS = tuple(e.strip().lower() for e in (os.environ.get('ARIA_DUENOS') or 'mix1994max@gmail.com').split(',') if e.strip())   # cuentas que pueden cambiar a Aria Cruz (en la web, la de Max)
@@ -2284,38 +2284,60 @@ def _ig_refresca(d):   # el token largo se renueva solo cuando le quedan menos d
             if r.get('access_token'): d['token'] = r['access_token']; d['expira'] = int(time.time()) + int(r.get('expires_in') or 3600)
         except Exception as e: plog('ig refresh ✕ ' + str(e)[:160])
     return d
-def _ig_sync(d):   # trae perfil, 28 días de alcance y las últimas 30 publicaciones con sus métricas → d['datos']
-    tok = d['token']; hoy = time.strftime('%Y-%m-%d', time.gmtime()); ahora = int(time.time()); hace28 = ahora - 28 * 86400
-    me = _ig_get('me', tok, fields='user_id,username,name,profile_picture_url,followers_count,follows_count,media_count')
-    serie = []; tot = {}
-    try:
-        r = _ig_get('me/insights', tok, metric='reach', period='day', since=hace28, until=ahora)
-        for m in r.get('data') or []:
-            if m.get('name') == 'reach': serie = [{'d': (v.get('end_time') or '')[:10], 'v': v.get('value') or 0} for v in m.get('values') or []]
-    except Exception as e: plog('ig insights reach ✕ ' + str(e)[:160])
-    for met in ('profile_views', 'accounts_engaged', 'total_interactions', 'views', 'reach'):
+def _ig_sync(d):   # v419: perfil · totales de 7 y 28 días · series diarias (alcance, nuevos seguidores) · audiencia · 30 publicaciones con métricas
+    tok = d['token']; hoy = time.strftime('%Y-%m-%d', time.gmtime()); ahora = int(time.time()); hace = lambda n: ahora - n * 86400
+    me = _ig_get('me', tok, fields='user_id,username,name,profile_picture_url,followers_count,follows_count,media_count,biography,website')
+    TOT = ('reach', 'profile_views', 'accounts_engaged', 'total_interactions', 'likes', 'comments', 'shares', 'saves', 'views', 'follows_and_unfollows', 'profile_links_taps', 'replies')
+    def totales(dias):
+        out = {}
         try:
-            r = _ig_get('me/insights', tok, metric=met, period='day', metric_type='total_value', since=hace28, until=ahora)
-            for m in r.get('data') or []: tot[m.get('name')] = ((m.get('total_value') or {}).get('value')) or 0
-        except Exception as e: plog(f'ig insights {met} ✕ ' + str(e)[:120])
+            r = _ig_get('me/insights', tok, metric=','.join(TOT), period='day', metric_type='total_value', since=hace(dias), until=ahora)
+            for m in r.get('data') or []: out[m.get('name')] = ((m.get('total_value') or {}).get('value')) or 0
+            return out
+        except Exception as e: plog(f'ig totales {dias}d juntos ✕ ' + str(e)[:100])
+        for met in TOT:   # una a una: lo que falle se queda fuera
+            try:
+                r = _ig_get('me/insights', tok, metric=met, period='day', metric_type='total_value', since=hace(dias), until=ahora)
+                for m in r.get('data') or []: out[m.get('name')] = ((m.get('total_value') or {}).get('value')) or 0
+            except Exception as e: plog(f'ig total {met} ✕ ' + str(e)[:80])
+        return out
+    def serie(met):
+        try:
+            r = _ig_get('me/insights', tok, metric=met, period='day', since=hace(28), until=ahora)
+            for m in r.get('data') or []:
+                if m.get('name') == met: return [{'d': (v.get('end_time') or '')[:10], 'v': v.get('value') or 0} for v in m.get('values') or []]
+        except Exception as e: plog(f'ig serie {met} ✕ ' + str(e)[:120])
+        return []
+    def demo(bd):
+        try:
+            r = _ig_get('me/insights', tok, metric='follower_demographics', period='lifetime', metric_type='total_value', breakdown=bd)
+            for m in r.get('data') or []:
+                res = ((m.get('total_value') or {}).get('breakdowns') or [{}])[0].get('results') or []
+                L = sorted([{'k': ','.join((x.get('dimension_values') or ['?'])), 'v': x.get('value') or 0} for x in res], key=lambda z: -z['v'])
+                return L[:8]
+        except Exception as e: plog(f'ig audiencia {bd} ✕ ' + str(e)[:120])
+        return []
+    tot7, tot28 = totales(7), totales(28)
+    s_alc, s_seg = serie('reach'), serie('follower_count')
+    aud = {'pais': demo('country'), 'ciudad': demo('city'), 'edad': demo('age'), 'genero': demo('gender')}
     posts = []
     try:
         r = _ig_get('me/media', tok, fields='id,caption,media_type,media_product_type,media_url,thumbnail_url,permalink,timestamp,like_count,comments_count', limit=30)
         for m in (r.get('data') or [])[:30]:
-            p = {'id': m.get('id'), 'texto': str(m.get('caption') or '')[:160], 'tipo': m.get('media_product_type') or m.get('media_type') or '', 'img': m.get('thumbnail_url') or m.get('media_url') or '', 'url': m.get('permalink') or '', 't': m.get('timestamp') or '', 'likes': m.get('like_count') or 0, 'comentarios': m.get('comments_count') or 0, 'alcance': None, 'guardados': None, 'compartidos': None, 'vistas': None}
-            for mets in (('reach,saved,shares,views',), ('reach,saved,shares',), ('reach',)):
+            p = {'id': m.get('id'), 'texto': str(m.get('caption') or '')[:200], 'tipo': m.get('media_product_type') or m.get('media_type') or '', 'formato': m.get('media_type') or '', 'img': m.get('thumbnail_url') or m.get('media_url') or '', 'url': m.get('permalink') or '', 't': m.get('timestamp') or '', 'likes': m.get('like_count') or 0, 'comentarios': m.get('comments_count') or 0, 'alcance': None, 'guardados': None, 'compartidos': None, 'vistas': None, 'interacciones': None}
+            for mets in ('reach,saved,shares,views,total_interactions', 'reach,saved,shares,views', 'reach,saved,shares', 'reach'):
                 try:
-                    ri = _ig_get(f"{p['id']}/insights", tok, metric=mets[0])
+                    ri = _ig_get(f"{p['id']}/insights", tok, metric=mets)
                     for x in ri.get('data') or []:
-                        v = (x.get('values') or [{}])[0].get('value') if x.get('values') else x.get('total_value', {}).get('value')
-                        p[{'reach': 'alcance', 'saved': 'guardados', 'shares': 'compartidos', 'views': 'vistas'}.get(x.get('name'), x.get('name'))] = v
+                        v = (x.get('values') or [{}])[0].get('value') if x.get('values') else (x.get('total_value') or {}).get('value')
+                        p[{'reach': 'alcance', 'saved': 'guardados', 'shares': 'compartidos', 'views': 'vistas', 'total_interactions': 'interacciones'}.get(x.get('name'), x.get('name'))] = v
                     break
                 except Exception: continue
             posts.append(p)
     except Exception as e: plog('ig media ✕ ' + str(e)[:160])
-    hist = [h for h in (d.get('hist') or []) if isinstance(h, dict) and h.get('d') != hoy][-180:] + [{'d': hoy, 'seg': me.get('followers_count') or 0}]
+    hist = [h for h in (d.get('hist') or []) if isinstance(h, dict) and h.get('d') != hoy][-365:] + [{'d': hoy, 'seg': me.get('followers_count') or 0}]
     d['hist'] = hist; d['t_sync'] = ahora
-    d['datos'] = {'usuario': me.get('username') or '', 'nombre': me.get('name') or '', 'foto': me.get('profile_picture_url') or '', 'seguidores': me.get('followers_count') or 0, 'siguiendo': me.get('follows_count') or 0, 'publicaciones': me.get('media_count') or 0, 'serie_alcance': serie, 'totales_28d': tot, 'posts': posts}
+    d['datos'] = {'usuario': me.get('username') or '', 'nombre': me.get('name') or '', 'foto': me.get('profile_picture_url') or '', 'bio': str(me.get('biography') or '')[:300], 'web': me.get('website') or '', 'seguidores': me.get('followers_count') or 0, 'siguiendo': me.get('follows_count') or 0, 'publicaciones': me.get('media_count') or 0, 'serie_alcance': s_alc, 'serie_seguidores': s_seg, 'totales_7d': tot7, 'totales_28d': tot28, 'audiencia': aud, 'posts': posts}
     return d
 def _ig_datos(sync=False):
     d = _ig_lee()
@@ -4084,8 +4106,9 @@ class H(SimpleHTTPRequestHandler):
                 with open(dst, 'wb') as o: o.write(data)
             meta = {'file': rel, 'kind': kind, 'item': 'subida', 'name': 'Subida a la comunidad', 'usd': 0, 't': time.time(), 'prompt': prompt, 'subida': True}
             if body.get('modelo'): meta['model'] = str(body['modelo'])[:60]
-            pid = str(body.get('pid') or '')[:80]
-            if pid and re.fullmatch(r'[A-Za-z0-9_.-]+', pid): meta['chars'] = [pid]; meta['charName'] = str(body.get('personaje') or '')[:80]
+            pids = [str(x)[:120] for x in (body.get('pids') if isinstance(body.get('pids'), list) else [body.get('pid')]) if x]   # v420: varios, propios (pid) o de colaboraciones (com:cid:pid)
+            pids = [x for x in pids if re.fullmatch(r'[A-Za-z0-9_.-]+|com:[0-9a-f]{6,40}:[A-Za-z0-9_.-]{1,60}', x)][:6]
+            if pids: meta['chars'] = pids; meta['charName'] = str(body.get('personaje') or '')[:120]
             for k_, q_ in (('width', 'ancho'), ('height', 'alto')):
                 try: meta[k_] = int(body.get(q_) or 0) or None
                 except (TypeError, ValueError): pass
