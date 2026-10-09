@@ -43,7 +43,7 @@ MAX_CUERPO = 40 * 1024 * 1024    # tope de una petición en modo servidor
 MAX_BIBLIO = 200 * 1024 * 1024   # tope de un fichero de la biblioteca común al copiarlo
 KINDS = ('vestidor', 'hair', 'expr')   # las bibliotecas a las que una cuenta puede añadir lo suyo
 _UUID = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
-VERSION = 447
+VERSION = 448
 _ctx = threading.local()   # la cuenta del hilo: la pone cada petición (y, a mano, cada hilo de fondo)
 def uid(): return getattr(_ctx, 'uid', None)   # en local siempre None
 DUENOS = tuple(e.strip().lower() for e in (os.environ.get('ARIA_DUENOS') or 'mix1994max@gmail.com').split(',') if e.strip())   # cuentas que pueden cambiar a Aria Cruz (en la web, la de Max)
@@ -1196,7 +1196,12 @@ def _rv_malla(orig, comp, out, paso=None):   # v436: la malla facial de 478 punt
 def _rv_corre(rid, vd, vct, imgs, prompt, ver, res, c, modo='persona'):
     import tempfile
     j = jobs.get(rid); d = tempfile.mkdtemp(prefix='rv_'); _RV_VIVOS.add(rid)
-    def paso(t): j['paso'] = t; plog(f'recrear {rid[-8:]} · {t}')
+    def mem():   # v448: memoria de este proceso y pico de los ffmpeg ya terminados (en MB), para el log de Render
+        try:
+            import resource; k_ = 1024 if sys.platform != 'darwin' else 1048576
+            return f'{int(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / k_)} MB · hijos {int(resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss / k_)} MB'
+        except Exception: return '?'
+    def paso(t): j['paso'] = t; plog(f'recrear {rid[-8:]} · {t}'); print(f'recrear {rid[-8:]} · {t} · mem {mem()}', flush=True)
     try:
         with como(*c):
             try:
@@ -1206,7 +1211,8 @@ def _rv_corre(rid, vd, vct, imgs, prompt, ver, res, c, modo='persona'):
                 paso('Preparando el vídeo…'); dur, w0, h0, con_audio = _ff_info(src)
                 if dur < 1 or not w0: raise RuntimeError('no se puede leer ese vídeo: prueba con un MP4')
                 orig = os.path.join(d, 'original.mp4')   # hasta 30 s, 24 fps, lado largo ≤ 1280
-                _ff('-i', src, '-t', '15' if ver == '2.0' else '30', '-vf', "scale='if(gt(iw,ih),min(1280,iw),-2)':'if(gt(iw,ih),-2,min(1280,ih))':force_divisible_by=2", '-r', '24', '-c:v', 'libx264', '-crf', '22', '-preset', 'fast', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-b:a', '128k', orig)
+                X = ('-c:v', 'libx264', '-preset', 'veryfast', '-x264-params', 'rc-lookahead=10:threads=2')   # v448: x264 con poca memoria (medido: 130 MB la preparación, 205 MB el montaje)
+                _ff('-threads', '2', '-i', src, '-t', '15' if ver == '2.0' else '30', '-vf', "scale='if(gt(iw,ih),min(960,iw),-2)':'if(gt(iw,ih),-2,min(960,ih))':force_divisible_by=2", '-r', '24', *X, '-crf', '22', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-b:a', '128k', orig)
                 dur, w0, h0, con_audio = _ff_info(orig)
                 if modo == 'cosa':   # v436: «otra cosa» (ropa, lugar, un objeto): el vídeo tal cual a Seedance, sin análisis
                     entrada = orig; vurl = None
@@ -1232,7 +1238,7 @@ def _rv_corre(rid, vd, vct, imgs, prompt, ver, res, c, modo='persona'):
                   if errs.get('depth') or errs.get('sam'): raise RuntimeError(errs.get('depth') or errs.get('sam'))
                   depth, sam = os.path.join(d, 'depth.mp4'), os.path.join(d, 'sam.mp4'); _rv_baja(out['depth'], depth); _rv_baja(out['sam'], sam)
                   paso('Montando la silueta sobre el fondo…'); comp = os.path.join(d, 'comp.mp4')   # donde SAM ve a la persona (no negro) va la profundidad; el resto, el fondo original
-                  _ff('-i', orig, '-i', depth, '-i', sam, '-filter_complex', f"[0:v]format=gbrp[a];[1:v]scale={w0}:{h0},format=gbrp[b];[2:v]scale={w0}:{h0},format=gray,lutyuv=y='if(gt(val,6),255,0)',format=gbrp[m];[a][b][m]maskedmerge,format=yuv420p[v]", '-map', '[v]', '-an', '-c:v', 'libx264', '-crf', '18', '-preset', 'fast', comp)
+                  _ff('-threads', '2', '-filter_threads', '1', '-i', orig, '-i', depth, '-i', sam, '-filter_complex', f"[0:v]format=gbrp[a];[1:v]scale={w0}:{h0},format=gbrp[b];[2:v]scale={w0}:{h0},format=gray,lutyuv=y='if(gt(val,6),255,0)',format=gbrp[m];[a][b][m]maskedmerge,format=yuv420p[v]", '-map', '[v]', '-an', *X, '-crf', '20', comp)
                   if RV_MALLA:   # v447: en un proceso aparte, y solo si este servidor tiene memoria para ello
                       malla = os.path.join(d, 'malla.mp4')
                       try:
