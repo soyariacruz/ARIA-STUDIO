@@ -43,7 +43,7 @@ MAX_CUERPO = 40 * 1024 * 1024    # tope de una petición en modo servidor
 MAX_BIBLIO = 200 * 1024 * 1024   # tope de un fichero de la biblioteca común al copiarlo
 KINDS = ('vestidor', 'hair', 'expr')   # las bibliotecas a las que una cuenta puede añadir lo suyo
 _UUID = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
-VERSION = 465
+VERSION = 466
 _ctx = threading.local()   # la cuenta del hilo: la pone cada petición (y, a mano, cada hilo de fondo)
 def uid(): return getattr(_ctx, 'uid', None)   # en local siempre None
 DUENOS = tuple(e.strip().lower() for e in (os.environ.get('ARIA_DUENOS') or 'mix1994max@gmail.com').split(',') if e.strip())   # cuentas que pueden cambiar a Aria Cruz (en la web, la de Max)
@@ -1181,6 +1181,24 @@ def _rv_poll(rid, nombre, tope=400):
         if w_.get('status') == 'completed': return [o for o in (w_.get('outputs') or []) if o]
         if w_.get('status') == 'failed': raise RuntimeError(nombre + ' ✕ ' + str(w_.get('error') or 'falló')[:200])
     raise RuntimeError(nombre + ': sin respuesta en ' + str(tope * 3 // 60) + ' min')
+WM_PROMPT = 'Remove every watermark, logo, brand mark, caption, subtitle and text overlay from this image. Reconstruct the background naturally where they were. Change nothing else: same person, pose, expression, clothes, colors, framing and lighting.'
+WM_SOLS = {   # v466: 🧽 laboratorio de marcas de agua (precios de wavespeed.ai, 9 oct 2026). body(url, ar) → payload
+    'wmr':       {'ep': 'wavespeed-ai/image-watermark-remover', 'name': 'Quitamarcas de WaveSpeed', 'usd': 0.012, 'nota': 'hecho solo para esto: detecta y borra logos y textos', 'body': lambda u, ar: {'image': u, 'output_format': 'jpeg'}},
+    'era':       {'ep': 'wavespeed-ai/image-eraser',            'name': 'Borrador con instrucción',  'usd': 0.025, 'nota': 'se le dice qué borrar: «watermark, logo, text»', 'body': lambda u, ar: {'image': u, 'prompt': 'watermark, logo, brand mark, caption, text overlay', 'output_format': 'jpeg'}},
+    'txt':       {'ep': 'wavespeed-ai/image-text-remover',      'name': 'Quitatextos de WaveSpeed',  'usd': 0.15,  'nota': 'para textos y subtítulos sobre la imagen', 'body': lambda u, ar: {'image': u, 'output_format': 'jpeg'}},
+    'seedflash': {'ep': 'bytedance/seedream-v5.0-flash/edit',   'name': 'Seedream 5.0 Flash (editor)', 'usd': 0.027, 'nota': 'editor general con la instrucción de quitar marcas', 'body': lambda u, ar: _sflash(WM_PROMPT, [u], ar, 'std')},
+    'seedream':  {'ep': 'bytedance/seedream-v5.0-pro/edit',     'name': 'Seedream 5.0 Pro (editor)', 'usd': 0.045, 'nota': 'editor general, más fino', 'body': lambda u, ar: _sdrm(WM_PROMPT, [u], ar, 'std')},
+    'nb21':      {'ep': 'google/nano-banana-2.1/edit',          'name': 'Nano Banana 2.1 (editor)',  'usd': 0.04,  'nota': 'editor de Google con la instrucción', 'body': lambda u, ar: _nbp(WM_PROMPT, [u], ar, 'std')},
+    'nbp':       {'ep': 'google/nano-banana-pro/edit',          'name': 'Nano Banana Pro (editor)',  'usd': 0.14,  'nota': 'el editor más caro de Google', 'body': lambda u, ar: _nbp(WM_PROMPT, [u], ar, 'std')},
+    'gptimg':    {'ep': 'openai/gpt-image-2.5-sunburst/edit',   'name': 'GPT Image 2.5 (editor)',    'usd': 0.039, 'nota': 'editor de OpenAI con la instrucción', 'body': lambda u, ar: _gpt(WM_PROMPT, [u], ar, 'std')},
+}
+def _wm_puede(): return (not SERVIDOR) or bool(getattr(_ctx, 'interno', False)) or uid() == ARIA_UID   # el equipo y la cuenta de Aria (la de Max)
+def _ar_de(data):   # el formato más parecido al de la imagen (para los editores)
+    try:
+        from PIL import Image; import io
+        w, h = Image.open(io.BytesIO(data)).size; q = w / h
+        return min(ASPECTS, key=lambda a: abs(int(a.split(':')[0]) / int(a.split(':')[1]) - q))
+    except Exception: return '3:4'
 def _rv_baja(url, fp):   # v447: a disco por trozos (no se carga el vídeo entero en memoria)
     with urllib.request.urlopen(urllib.request.Request(url, headers={'User-Agent': UA}), timeout=600) as r_, open(fp, 'wb') as f: shutil.copyfileobj(r_, f, 1 << 20)
 RV_MALLA = os.environ.get('ARIA_MALLA', '' if SERVIDOR else '1') == '1'   # v447: en el servidor la malla facial (MediaPipe ≈ 300 MB) solo con ARIA_MALLA=1 (plan de Render con más memoria)
@@ -2925,7 +2943,10 @@ def fallida_apunta(meta, err, modelo=''):   # v270: una generación que no ha sa
         if re.search(r'saldo|cr[eé]dito|balance|insufficient|top.?up|no llega|conect|NSFW con Aria|no entra en el saldo|espacio|lleno|hacen falta', str(err), re.I): return   # sin saldo no es un fallo de la imagen
         m = meta if isinstance(meta, dict) else {}
         o = {'id': 'f' + hashlib.sha1(f'{time.time()}{err}'.encode()).hexdigest()[:10], 't': time.time() * 1000, 'tab': str(m.get('tab') or 'crear')[:20], 'name': str(m.get('name') or 'Creación')[:80], 'err': str(err)[:400], 'modelo': str(modelo or m.get('model') or '')[:60], 'thumb': ''}
-        with _fall_l: L = _fall_lee(); L.insert(0, o); _fall_guarda(L)
+        with _fall_l:
+            L = _fall_lee()
+            if any(x.get('name') == o['name'] and x.get('err') == o['err'] and o['t'] - float(x.get('t') or 0) < 600000 for x in L[:12]): return   # v466: la misma fallida en 10 min, una sola vez
+            L.insert(0, o); _fall_guarda(L)
         kpi_apunta('fallida', o['modelo'], o['tab'])   # v437
     except Exception as e: plog('fallida ✕ ' + str(e)[:120])
 _KPI_L = threading.Lock()
@@ -3942,6 +3963,16 @@ class H(SimpleHTTPRequestHandler):
         if u.path == '/api/video/modelos':   # v255: los modelos de vídeo de WaveSpeed que se ofrecen, con sus opciones
             try: return self._json(200, {'ok': True, 'modelos': _vinfo() if (load_ws() or _casa_base()) else []})
             except Exception as e: return self._json(200, {'ok': False, 'modelos': [], 'error': str(e)[:160]})
+        if u.path == '/api/admin/wm':   # v466: sin id → las soluciones; con id → estado de ese trabajo en WaveSpeed
+            if not _wm_puede(): return self._json(403, {'error': 'Solo para el equipo'})
+            pid_ = (q.get('id') or [''])[0]
+            if not pid_: return self._json(200, {'ok': True, 'sols': [{'k': k, 'name': v['name'], 'usd': v['usd'], 'nota': v['nota'], 'ep': v['ep']} for k, v in WM_SOLS.items()]})
+            if not re.fullmatch(r'[A-Za-z0-9_-]{6,80}', pid_): return self._json(400, {'error': 'id no válido'})
+            _ctx.ws_modo = 'propia'
+            try: w_ = (ws('GET', f'/api/v3/predictions/{pid_}/result').get('data') or {})
+            except Exception as e: return self._json(200, {'status': 'failed', 'error': str(e)[:200]})
+            O_ = [o for o in (w_.get('outputs') or []) if o]
+            return self._json(200, {'status': w_.get('status') or 'processing', 'url': O_[0] if O_ else None, 'error': w_.get('error') or None, 'usd': None})
         if u.path == '/api/fallidas':   # v270
             try: return self._json(200, {'ok': True, 'items': _fall_lee()})
             except Exception: return self._json(200, {'ok': True, 'items': []})
@@ -4092,6 +4123,20 @@ class H(SimpleHTTPRequestHandler):
         if SERVIDOR and self.path == '/api/feedback' and not _tope('feedback', 30, 86400): return self._json(429, {'error': 'Has mandado muchos comentarios hoy: gracias. Mañana puedes seguir.'})
         if SERVIDOR and self.path in ('/api/describir', '/api/personas_img', '/api/acc_cajas', '/api/pj_analizar') and not _tope('lectura', 120, 3600): return self._json(429, {'error': 'Demasiadas lecturas seguidas: espera unos minutos.'})
         if self.path in ('/api/perfil', '/api/ficha_panel', '/api/fichas360') and aria_fija(): return self._json(403, {'error': FIJA, 'fija': True})   # todo esto escribe en la ficha de Aria
+        if self.path == '/api/admin/wm':   # v466: {imagen:{data|path}, sols:[...]} → lanza cada solución en WaveSpeed con la clave de la cuenta → {lanzados:{k:{id}|{error}}}
+            if not _wm_puede(): return self._json(403, {'error': 'Solo para el equipo'})
+            n = int(self.headers.get('Content-Length') or 0); body = json.loads(self.rfile.read(n) or b'{}'); _ctx.ws_modo = 'propia'
+            if not load_ws(): return self._json(400, {'error': 'Conecta tu API de WaveSpeed en «Mis APIs»'})
+            im_ = body.get('imagen'); sols = [k for k in (body.get('sols') or []) if k in WM_SOLS]
+            if not isinstance(im_, dict) or not sols: return self._json(400, {'error': 'falta la imagen o las soluciones'})
+            try: data, ct = img_bytes(im_); url = ws_upload(data, ct); ar = _ar_de(data)
+            except Exception as e: return self._json(400, {'error': 'no se ha podido subir la imagen: ' + str(e)[:160]})
+            out = {}
+            for k in sols:
+                S_ = WM_SOLS[k]
+                try: out[k] = {'id': _rv_lanza(S_['ep'], S_['body'](url, ar), S_['name'])}
+                except Exception as e: out[k] = {'error': str(e)[:200]}
+            plog('wm · ' + ', '.join(f"{k}:{'ok' if v.get('id') else 'x'}" for k, v in out.items())); return self._json(200, {'ok': True, 'lanzados': out})
         if self.path == '/api/video_subir': return self._video_subir()   # v462
         if self.path == '/api/video': return self.do_video()
         if self.path == '/api/ig/desconectar':   # v418: se borra el token y los datos
@@ -4795,7 +4840,7 @@ class H(SimpleHTTPRequestHandler):
             return self._json(200, {'ok': True})
         if self.path == '/api/fallidas':   # v270: {quitar:id}
             n = int(self.headers.get('Content-Length') or 0); body = json.loads(self.rfile.read(n) or b'{}')
-            with _fall_l: L = [x for x in _fall_lee() if x.get('id') != body.get('quitar')]; _fall_guarda(L)
+            with _fall_l: L = [] if body.get('todas') else [x for x in _fall_lee() if x.get('id') != body.get('quitar')]; _fall_guarda(L)   # v466: {todas:true} las quita todas
             return self._json(200, {'ok': True, 'items': L})
         if self.path == '/api/voz':   # v292: {pid, eleven, eleven_nombre, preset, seed, desc}
             n = int(self.headers.get('Content-Length') or 0); body = json.loads(self.rfile.read(min(n, 20000)) or b'{}')
