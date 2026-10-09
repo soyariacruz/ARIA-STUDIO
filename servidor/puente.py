@@ -43,7 +43,7 @@ MAX_CUERPO = 40 * 1024 * 1024    # tope de una petición en modo servidor
 MAX_BIBLIO = 200 * 1024 * 1024   # tope de un fichero de la biblioteca común al copiarlo
 KINDS = ('vestidor', 'hair', 'expr')   # las bibliotecas a las que una cuenta puede añadir lo suyo
 _UUID = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
-VERSION = 415
+VERSION = 417
 _ctx = threading.local()   # la cuenta del hilo: la pone cada petición (y, a mano, cada hilo de fondo)
 def uid(): return getattr(_ctx, 'uid', None)   # en local siempre None
 DUENOS = tuple(e.strip().lower() for e in (os.environ.get('ARIA_DUENOS') or 'mix1994max@gmail.com').split(',') if e.strip())   # cuentas que pueden cambiar a Aria Cruz (en la web, la de Max)
@@ -1003,7 +1003,11 @@ def casa_info():   # el monedero tal como lo ve la web; None si la cuenta no va 
     if not casa_on(): return None
     with _cerrojo('mon'): m = _mon_lee()
     saldo = max(0.0, round(float(m['resto']) + float(m.get('extra') or 0) + float(m['bienvenida']) - _casa_en_curso(), 4)); p = WS_MODELS[CASA_DEF]['usd']['std']
-    return {'saldo': saldo, 'propia': bool(load_ws()), 'mensual': m['mensual'], 'resto': m['resto'], 'extra': float(m.get('extra') or 0), 'bienvenida': m['bienvenida'], 'mes': m['mes'], 'imagen': p, 'imagenes': int((saldo + 1e-6) // p), 'modelo': WS_MODELS[CASA_DEF]['name'], 'modelos': list(CASA_MODELOS), 'pausa': _casa_global() >= CASA_TOPE}
+    return {'saldo': saldo, 'propia': bool(load_ws()), 'mensual': m['mensual'], 'resto': m['resto'], 'extra': float(m.get('extra') or 0), 'bienvenida': m['bienvenida'], 'mes': m['mes'], 'imagen': p, 'imagenes': int((saldo + 1e-6) // p), 'modelo': WS_MODELS[CASA_DEF]['name'], 'modelos': list(CASA_MODELOS), 'pausa': _casa_global() >= CASA_TOPE, 'primero': 'api' if m.get('primero') == 'api' else 'regalo'}
+def _mon_primero():   # v417: qué se gasta primero cuando hay clave propia: 'regalo' (por defecto) o 'api'
+    try:
+        with _cerrojo('mon'): return 'api' if _mon_lee().get('primero') == 'api' else 'regalo'
+    except Exception: return 'regalo'
 def casa_puede(usd):   # ¿llega el saldo regalo para esto? Si no, error claro
     if _casa_global() >= CASA_TOPE: plog(f'🎁 TOPE GLOBAL del saldo regalo alcanzado ({CASA_TOPE} $ este mes)'); raise RuntimeError('El saldo regalo está en pausa unos días. Mientras tanto puedes generar con tu propia clave en «Mis APIs».')
     c = casa_info()
@@ -1963,7 +1967,7 @@ def _pub_lista():   # todo lo publicado por todas las cuentas, lo más nuevo pri
             pids_ = [x for x in ch_ if x == 'aria' or x in pjs_] or [k_ for k_, n_ in pjs_.items() if n_ and n_ in str(m.get('charName') or '')][:2]
             pid_ = pids_[0] if pids_ else ''
             out.append({'f': 'assets/publica/' + k, 'kind': 'video' if P[1] == 'video' else 'image', 'cid': cid, 'pid': pid_, 'pids': pids_[:2], 'comp': {k_: str(v_)[:80] for k_, v_ in (m.get('compIds') or {}).items() if k_ in ('vestidor', 'hair') and v_} if isinstance(m.get('compIds'), dict) else {}, 'hairCol': m.get('hairCol') if isinstance(m.get('hairCol'), dict) else None, 'subida': bool(m.get('subida')), 'alias': str(d['alias'].get(cid) or '')[:40], 'prompt': m['prompt'][:8000] if isinstance(m.get('prompt'), str) else '',
-                        'escena': {q: e[q][:4000] for q in ('d', 'r', 'f') if isinstance(e.get(q), str)}, 'modelo': str(m.get('model') or '')[:60], 'personaje': str(m.get('charName') or '')[:80], 't': m.get('t') or 0, 'ancho': m.get('width'), 'alto': m.get('height')})
+                        'escena': {q: e[q][:4000] for q in ('d', 'r', 'f') if isinstance(e.get(q), str)}, 'modelo': str(m.get('model') or '')[:60], 'personaje': str(m.get('charName') or '')[:80], 't': m.get('t') or 0, 'ancho': m.get('width'), 'alto': m.get('height'), 'comp': {str(k)[:30]: str(v)[:80] for k, v in (m.get('comp') or {}).items()} if isinstance(m.get('comp'), dict) else None})
     out.sort(key=lambda x: -(x['t'] or 0))
     with _PUB_L: _PUB['t'] = time.time(); _PUB['L'] = out
     return out
@@ -2284,7 +2288,7 @@ def _com_personajes(u, con_ocultos=False):   # los personajes de una cuenta tal 
             except Exception: t0 = 0
             out.append({'pid': d0, 'nombre': str(p.get('nombre') or d0)[:60], 'usuario': str(p.get('usuario') or '')[:60], 'edad': p.get('edad') if isinstance(p.get('edad'), (int, float)) else None,
                         'bio': str(p.get('bio') or '')[:600], 'ig': url[:200] if url.startswith('https://') else '', 'nicho': [str(x)[:30] for x in p.get('nicho')[:6]] if isinstance(p.get('nicho'), list) else [],
-                        'avatar': bool(p.get('avatar') or p.get('foto')), 'oculto': bool(p.get('privado')), 'abierto': bool(p.get('abierto')) and not p.get('privado'), 'igseg': str(p.get('igSeguidores') or ig.get('followers') or '')[:12], 'nuevo': bool(t0 and time.time() - t0 < 3 * 86400), 't': int(t0), 'orden': p.get('orden') if isinstance(p.get('orden'), int) else 999})
+                        'avatar': bool(p.get('avatar') or p.get('foto')), 'oculto': bool(p.get('privado')), 'abierto': bool(p.get('abierto')) and not p.get('privado'), 'igseg': str(p.get('igSeguidores') or ig.get('followers') or '')[:12], 'nuevo': bool(t0 and time.time() - t0 < 86400), 't': int(t0), 'orden': p.get('orden') if isinstance(p.get('orden'), int) else 999})
     except Exception as e: plog('comunidad: personajes ✕ ' + str(e))
     out.sort(key=lambda x: x['orden']); return out
 COM_DEMO_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'comunidad_demo')   # caras de los creadores de demo (recortes de rejillas ya generadas)
@@ -2765,7 +2769,10 @@ def _montar(idea, auto, tipo='imagen'):   # v307 → {'prompt', 'usd', 'casa'}: 
     if not t: t = ('⟪' + idea.strip() + '⟫\n\n' if idea.strip() else '') + '⟦' + auto.strip() + '⟧'; aviso = 'Claude no ha respondido: se ha juntado tal cual'
     elif falta:   # solo lo que falta: la frase de lo elegido que nombra esa referencia
         fr = [next((x.strip() for x in re.split(r'(?<=[.!?])\s+|\n', auto) if g_ in x), f'Usa {g_} como referencia.') for g_ in falta]
-        t += '\n⟦' + ' '.join(dict.fromkeys(fr)) + '⟧'; aviso = 'faltaba ' + ', '.join(falta)
+        pega = ' '.join(dict.fromkeys(fr))
+        if len(pega) > 0.4 * len(auto.strip()) or len(falta) * 2 >= len(tags):   # v417: si lo que falta es media escena, pegarlo detrás da un prompt doble (Frederic): se junta tal cual
+            t = ('⟪' + idea.strip() + '⟫\n\n' if idea.strip() else '') + '⟦' + auto.strip() + '⟧'; aviso = 'Claude dejó fuera ' + ', '.join(falta) + ': se ha juntado tal cual'
+        else: t += '\n⟦' + pega + '⟧'; aviso = 'faltaba ' + ', '.join(falta)
     if aviso: plog(f'montar · {tipo} · {aviso}')
     t = re.sub(r'@Image(\d+)', r'@IMG\1', t)   # v316
     return {'prompt': t[:6000], 'usd': usd, 'casa': casa_, 'aviso': aviso}
@@ -2989,11 +2996,13 @@ def _generar_r(self, body):   # v387: lo que era el cuerpo de /api/generar → (
             return _js(200, {'request_id': rid, 'usd': 0, 'credits': None, 'model': M['ep'], 'model_key': mkey, 'image_urls': urls, 'payload': {k_: v_ for k_, v_ in payload.items() if k_ != 'reference_images'}})
         if M.get('prov') == 'ws':
             usd = round(M['usd']['high' if body.get('quality') == 'high' else 'std'] + M.get('per', 0) * max(0, min(len(body.get('images', [])), M['refs']) - 1), 4)   # precio de tarifa con sus referencias
-            if not regalo and _casa_base() and load_ws() and mkey in CASA_MODELOS and not _es_nsfw(body.get('prompt0')):   # v357: con su clave, el regalo se gasta PRIMERO (si entra y le llega) · v413: también con 🔥
+            if not regalo and _casa_base() and load_ws():   # v417: si el regalo no se usa, se apunta por qué (para explicarlo si luego su clave no tiene saldo)
+                _ctx.regalo_porque = 'has elegido gastar primero tu API' if _mon_primero() == 'api' else 'ese modelo no entra en el saldo regalo' if mkey not in CASA_MODELOS else 'el texto es explícito y el saldo regalo no vale para eso' if _es_nsfw(body.get('prompt0')) else ''
+            if not regalo and _casa_base() and load_ws() and mkey in CASA_MODELOS and not _es_nsfw(body.get('prompt0')) and _mon_primero() == 'regalo':   # v357: con su clave, el regalo se gasta PRIMERO (si entra y le llega) · v413: también con 🔥 · v417: salvo que elija su API
                 _ctx.regalo_primero = True
                 try: c_ = casa_info(); regalo = bool(c_ and c_['saldo'] + 1e-6 >= usd and _casa_global() < CASA_TOPE)
                 except Exception: regalo = False
-                if not regalo: _ctx.regalo_primero = False
+                if not regalo: _ctx.regalo_primero = False; _ctx.regalo_porque = 'no llega para esta imagen'
                 else: _ctx.ws_modo = 'casa'   # se lanza con la clave de la casa
             if regalo:   # 🎁 paga el saldo regalo: nunca NSFW (la clave es la de la casa) y solo si le llega
                 if _es_nsfw(body.get('prompt0')): raise RuntimeError('El saldo regalo no vale para contenido NSFW. Para eso, conecta tu propia clave en «Mis APIs».')   # v413: el botón 🔥 sí vale con el regalo; el texto explícito, no
@@ -3030,7 +3039,9 @@ def _generar_r(self, body):   # v387: lo que era el cuerpo de /api/generar → (
         rid = res.get('request_id'); jobs[rid] = {'t0': time.time(), 'item': body.get('item', 'img'), 'model': mkey, 'usd': est.get('usd'), 'credits': est.get('credits'), 'meta': body.get('meta') or {}}
         return _js(200, {'request_id': rid, 'usd': est.get('usd'), 'credits': est.get('credits'), 'model': M['ep'], 'model_key': mkey, 'status_url': res.get('status_url'), 'image_urls': urls, 'payload': {k: v for k, v in payload.items() if k not in ('image_urls', 'image_url')}})
     except Exception as e:
-        plog('generar ✕ ' + str(e)); fallida_apunta((locals().get('body') or {}).get('meta') if isinstance(locals().get('body'), dict) else None, str(e)); return _js(400, {'error': str(e)})
+        msg = str(e); pq = getattr(_ctx, 'regalo_porque', ''); _ctx.regalo_porque = ''
+        if pq and re.search(r'insufficient|balance|top up|not enough|saldo insuficiente|sin saldo', msg, re.I): msg += ' · El saldo regalo no se ha usado porque ' + pq + '.'   # v417
+        plog('generar ✕ ' + msg); fallida_apunta((locals().get('body') or {}).get('meta') if isinstance(locals().get('body'), dict) else None, msg); return _js(400, {'error': msg})
 class H(SimpleHTTPRequestHandler):
     timeout = 120 if SERVIDOR else None   # en servidor, una conexión que no dice nada se corta
     def __init__(self, *a, **k): super().__init__(*a, directory=ROOT, **k)
@@ -3236,7 +3247,9 @@ class H(SimpleHTTPRequestHandler):
             return super().do_HEAD() if cabeza else super().do_GET()
         base = casa(); full = os.path.join(base, *rel.split('/'))
         if _dentro(base, full) and os.path.isfile(full):
-            self._cc = 'private, no-cache'; self._fijo = full
+            fijo = rel.startswith(('assets/live/', 'assets/video/')) and not rel.split('/')[-1].startswith('.')   # v416: las creaciones no cambian nunca (nombre con el id): el navegador se las queda
+            if fijo and 'm=1' in (urllib.parse.urlparse(self.path).query or '') and rel.startswith('assets/live/') and '/.mini/' not in rel: full = _mini_de(full)   # v416: miniatura para la cuadrícula
+            self._cc = 'private, max-age=2592000, immutable' if fijo else 'private, no-cache'; self._fijo = full
             return super().do_HEAD() if cabeza else super().do_GET()
         if _biblio_ok(rel) and DATOS:   # v298: si la biblioteca común está en el disco del servidor (Filmoteca ligera, muestras de voz), se sirve de ahí; antes se mandaba al almacén público, donde no están
             bb = os.path.join(DATOS, 'biblioteca'); bf = os.path.join(bb, *rel.split('/'))
@@ -3654,6 +3667,13 @@ class H(SimpleHTTPRequestHandler):
         if SERVIDOR and self.path in ('/api/describir', '/api/personas_img', '/api/acc_cajas', '/api/pj_analizar') and not _tope('lectura', 120, 3600): return self._json(429, {'error': 'Demasiadas lecturas seguidas: espera unos minutos.'})
         if self.path in ('/api/perfil', '/api/ficha_panel', '/api/fichas360') and aria_fija(): return self._json(403, {'error': FIJA, 'fija': True})   # todo esto escribe en la ficha de Aria
         if self.path == '/api/video': return self.do_video()
+        if self.path == '/api/monedero':   # v417: {primero: 'regalo'|'api'} qué se gasta antes cuando hay clave propia
+            n = int(self.headers.get('Content-Length') or 0); body = json.loads(self.rfile.read(n) or b'{}')
+            if _casa_base():
+                k = 'api' if (body.get('primero') == 'api') else 'regalo'
+                with _cerrojo('mon'): m = _mon_lee(); m['primero'] = k; _mon_guarda(m)
+                return self._json(200, {'ok': True, 'primero': k})
+            return self._json(200, {'ok': False})
         if self.path == '/api/regalo/visto':   # v398: la ventanita del regalo ya se ha visto
             if _casa_base():
                 with _cerrojo('mon'): m = _mon_lee(); m['regalo_visto'] = int(time.time()); _mon_guarda(m)

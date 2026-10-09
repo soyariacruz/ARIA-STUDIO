@@ -49,9 +49,9 @@
     } catch (e) { fallos.push('comunidad → ' + String((e && e.stack) || e).split('\n').slice(0, 2).join(' | ').slice(0, 260)); if (window.comCierra) comCierra(true); } }
   // 6) el personaje de otro creador (v202): entra como persona añadida, nunca como principal
   { const pr = charList().find(c => c.prestado); if (pr) { paso('prestado · añadir', () => { state.comp = {}; state.extras = []; saveExtras(); addExtra(pr.id); if (!extraChars().some(c => c.id === pr.id)) throw new Error('no entra como persona añadida'); }); pinta('con prestado'); plan('con prestado');
-      paso('prestado · referencias', () => { const R = crearRefs(); const x = R.find(r => r.key === 'ficha:' + pr.id); if (!x || !/^assets\/prestamo\//.test(x.img.path) || !/foto\.jpg$/.test(x.thumb)) throw new Error('referencia rara: ' + JSON.stringify(x)); });
+      paso('prestado · referencias', () => { const R = crearRefs(); const x = R.find(r => r.key === 'ficha:' + pr.id); if (!x || !/^assets\/prestamo\//.test(x.img.path) || !/ficha\.jpg$/.test(x.thumb)) throw new Error('referencia rara (v417: la miniatura es su ficha real): ' + JSON.stringify(x)); });
       paso('prestado · nunca principal', () => { const a = CH().id; setChar(pr.id, true); if (CH().id !== a) throw new Error('se ha puesto de principal'); });
-      paso('prestado · sin NSFW', () => { if (!ariaSinNsfw()) throw new Error('NSFW disponible con un personaje prestado'); });
+      paso('prestado · 🔥 disponible (v415: ya no hay desnudos, el 🔥 solo añade el parámetro)', () => { if (ariaSinNsfw()) throw new Error('ariaSinNsfw() tendría que ser false desde v415'); });
       paso('prestado · quitar', () => { removeExtra(pr.id); if (extraChars().some(c => c.id === pr.id)) throw new Error('no se quita'); }); } }
   // dejarlo como estaba
   paso('restaurar', () => { state.comp = guard.comp; state.compBy = guard.compBy; state.extras = guard.extras; saveExtras(); state.nsfw = guard.nsfw; setChar(guard.ch, true); setTab(guard.tab); });
