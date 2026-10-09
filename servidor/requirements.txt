@@ -2,3 +2,8 @@ Pillow>=10
 opencv-python-headless>=4.8,<5
 cryptography>=42
 imageio-ffmpeg>=0.6
+numpy
+absl-py~=2.3
+flatbuffers~=25.9
+matplotlib
+certifi

@@ -13,7 +13,7 @@ services:
     region: frankfurt
     plan: starter
     rootDir: servidor
-    buildCommand: pip install -r requirements.txt
+    buildCommand: pip install -r requirements.txt && pip install --no-deps mediapipe==1.1.0
     startCommand: python3 puente.py
     healthCheckPath: /salud
     buildFilter:

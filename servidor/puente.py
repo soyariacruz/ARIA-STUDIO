@@ -43,7 +43,7 @@ MAX_CUERPO = 40 * 1024 * 1024    # tope de una petición en modo servidor
 MAX_BIBLIO = 200 * 1024 * 1024   # tope de un fichero de la biblioteca común al copiarlo
 KINDS = ('vestidor', 'hair', 'expr')   # las bibliotecas a las que una cuenta puede añadir lo suyo
 _UUID = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
-VERSION = 435
+VERSION = 445
 _ctx = threading.local()   # la cuenta del hilo: la pone cada petición (y, a mano, cada hilo de fondo)
 def uid(): return getattr(_ctx, 'uid', None)   # en local siempre None
 DUENOS = tuple(e.strip().lower() for e in (os.environ.get('ARIA_DUENOS') or 'mix1994max@gmail.com').split(',') if e.strip())   # cuentas que pueden cambiar a Aria Cruz (en la web, la de Max)
@@ -1151,7 +1151,41 @@ def _rv_espera(ep, body, nombre, tope=400):   # lanza un modelo de WaveSpeed y e
         if w_.get('status') == 'failed': raise RuntimeError(nombre + ' ✕ ' + str(w_.get('error') or 'falló')[:200])
     raise RuntimeError(nombre + ': sin respuesta en ' + str(tope * 3 // 60) + ' min')
 def _rv_baja(url, fp): open(fp, 'wb').write(urllib.request.urlopen(urllib.request.Request(url, headers={'User-Agent': UA}), timeout=600).read())
-def _rv_corre(rid, vd, vct, imgs, prompt, ver, res, c):
+_MP_URL = 'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/latest/face_landmarker.task'
+def _rv_malla(orig, comp, out, paso=None):   # v436: la malla facial de 478 puntos (MediaPipe) del vídeo original, dibujada sobre la silueta → Seedance clava la boca y la mirada
+    try:
+        import cv2, numpy as np, mediapipe as mp
+    except Exception as e: plog('malla facial: sin MediaPipe aquí (' + str(e)[:80] + '), sigue sin malla'); return False
+    import subprocess
+    cache = os.path.join(DATOS or RAIZ, 'cache'); os.makedirs(cache, exist_ok=True); model = os.path.join(cache, 'face_landmarker.task')
+    if not os.path.exists(model):
+        tmp = model + '.tmp'; urllib.request.urlretrieve(_MP_URL, tmp); os.replace(tmp, model)
+    V = mp.tasks.vision
+    opts = V.FaceLandmarkerOptions(base_options=mp.tasks.BaseOptions(model_asset_path=model), running_mode=V.RunningMode.VIDEO, num_faces=1, min_face_detection_confidence=0.15, min_face_presence_confidence=0.15, min_tracking_confidence=0.15)
+    C = V.FaceLandmarksConnections; tess = [(x.start, x.end) for x in C.FACE_LANDMARKS_TESSELATION]; lips = [(x.start, x.end) for x in C.FACE_LANDMARKS_LIPS]; eyes = [(x.start, x.end) for x in list(C.FACE_LANDMARKS_LEFT_EYE) + list(C.FACE_LANDMARKS_RIGHT_EYE)]
+    co, cc = cv2.VideoCapture(orig), cv2.VideoCapture(comp); w, h = int(co.get(3)), int(co.get(4)); fps = co.get(5) or 24
+    ff = subprocess.Popen([_ffmpeg(), '-v', 'error', '-y', '-f', 'rawvideo', '-pix_fmt', 'bgr24', '-s', f'{w}x{h}', '-r', str(fps), '-i', '-', '-c:v', 'libx264', '-crf', '18', '-preset', 'fast', '-pix_fmt', 'yuv420p', out], stdin=subprocess.PIPE)
+    n = vistos = 0
+    try:
+        with V.FaceLandmarker.create_from_options(opts) as det:
+            while True:
+                ok1, fo = co.read(); ok2, fc = cc.read()
+                if not (ok1 and ok2): break
+                if fc.shape[:2] != fo.shape[:2]: fc = cv2.resize(fc, (w, h))
+                res = det.detect_for_video(mp.Image(image_format=mp.ImageFormat.SRGB, data=cv2.cvtColor(fo, cv2.COLOR_BGR2RGB)), int(n * 1000 / fps))
+                for face in res.face_landmarks:
+                    vistos += 1; P = [(int(l.x * w), int(l.y * h)) for l in face]
+                    for a, b in tess: cv2.line(fc, P[a], P[b], (205, 170, 50), 1, cv2.LINE_AA)
+                    for a, b in lips: cv2.line(fc, P[a], P[b], (100, 135, 255), 2, cv2.LINE_AA)
+                    for a, b in eyes: cv2.line(fc, P[a], P[b], (150, 255, 130), 2, cv2.LINE_AA)
+                ff.stdin.write(fc.tobytes()); n += 1
+                if paso and n % 120 == 0: paso(f'Dibujando la malla facial… {n} fotogramas')
+    finally:
+        ff.stdin.close(); ff.wait(); co.release(); cc.release()
+    plog(f'malla facial: {vistos}/{n} fotogramas con cara')
+    if not n or ff.returncode: raise RuntimeError('no se pudo dibujar la malla facial')
+    return vistos > n * 0.5   # con la cara en menos de la mitad de los fotogramas, mejor sin malla
+def _rv_corre(rid, vd, vct, imgs, prompt, ver, res, c, modo='persona'):
     import tempfile
     j = jobs.get(rid); d = tempfile.mkdtemp(prefix='rv_'); _RV_VIVOS.add(rid)
     def paso(t): j['paso'] = t; plog(f'recrear {rid[-8:]} · {t}')
@@ -1166,7 +1200,9 @@ def _rv_corre(rid, vd, vct, imgs, prompt, ver, res, c):
                 orig = os.path.join(d, 'original.mp4')   # hasta 30 s, 24 fps, lado largo ≤ 1280
                 _ff('-i', src, '-t', '30', '-vf', "scale='if(gt(iw,ih),min(1280,iw),-2)':'if(gt(iw,ih),-2,min(1280,ih))':force_divisible_by=2", '-r', '24', '-c:v', 'libx264', '-crf', '18', '-preset', 'fast', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-b:a', '160k', orig)
                 dur, w0, h0, con_audio = _ff_info(orig)
-                paso('Subiendo el vídeo a WaveSpeed…'); vurl = ws_upload(open(orig, 'rb').read(), 'video/mp4')
+                if modo == 'cosa':   # v436: «otra cosa» (ropa, lugar, un objeto): el vídeo tal cual a Seedance, sin análisis
+                    entrada = orig; vurl = None
+                else: paso('Subiendo el vídeo a WaveSpeed…'); vurl = ws_upload(open(orig, 'rb').read(), 'video/mp4')
                 out, errs = {}, {}
                 def hilo(k, f):
                     def go():
@@ -1179,22 +1215,29 @@ def _rv_corre(rid, vd, vct, imgs, prompt, ver, res, c):
                     return _rv_espera('wavespeed-ai/audio-vocal-isolator', {'audio': ws_upload(open(wav, 'rb').read(), 'audio/wav')}, 'voz')[0]
                 T = [hilo('depth', lambda: _rv_espera('wavespeed-ai/depth-anything-v3/video', {'video': vurl, 'colormap': 'inferno'}, 'profundidad')[0]),
                      hilo('sam', lambda: _rv_espera('wavespeed-ai/sam3-video', {'video': vurl, 'prompt': 'person', 'apply_mask': True}, 'silueta (SAM 3)')[0])] + ([hilo('voz', voz)] if con_audio else [])
-                paso('Analizando el vídeo: profundidad, silueta y voz…')
-                for t in T: t.start()
-                for t in T: t.join()
-                if errs.get('depth') or errs.get('sam'): raise RuntimeError(errs.get('depth') or errs.get('sam'))
-                depth, sam = os.path.join(d, 'depth.mp4'), os.path.join(d, 'sam.mp4'); _rv_baja(out['depth'], depth); _rv_baja(out['sam'], sam)
-                paso('Montando la silueta sobre el fondo…'); comp = os.path.join(d, 'comp.mp4')   # donde SAM ve a la persona (no negro) va la profundidad; el resto, el fondo original
-                _ff('-i', orig, '-i', depth, '-i', sam, '-filter_complex', f"[0:v]format=gbrp[a];[1:v]scale={w0}:{h0},format=gbrp[b];[2:v]scale={w0}:{h0},format=gray,lutyuv=y='if(gt(val,6),255,0)',format=gbrp[m];[a][b][m]maskedmerge,format=yuv420p[v]", '-map', '[v]', '-an', '-c:v', 'libx264', '-crf', '18', '-preset', 'fast', comp)
-                entrada = comp; agudo = 'asetrate=44100*1.189207,aresample=44100,atempo=0.840896'   # +3 semitonos sin cambiar la duración
-                if con_audio:
+                if modo != 'cosa':
+                  paso('Analizando el vídeo: profundidad, silueta y voz…')
+                  for t in T: t.start()
+                  for t in T: t.join()
+                agudo = 'asetrate=44100*1.189207,aresample=44100,atempo=0.840896'   # +3 semitonos sin cambiar la duración
+                if modo != 'cosa':
+                  if errs.get('depth') or errs.get('sam'): raise RuntimeError(errs.get('depth') or errs.get('sam'))
+                  depth, sam = os.path.join(d, 'depth.mp4'), os.path.join(d, 'sam.mp4'); _rv_baja(out['depth'], depth); _rv_baja(out['sam'], sam)
+                  paso('Montando la silueta sobre el fondo…'); comp = os.path.join(d, 'comp.mp4')   # donde SAM ve a la persona (no negro) va la profundidad; el resto, el fondo original
+                  _ff('-i', orig, '-i', depth, '-i', sam, '-filter_complex', f"[0:v]format=gbrp[a];[1:v]scale={w0}:{h0},format=gbrp[b];[2:v]scale={w0}:{h0},format=gray,lutyuv=y='if(gt(val,6),255,0)',format=gbrp[m];[a][b][m]maskedmerge,format=yuv420p[v]", '-map', '[v]', '-an', '-c:v', 'libx264', '-crf', '18', '-preset', 'fast', comp)
+                  paso('Dibujando la malla facial…'); malla = os.path.join(d, 'malla.mp4')   # v436
+                  try:
+                      if _rv_malla(orig, comp, malla, paso): comp = malla; j['malla'] = True
+                  except Exception as e: plog('malla facial ✕ ' + str(e)[:160])
+                  entrada = comp
+                if modo != 'cosa' and con_audio:
                     entrada = os.path.join(d, 'entrada.mp4')
                     if out.get('voz'):
                         voz0 = os.path.join(d, 'voz.mp3'); _rv_baja(out['voz'], voz0)
                         _ff('-i', comp, '-i', voz0, '-map', '0:v', '-map', '1:a', '-af', agudo, '-c:v', 'copy', '-c:a', 'aac', '-b:a', '160k', '-shortest', entrada)
                     else: _ff('-i', comp, '-i', orig, '-map', '0:v', '-map', '1:a', '-af', agudo, '-c:v', 'copy', '-c:a', 'aac', '-b:a', '160k', '-shortest', entrada)   # sin voz aislada: el audio entero, más agudo
-                paso('Subiendo a Seedance…'); eurl = ws_upload(open(entrada, 'rb').read(), 'video/mp4')
-                payload = {'video': eurl, 'prompt': prompt, 'reference_images': imgs, 'resolution': res, 'generate_audio': False}
+                paso('Subiendo a Seedance…'); eurl = ws_upload(open(entrada, 'rb').read(), 'video/mp4') if entrada != orig or vurl is None else vurl
+                payload = dict({'video': eurl, 'prompt': prompt, 'resolution': res, 'generate_audio': False}, **({'reference_images': imgs} if imgs else {}))
                 try: dd = (ws('POST', '/api/v3/model/price', {'model_id': RV_VER[ver], 'inputs': payload}) or {}).get('data') or {}; j['usd_sd'] = float(dd['discounted_price']) if dd.get('discounted_price') is not None else float(dd.get('price') or 0)
                 except Exception: pass
                 paso(f'Seedance {ver} está recreando el vídeo…'); j['rv_entrada'] = time.time()
@@ -1835,8 +1878,12 @@ def _oai_ok(k):   # v324: comprueba una clave de OpenAI listando modelos (no gas
     rq = urllib.request.Request('https://api.openai.com/v1/models', headers={'Authorization': 'Bearer ' + k, 'User-Agent': UA}); urllib.request.urlopen(rq, timeout=30).read(); return True
 def _el_ok(k):   # v324: ElevenLabs, listando sus modelos (no gasta)
     rq = urllib.request.Request('https://api.elevenlabs.io/v1/models', headers={'xi-api-key': k, 'User-Agent': UA}); urllib.request.urlopen(rq, timeout=30).read(); return True
-def _mg_ok(k):   # v328: Magnific (antes la API de Freepik) → api.magnific.com; se comprueba listando tareas (no genera)
-    rq = urllib.request.Request(MG_URL + '/v1/ai/mystic', headers={'x-magnific-api-key': k, 'Accept': 'application/json', 'User-Agent': UA}); urllib.request.urlopen(rq, timeout=30).read(); return True
+def _mg_ok(k):   # v328: Magnific (antes la API de Freepik) → api.magnific.com; se comprueba pidiendo la lista de tareas (no genera)
+    rq = urllib.request.Request(MG_URL + '/v1/ai/mystic', headers={'x-magnific-api-key': k, 'Accept': 'application/json', 'User-Agent': UA})
+    try: urllib.request.urlopen(rq, timeout=30).read(); return True
+    except urllib.error.HTTPError as e:   # v437 (Frederic): desde oct 2026 esa ruta responde 404 «Task not found» con una clave buena; con una mala, 401
+        if e.code in (401, 403): raise
+        return True
 def _claude_ok(k):   # comprueba una clave de Anthropic listando sus modelos (no genera ni cobra nada)
     rq = urllib.request.Request('https://api.anthropic.com/v1/models?limit=1', headers={'x-api-key': k, 'anthropic-version': '2023-06-01', 'User-Agent': UA})
     urllib.request.urlopen(rq, timeout=30).read(); return True
@@ -2790,7 +2837,22 @@ def fallida_apunta(meta, err, modelo=''):   # v270: una generación que no ha sa
         m = meta if isinstance(meta, dict) else {}
         o = {'id': 'f' + hashlib.sha1(f'{time.time()}{err}'.encode()).hexdigest()[:10], 't': time.time() * 1000, 'tab': str(m.get('tab') or 'crear')[:20], 'name': str(m.get('name') or 'Creación')[:80], 'err': str(err)[:400], 'modelo': str(modelo or m.get('model') or '')[:60], 'thumb': ''}
         with _fall_l: L = _fall_lee(); L.insert(0, o); _fall_guarda(L)
+        kpi_apunta('fallida', o['modelo'], o['tab'])   # v437
     except Exception as e: plog('fallida ✕ ' + str(e)[:120])
+_KPI_L = threading.Lock()
+def _kpi_fp(): return os.path.join(casa(), 'kpi.json')
+def _kpi_lee():   # v437: fallidas y eliminadas de los últimos 180 días → [{t (ms), q: 'fallida'|'eliminada', modelo, tab}]
+    try: L = json.load(open(_kpi_fp(), encoding='utf-8'))
+    except Exception: L = []
+    lim = (time.time() - 180 * 86400) * 1000; return [x for x in (L if isinstance(L, list) else []) if isinstance(x, dict) and float(x.get('t') or 0) > lim]
+def kpi_apunta(q, modelo='', tab=''):
+    try:
+        with _KPI_L:
+            L = _kpi_lee(); L.insert(0, {'t': int(time.time() * 1000), 'q': q, 'modelo': str(modelo or '')[:60], 'tab': str(tab or '')[:20]}); L = L[:5000]
+            fp = _kpi_fp(); os.makedirs(os.path.dirname(fp), exist_ok=True)
+            with open(fp + '.tmp', 'w', encoding='utf-8') as f: json.dump(L, f, ensure_ascii=False)
+            os.replace(fp + '.tmp', fp)
+    except Exception as e: plog('kpi ✕ ' + str(e)[:120])
 _TOPES = {}; _TOPES_L = threading.Lock()
 def _tope(que, n, seg):   # v260: como mucho n veces cada seg segundos por cuenta (en memoria)
     k = (uid(), que); ahora = time.time()
@@ -3299,6 +3361,15 @@ class H(SimpleHTTPRequestHandler):
         self.send_response(206); self.send_header('Content-Type', self.guess_type(path)); self.send_header('Accept-Ranges', 'bytes')
         self.send_header('Content-Range', f'bytes {start}-{end}/{size}'); self.send_header('Content-Length', str(end - start + 1)); self.send_header('Last-Modified', self.date_time_string(int(st.st_mtime))); self.end_headers()
         f.seek(start); return _Trozo(f, end - start + 1)
+    def _adm_consola(self):   # v436: {email, on} → ese miembro ve la consola de desarrollador (lo mismo que Admin › Miembros, pero desde el Mac con la llave ARIA_ADMIN)
+        adm = os.environ.get('ARIA_ADMIN') or ''
+        if len(adm) < 32 or not hmac.compare_digest((self.headers.get('X-Admin') or '').encode(), adm.encode()): return self._corta(404)
+        try: body = json.loads(self.rfile.read(int(self.headers.get('Content-Length') or 0)) or b'{}')
+        except Exception: return self._json(400, {'error': 'no es JSON'})
+        e = str(body.get('email') or '').strip().lower()
+        if not re.fullmatch(r'[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}', e): return self._json(400, {'error': 'correo no válido'})
+        S_ = _consola_lee(); (S_.add(e) if body.get('on') else S_.discard(e)); _consola_guarda(S_); _ADM_P[1] = None; plog(f'consola {e} → {"on" if body.get("on") else "off"} (admin)')
+        return self._json(200, {'ok': True, 'consola': sorted(S_)})
     def _subir_biblio(self):   # v290: la Filmoteca ligera al disco del servidor ($DATOS/biblioteca/assets/videoteca/…) — solo con la llave ARIA_ADMIN
         adm = os.environ.get('ARIA_ADMIN') or ''
         if len(adm) < 32 or not hmac.compare_digest((self.headers.get('X-Admin') or '').encode(), adm.encode()): return self._corta(404)
@@ -3326,6 +3397,7 @@ class H(SimpleHTTPRequestHandler):
         if self.command == 'GET' and self.path.startswith('/api/admin/copia'): return self._copia()
         if self.command in ('GET', 'POST') and self.path.startswith('/api/admin/importar'): return self._importar()
         if self.command == 'POST' and self.path == '/api/admin/biblio': return self._subir_biblio()   # v290
+        if self.command == 'POST' and self.path == '/api/admin/consola': return self._adm_consola()   # v436
         if self.command == 'GET' and self.path.startswith('/salud/aria-sync') and SERVIDOR:   # v350: el local de Max se trae la Aria de la web (llave en ~/.claude/aria-sync.env del Mac; aquí solo su huella)
             if hashlib.sha256((self.headers.get('X-Aria-Sync') or '').encode()).hexdigest() != ARIA_SYNC_H: return self._corta(403)
             if self.path == '/salud/aria-sync':
@@ -3775,6 +3847,7 @@ class H(SimpleHTTPRequestHandler):
                     except Exception: fg = fp
                 fp = fg
             b = open(fp, 'rb').read(); self.send_response(200); self.send_header('Content-Type', 'image/jpeg'); self.send_header('Content-Length', str(len(b))); self.send_header('Cache-Control', 'private, max-age=60'); self.end_headers(); self.wfile.write(b); return
+        if u.path == '/api/kpi': return self._json(200, {'ok': True, 'items': _kpi_lee()})   # v437: fallidas y eliminadas (180 días) para el Registro de gasto
         if u.path == '/api/carpetas': return self._json(200, {'carpetas': _carp_lee(), 'compartidas': _comp_lista(_com_lee(), _cid()) if SERVIDOR else [], 'favs': _favs_lee()})   # las mías · y las que me comparten (para la Fototeca)
         if u.path == '/api/video/modelos':   # v255: los modelos de vídeo de WaveSpeed que se ofrecen, con sus opciones
             try: return self._json(200, {'ok': True, 'modelos': _vinfo() if (load_ws() or _casa_base()) else []})
@@ -4044,6 +4117,8 @@ class H(SimpleHTTPRequestHandler):
             if not full: return self._json(400, {'error': 'archivo no válido'})
             trash = papelera()
             import shutil
+            try: mj_ = json.load(open(full + '.json', encoding='utf-8')) if os.path.exists(full + '.json') else {}; kpi_apunta('eliminada', (mj_.get('model') if isinstance(mj_, dict) else '') or '', (mj_.get('tab') if isinstance(mj_, dict) else '') or '')   # v437
+            except Exception: pass
             for extra in ('', '.json'):
                 if os.path.exists(full + extra): shutil.move(full + extra, os.path.join(trash, os.path.basename(full) + extra))
             po = os.path.splitext(full)[0] + '.jpg'
@@ -5379,7 +5454,8 @@ class H(SimpleHTTPRequestHandler):
         if not nsfw_ok() and _con_aria(body) and _es_nsfw(body.get('prompt')): return self._json(400, {'error': 'El contenido NSFW con Aria Cruz no está disponible en esta cuenta.'})
         try:
             mode = body.get('mode') if body.get('mode') in VIDEO_MODELS else 'i2v'; M = VIDEO_MODELS[mode]
-            if body.get('provider') in ('ws', 'wsg') and casa_on(): raise RuntimeError('El vídeo todavía no entra en el saldo regalo: conecta tu propia clave en «Mis APIs».')   # v260: antes de subir nada
+            if body.get('provider') in ('ws', 'wsg', 'rv') and _casa_base() and not load_ws(): raise RuntimeError('El vídeo no entra en el saldo regalo: conecta tu propia clave de WaveSpeed en «Mis APIs».')   # v260 · v445: solo si NO tiene clave propia
+            if body.get('provider') in ('ws', 'wsg', 'rv'): _ctx.ws_modo = 'propia'   # v445 (Raúl): con clave propia el vídeo va siempre con ella, aunque haya elegido gastar primero el regalo
             if body.get('provider') == 'rv':   # v435: 🎭 Recrear vídeo con Seedance (cadena propia por WaveSpeed; de momento solo la cuenta de Aria)
                 if not _rv_puede(): raise RuntimeError('Recrear un vídeo todavía no está disponible')
                 if not load_ws(): raise RuntimeError('Conecta tu API de WaveSpeed en «Mis APIs»')
@@ -5389,13 +5465,14 @@ class H(SimpleHTTPRequestHandler):
                 if not str(vct).startswith('video/'): raise RuntimeError('eso no es un vídeo')
                 if len(vd) > 200 * 1024 * 1024: raise RuntimeError('el vídeo pesa demasiado (máximo 200 MB)')
                 imgs = [resolve_ws(r) for r in by_kind(body.get('refs') or [], 'image')][:9]
-                if not imgs: raise RuntimeError('hace falta al menos una imagen: tu personaje')
+                if not imgs and body.get('rvmodo') != 'cosa': raise RuntimeError('hace falta al menos una imagen: tu personaje')
                 ver = body.get('vmodel') if body.get('vmodel') in RV_VER else '2.5'; res = body.get('resolution') if body.get('resolution') in ('480p', '720p', '1080p') else '720p'
+                modo = 'cosa' if body.get('rvmodo') == 'cosa' else 'persona'   # v436
                 rid = 'rv-' + hashlib.sha1(os.urandom(16)).hexdigest()[:24]
-                jobs[rid] = {'t0': time.time(), 'item': body.get('item', 'video'), 'kind': 'video', 'model': 'rv-' + ver, 'prov': 'rv', 'rv_st': 'in_progress', 'paso': 'Preparando…', 'usd': body.get('usd'), 'credits': None, 'meta': body.get('meta') or {}}
+                jobs[rid] = {'t0': time.time(), 'item': body.get('item', 'video'), 'kind': 'video', 'model': 'rv-' + ver, 'prov': 'rv', 'rvmodo': modo, 'rv_st': 'in_progress', 'paso': 'Preparando…', 'usd': body.get('usd'), 'credits': None, 'meta': body.get('meta') or {}}
                 c = (getattr(_ctx, 'uid', None), getattr(_ctx, 'email', ''), getattr(_ctx, 'interno', False))
-                threading.Thread(target=_rv_corre, args=(rid, vd, vct, imgs, str(body.get('prompt') or '')[:5000], ver, res, c), daemon=True).start()
-                return self._json(200, {'request_id': rid, 'model': RV_VER[ver], 'usd': body.get('usd'), 'payload': {'prompt': str(body.get('prompt') or '')[:5000], 'resolution': res, 'modelo': RV_VER[ver], 'imagenes': len(imgs), 'cadena': 'depth-anything-v3 + sam3-video + audio-vocal-isolator → video-edit'}})
+                threading.Thread(target=_rv_corre, args=(rid, vd, vct, imgs, str(body.get('prompt') or '')[:5000], ver, res, c, modo), daemon=True).start()
+                return self._json(200, {'request_id': rid, 'model': RV_VER[ver], 'usd': body.get('usd'), 'payload': {'prompt': str(body.get('prompt') or '')[:5000], 'resolution': res, 'modelo': RV_VER[ver], 'imagenes': len(imgs), 'modo': modo, 'cadena': ('depth-anything-v3 + sam3-video + malla facial + audio-vocal-isolator → video-edit' if modo == 'persona' else 'video-edit directo')}})
             if body.get('provider') == 'gj':   # v378: 🎭 Genjutsu — un vídeo de 4-30 s + 1-8 imágenes (tu personaje, su ropa, el lugar) → el mismo vídeo con lo tuyo
                 if SERVIDOR and not GJ_WEB: raise RuntimeError('Recrear un vídeo todavía no está disponible')
                 if not _hf_listo(): raise RuntimeError('Genjutsu es de Higgsfield: conecta tu API de Higgsfield en «Mis APIs»')
