@@ -43,7 +43,7 @@ MAX_CUERPO = 40 * 1024 * 1024    # tope de una petición en modo servidor
 MAX_BIBLIO = 200 * 1024 * 1024   # tope de un fichero de la biblioteca común al copiarlo
 KINDS = ('vestidor', 'hair', 'expr')   # las bibliotecas a las que una cuenta puede añadir lo suyo
 _UUID = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
-VERSION = 468
+VERSION = 472
 _ctx = threading.local()   # la cuenta del hilo: la pone cada petición (y, a mano, cada hilo de fondo)
 def uid(): return getattr(_ctx, 'uid', None)   # en local siempre None
 DUENOS = tuple(e.strip().lower() for e in (os.environ.get('ARIA_DUENOS') or 'mix1994max@gmail.com').split(',') if e.strip())   # cuentas que pueden cambiar a Aria Cruz (en la web, la de Max)
@@ -2446,7 +2446,10 @@ def _estado(rid):   # estado de un trabajo; si ha terminado, lo descarga a la ca
         else: st = api('GET', f'/requests/{rid}/status')
     except Exception as e:   # un 429/5xx o un corte de red al preguntar NO es un trabajo perdido: la web vuelve a preguntar
         plog(f'estado {rid[:8]} ✕ {e}'); return 503, {'error': str(e), 'retry': True}
-    status = st.get('status'); out = {'status': status, 'usd': j.get('usd'), 'credits': j.get('credits'), 'model': j.get('model'), 'elapsed': round(time.time() - j['t0'], 1), **({'paso': j['paso']} if j.get('paso') else {})}   # v435: el paso de la cadena
+    status = st.get('status'); out = {'status': status, 'usd': j.get('usd'), 'credits': j.get('credits'), 'model': j.get('model'), 'elapsed': round(time.time() - j['t0'], 1), **({'paso': j['paso']} if j.get('paso') else {})}
+    if j.get('prov') == 'rv':   # v471 (Max): la carátula del vídeo ORIGINAL que se está recreando, para la tarjeta (también tras recargar)
+        try: po_ = next((f.get('poster') for f in ((j.get('meta') or {}).get('fuentes') or []) if f.get('kind') == 'video' and f.get('poster')), None); out['poster'] = po_
+        except Exception: pass   # v435: el paso de la cadena
     if j.get('casa') and status == 'completed' and not j.get('cobrado'):   # 🎁 se cobra al terminar (si falla, no se cobra nada)
         j['cobrado'] = True
         try: casa_cobra(j.get('usd'), 'imagen', rid, j.get('model'))
@@ -4136,7 +4139,7 @@ class H(SimpleHTTPRequestHandler):
                 S_ = WM_SOLS[k]
                 try:
                     id_ = _rv_lanza(S_['ep'], S_['body'](url, ar), S_['name'])
-                    jobs[id_] = {'t0': time.time(), 'item': 'sinmarca', 'kind': 'image', 'model': k, 'prov': 'ws', 'usd': S_['usd'], 'bal0': None, 'credits': None, 'meta': {'name': '🧽 Sin marcas · ' + S_['name'], 'tab': 'crear', 'model': S_['name'], 'herramienta': 'wm', 'ep': S_['ep'], 'quality': 'std', 'aspect': ar, 'prompt': WM_PROMPT if k not in ('wmr', 'txt', 'era') else ''}}   # v468: como cualquier generación: se recoge sola y entra en Mis creaciones
+                    jobs[id_] = {'t0': time.time(), 'item': 'sinmarca', 'kind': 'image', 'model': k, 'prov': 'ws', 'usd': S_['usd'], 'bal0': None, 'credits': None, 'meta': {'name': ('🧽 Sin marcas · ' + str(body.get('nombre') or '')[:50]).rstrip(' ·') + ' · ' + S_['name'], 'tab': 'crear', 'model': S_['name'], 'herramienta': 'wm', 'ep': S_['ep'], 'quality': 'std', 'aspect': ar, 'prompt': WM_PROMPT if k not in ('wmr', 'txt', 'era') else ''}}   # v468: como cualquier generación: se recoge sola y entra en Mis creaciones
                     out[k] = {'id': id_}
                 except Exception as e: out[k] = {'error': str(e)[:200]}
             plog('wm · ' + ', '.join(f"{k}:{'ok' if v.get('id') else 'x'}" for k, v in out.items())); return self._json(200, {'ok': True, 'lanzados': out})
