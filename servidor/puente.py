@@ -43,7 +43,7 @@ MAX_CUERPO = 40 * 1024 * 1024    # tope de una petición en modo servidor
 MAX_BIBLIO = 200 * 1024 * 1024   # tope de un fichero de la biblioteca común al copiarlo
 KINDS = ('vestidor', 'hair', 'expr')   # las bibliotecas a las que una cuenta puede añadir lo suyo
 _UUID = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
-VERSION = 467
+VERSION = 468
 _ctx = threading.local()   # la cuenta del hilo: la pone cada petición (y, a mano, cada hilo de fondo)
 def uid(): return getattr(_ctx, 'uid', None)   # en local siempre None
 DUENOS = tuple(e.strip().lower() for e in (os.environ.get('ARIA_DUENOS') or 'mix1994max@gmail.com').split(',') if e.strip())   # cuentas que pueden cambiar a Aria Cruz (en la web, la de Max)
@@ -1183,14 +1183,14 @@ def _rv_poll(rid, nombre, tope=400):
     raise RuntimeError(nombre + ': sin respuesta en ' + str(tope * 3 // 60) + ' min')
 WM_PROMPT = 'Remove every watermark, logo, brand mark, caption, subtitle and text overlay from this image. Reconstruct the background naturally where they were. Change nothing else: same person, pose, expression, clothes, colors, framing and lighting.'
 WM_SOLS = {   # v466: 🧽 laboratorio de marcas de agua (precios de wavespeed.ai, 9 oct 2026). body(url, ar) → payload
-    'wmr':       {'ep': 'wavespeed-ai/image-watermark-remover', 'name': 'Quitamarcas de WaveSpeed', 'usd': 0.012, 'nota': 'hecho solo para esto: detecta y borra logos y textos', 'body': lambda u, ar: {'image': u, 'output_format': 'jpeg'}},
-    'era':       {'ep': 'wavespeed-ai/image-eraser',            'name': 'Borrador con instrucción',  'usd': 0.025, 'nota': 'se le dice qué borrar: «watermark, logo, text»', 'body': lambda u, ar: {'image': u, 'prompt': 'watermark, logo, brand mark, caption, text overlay', 'output_format': 'jpeg'}},
-    'txt':       {'ep': 'wavespeed-ai/image-text-remover',      'name': 'Quitatextos de WaveSpeed',  'usd': 0.15,  'nota': 'para textos y subtítulos sobre la imagen', 'body': lambda u, ar: {'image': u, 'output_format': 'jpeg'}},
-    'seedflash': {'ep': 'bytedance/seedream-v5.0-flash/edit',   'name': 'Seedream 5.0 Flash (editor)', 'usd': 0.027, 'nota': 'editor general con la instrucción de quitar marcas', 'body': lambda u, ar: _sflash(WM_PROMPT, [u], ar, 'std')},
-    'seedream':  {'ep': 'bytedance/seedream-v5.0-pro/edit',     'name': 'Seedream 5.0 Pro (editor)', 'usd': 0.045, 'nota': 'editor general, más fino', 'body': lambda u, ar: _sdrm(WM_PROMPT, [u], ar, 'std')},
-    'nb21':      {'ep': 'google/nano-banana-2.1/edit',          'name': 'Nano Banana 2.1 (editor)',  'usd': 0.04,  'nota': 'editor de Google con la instrucción', 'body': lambda u, ar: _nbp(WM_PROMPT, [u], ar, 'std')},
-    'nbp':       {'ep': 'google/nano-banana-pro/edit',          'name': 'Nano Banana Pro (editor)',  'usd': 0.14,  'nota': 'el editor más caro de Google', 'body': lambda u, ar: _nbp(WM_PROMPT, [u], ar, 'std')},
-    'gptimg':    {'ep': 'openai/gpt-image-2.5-sunburst/edit',   'name': 'GPT Image 2.5 (editor)',    'usd': 0.039, 'nota': 'editor de OpenAI con la instrucción', 'body': lambda u, ar: _gpt(WM_PROMPT, [u], ar, 'std')},
+    'wmr':       {'ep': 'wavespeed-ai/image-watermark-remover', 'name': 'Quitamarcas de WaveSpeed', 'usd': 0.012, 'nota': 'hecho solo para esto: detecta y borra logos y textos', 'activo': False, 'body': lambda u, ar: {'image': u, 'output_format': 'jpeg'}},
+    'era':       {'ep': 'wavespeed-ai/image-eraser',            'name': 'Borrador con instrucción',  'usd': 0.025, 'nota': 'se le dice qué borrar: «watermark, logo, text»', 'activo': False, 'body': lambda u, ar: {'image': u, 'prompt': 'watermark, logo, brand mark, caption, text overlay', 'output_format': 'jpeg'}},
+    'txt':       {'ep': 'wavespeed-ai/image-text-remover',      'name': 'Quitatextos de WaveSpeed',  'usd': 0.15,  'nota': 'para textos y subtítulos sobre la imagen', 'activo': False, 'body': lambda u, ar: {'image': u, 'output_format': 'jpeg'}},
+    'seedflash': {'ep': 'bytedance/seedream-v5.0-flash/edit',   'name': 'Seedream 5.0 Flash (editor)', 'usd': 0.027, 'nota': 'editor general con la instrucción de quitar marcas', 'activo': True, 'body': lambda u, ar: _sflash(WM_PROMPT, [u], ar, 'std')},
+    'seedream':  {'ep': 'bytedance/seedream-v5.0-pro/edit',     'name': 'Seedream 5.0 Pro (editor)', 'usd': 0.045, 'nota': 'editor general, más fino', 'activo': True, 'body': lambda u, ar: _sdrm(WM_PROMPT, [u], ar, 'std')},
+    'nb21':      {'ep': 'google/nano-banana-2.1/edit',          'name': 'Nano Banana 2.1 (editor)',  'usd': 0.04,  'nota': 'editor de Google con la instrucción', 'activo': False, 'body': lambda u, ar: _nbp(WM_PROMPT, [u], ar, 'std')},
+    'nbp':       {'ep': 'google/nano-banana-pro/edit',          'name': 'Nano Banana Pro (editor)',  'usd': 0.14,  'nota': 'el editor más caro de Google', 'activo': False, 'body': lambda u, ar: _nbp(WM_PROMPT, [u], ar, 'std')},
+    'gptimg':    {'ep': 'openai/gpt-image-2.5-sunburst/edit',   'name': 'GPT Image 2.5 (editor)',    'usd': 0.039, 'nota': 'editor de OpenAI con la instrucción', 'activo': True, 'body': lambda u, ar: _gpt(WM_PROMPT, [u], ar, 'std')},
 }
 def _wm_puede(): return (not SERVIDOR) or bool(getattr(_ctx, 'interno', False)) or uid() == ARIA_UID   # el equipo y la cuenta de Aria (la de Max)
 def _ar_de(data):   # el formato más parecido al de la imagen (para los editores)
@@ -3966,7 +3966,7 @@ class H(SimpleHTTPRequestHandler):
         if u.path == '/api/admin/wm':   # v466: sin id → las soluciones; con id → estado de ese trabajo en WaveSpeed
             if not _wm_puede(): return self._json(403, {'error': 'Solo para el equipo'})
             pid_ = (q.get('id') or [''])[0]
-            if not pid_: return self._json(200, {'ok': True, 'sols': [{'k': k, 'name': v['name'], 'usd': v['usd'], 'nota': v['nota'], 'ep': v['ep']} for k, v in WM_SOLS.items()]})
+            if not pid_: return self._json(200, {'ok': True, 'sols': [{'k': k, 'name': v['name'], 'usd': v['usd'], 'nota': v['nota'], 'ep': v['ep'], 'activo': bool(v.get('activo'))} for k, v in WM_SOLS.items()]})
             if not re.fullmatch(r'[A-Za-z0-9_-]{6,80}', pid_): return self._json(400, {'error': 'id no válido'})
             _ctx.ws_modo = 'propia'
             try: w_ = (ws('GET', f'/api/v3/predictions/{pid_}/result').get('data') or {})
@@ -4134,7 +4134,10 @@ class H(SimpleHTTPRequestHandler):
             out = {}
             for k in sols:
                 S_ = WM_SOLS[k]
-                try: out[k] = {'id': _rv_lanza(S_['ep'], S_['body'](url, ar), S_['name'])}
+                try:
+                    id_ = _rv_lanza(S_['ep'], S_['body'](url, ar), S_['name'])
+                    jobs[id_] = {'t0': time.time(), 'item': 'sinmarca', 'kind': 'image', 'model': k, 'prov': 'ws', 'usd': S_['usd'], 'bal0': None, 'credits': None, 'meta': {'name': '🧽 Sin marcas · ' + S_['name'], 'tab': 'crear', 'model': S_['name'], 'herramienta': 'wm', 'ep': S_['ep'], 'quality': 'std', 'aspect': ar, 'prompt': WM_PROMPT if k not in ('wmr', 'txt', 'era') else ''}}   # v468: como cualquier generación: se recoge sola y entra en Mis creaciones
+                    out[k] = {'id': id_}
                 except Exception as e: out[k] = {'error': str(e)[:200]}
             plog('wm · ' + ', '.join(f"{k}:{'ok' if v.get('id') else 'x'}" for k, v in out.items())); return self._json(200, {'ok': True, 'lanzados': out})
         if self.path == '/api/video_subir': return self._video_subir()   # v462

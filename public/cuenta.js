@@ -142,7 +142,7 @@ html.sinapi #livedot,html.sinapi .meter{display:none!important}
     const seguro = location.protocol === 'https:' ? '; Secure' : '';
     document.cookie = 'aria_token=' + (CU.token ? encodeURIComponent(CU.token) + '; Max-Age=3600' : '; Max-Age=0') + '; Path=/; SameSite=Lax' + seguro;
   }
-  const SERVIDOR_URL = LOCAL ? '' : 'https://aria-studio.onrender.com';   // el servidor de las cuentas (generar, personajes, creaciones). En desarrollo (localhost:3000) lo pone web_dev.py
+  const SERVIDOR_URL = LOCAL ? '' : 'https://aria-studio.onrender.com'; CU.servidorUrl = SERVIDOR_URL;   /* v468: para las subidas por XHR (progreso), que no pasan por fetch */   // el servidor de las cuentas (generar, personajes, creaciones). En desarrollo (localhost:3000) lo pone web_dev.py
   const fetch0 = window.fetch.bind(window);
   const NAT = (() => { try { return (window.Capacitor && Capacitor.isNativePlatform && Capacitor.isNativePlatform()) ? String(Capacitor.getPlatform()) : ''; } catch (e) { return ''; } })(); window.ARIA_APP = NAT; if (NAT) document.documentElement.classList.add('app');   /* v402: dentro de la app (Capacitor) */
   const APP_VUELTA = 'com.ariacruz.studio://auth';   /* v402: a dónde vuelve el login desde el navegador del sistema */

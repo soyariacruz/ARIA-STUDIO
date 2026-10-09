@@ -27,6 +27,7 @@ ver = int(re.search(r'^VERSION = (\d+)', open(FU, encoding='utf-8').read(), re.M
 log(f'— publicación programada · v{ver} (en vivo ahora: v{salud()})')
 if salud() == ver: log('ya está en vivo esa versión: nada que publicar'); sys.exit(0)
 sh('python3 publicar.py'); sh('node --check public/app.js'); sh('node --check public/personajes.js'); sh('node --check public/fichas360.js'); sh('node --check public/cuenta.js'); sh('python3 -m py_compile servidor/puente.py')
+if re.search(r"\.open\('(?:GET|POST)', '/api", open('public/app.js', encoding='utf-8').read()): raise SystemExit(log('✕ app.js tiene un XHR a /api sin CUENTA.servidorUrl: en la web lo contesta Vercel con 404 (v468)') or 1)
 sueltos = [f for f in os.listdir('public') if f.startswith('_')]
 if sueltos: raise SystemExit(log('✕ hay ficheros de prueba en public/: ' + ', '.join(sueltos)) or 1)
 cambios = sh('git status --short').strip()
