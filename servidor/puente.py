@@ -43,7 +43,7 @@ MAX_CUERPO = 40 * 1024 * 1024    # tope de una petición en modo servidor
 MAX_BIBLIO = 200 * 1024 * 1024   # tope de un fichero de la biblioteca común al copiarlo
 KINDS = ('vestidor', 'hair', 'expr')   # las bibliotecas a las que una cuenta puede añadir lo suyo
 _UUID = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
-VERSION = 448
+VERSION = 451
 _ctx = threading.local()   # la cuenta del hilo: la pone cada petición (y, a mano, cada hilo de fondo)
 def uid(): return getattr(_ctx, 'uid', None)   # en local siempre None
 DUENOS = tuple(e.strip().lower() for e in (os.environ.get('ARIA_DUENOS') or 'mix1994max@gmail.com').split(',') if e.strip())   # cuentas que pueden cambiar a Aria Cruz (en la web, la de Max)
@@ -5482,7 +5482,8 @@ class H(SimpleHTTPRequestHandler):
                 imgs = [resolve_ws(r) for r in by_kind(body.get('refs') or [], 'image')][:9]
                 if not imgs and body.get('rvmodo') != 'cosa': raise RuntimeError('hace falta al menos una imagen: tu personaje')
                 ver = body.get('vmodel') if body.get('vmodel') in RV_VER else '2.0'; res = body.get('resolution') if body.get('resolution') in ('480p', '720p', '1080p') else '720p'
-                modo = 'cosa' if body.get('rvmodo') == 'cosa' else 'persona'   # v436
+                modo = 'cosa' if body.get('rvmodo') in ('cosa', 'normal') else 'persona'   # v436 · v450: «normal» = directo a Seedance (como Genjutsu); «persona» = silueta
+                if body.get('nsfw') and _wfsn() and _wfsn() not in str(body.get('prompt') or ''): body['prompt'] = (str(body.get('prompt') or '').rstrip() + ' ' + _wfsn()).strip()   # v451: 🔥 también en Motion control (la barrera de Aria ya se miró arriba)
                 body['video'] = None; v_ = None   # v447: el base64 del vídeo ya no hace falta (memoria)
                 rid = 'rv-' + hashlib.sha1(os.urandom(16)).hexdigest()[:24]
                 jobs[rid] = {'t0': time.time(), 'item': body.get('item', 'video'), 'kind': 'video', 'model': 'rv-' + ver, 'prov': 'rv', 'rvmodo': modo, 'rv_st': 'in_progress', 'paso': 'Preparando…', 'usd': body.get('usd'), 'credits': None, 'meta': body.get('meta') or {}}
