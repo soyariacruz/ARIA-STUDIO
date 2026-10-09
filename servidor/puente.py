@@ -43,7 +43,7 @@ MAX_CUERPO = 40 * 1024 * 1024    # tope de una petición en modo servidor
 MAX_BIBLIO = 200 * 1024 * 1024   # tope de un fichero de la biblioteca común al copiarlo
 KINDS = ('vestidor', 'hair', 'expr')   # las bibliotecas a las que una cuenta puede añadir lo suyo
 _UUID = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
-VERSION = 461
+VERSION = 462
 _ctx = threading.local()   # la cuenta del hilo: la pone cada petición (y, a mano, cada hilo de fondo)
 def uid(): return getattr(_ctx, 'uid', None)   # en local siempre None
 DUENOS = tuple(e.strip().lower() for e in (os.environ.get('ARIA_DUENOS') or 'mix1994max@gmail.com').split(',') if e.strip())   # cuentas que pueden cambiar a Aria Cruz (en la web, la de Max)
@@ -1141,6 +1141,16 @@ def _rv_aspecto(w, h):   # el formato del vídeo de referencia → el más parec
     if not (w and h): return '9:16'
     return min(['16:9', '9:16', '4:3', '3:4', '1:1'], key=lambda a: abs((lambda p, q: p / q)(*map(int, a.split(':'))) - w / h))
 RV_PRE_USD = 0.06   # lo que cobra WaveSpeed por el análisis (profundidad 0,005 + SAM 3 0,05 + voz 0,001), además de Seedance
+RV_SUBIDA_MAX = 200 * 1024 * 1024; _RV_SUBIDAS = {}   # v462: vídeos subidos como fichero por /api/video_subir (token → ruta temporal, tipo, cuenta); se borran a las 2 h
+def _rv_subidas_limpia():
+    for k in [k for k, v in list(_RV_SUBIDAS.items()) if time.time() - v['t'] > 7200]:
+        try: os.remove(_RV_SUBIDAS[k]['p'])
+        except OSError: pass
+        _RV_SUBIDAS.pop(k, None)
+def _rv_subida_toma(tok):   # → (ruta, tipo) del vídeo que subió ESTA cuenta; _rv_corre lo copia a su carpeta de trabajo
+    _rv_subidas_limpia(); e = _RV_SUBIDAS.get(str(tok or ''))
+    if not e or (SERVIDOR and e['uid'] != uid()) or not os.path.isfile(e['p']): raise RuntimeError('el vídeo subido ya no está en el servidor: vuelve a elegirlo')
+    return e['p'], e['ct']
 _RV_VIVOS = set()   # rids cuyo hilo sigue corriendo en este proceso (si el servidor se reinicia a medias, el trabajo se da por perdido)
 def _rv_puede(): return (not SERVIDOR) or (uid() == ARIA_UID)
 def _ffmpeg():
@@ -1224,7 +1234,7 @@ def _rv_corre(rid, vd, vct, imgs, prompt, ver, res, c, modo='persona', motor='kl
             try:
                 try: bal0 = float((ws('GET', '/api/v3/balance').get('data') or {}).get('balance'))
                 except Exception: bal0 = None
-                src = os.path.join(d, 'src.' + ('mov' if vct == 'video/quicktime' else 'webm' if vct == 'video/webm' else 'mp4')); open(src, 'wb').write(vd)
+                src = os.path.join(d, 'src.' + ('mov' if vct == 'video/quicktime' else 'webm' if vct == 'video/webm' else 'mp4')); (shutil.copyfile(vd, src) if isinstance(vd, str) else open(src, 'wb').write(vd))   # v462: ruta del fichero subido, o bytes
                 paso('Preparando el vídeo…'); dur, w0, h0, con_audio = _ff_info(src)
                 if dur < 1 or not w0: raise RuntimeError('no se puede leer ese vídeo: prueba con un MP4')
                 orig = os.path.join(d, 'original.mp4')   # hasta 30 s, 24 fps, lado largo ≤ 1280
@@ -3459,7 +3469,7 @@ class H(SimpleHTTPRequestHandler):
         if self.command == 'POST':
             try: n = int(self.headers.get('Content-Length') or 0)
             except ValueError: n = -1
-            if n < 0 or n > MAX_CUERPO: self.close_connection = True; return self._corta(400 if n < 0 else 413, 'petición no válida' if n < 0 else 'petición demasiado grande')
+            if n < 0 or n > (RV_SUBIDA_MAX if self.path == '/api/video_subir' else MAX_CUERPO): self.close_connection = True; return self._corta(400 if n < 0 else 413, 'petición no válida' if n < 0 else 'petición demasiado grande')
         if self.command == 'POST' and self.path == '/api/invitado': return self._invitado()   # v396: la portada pregunta si un correo está invitado antes de mandarle el enlace
         if self.command == 'GET' and self.path.startswith('/api/ig/vuelta'): return self._ig_vuelta()   # v418: vuelta de Instagram (sin sesión: la cuenta va firmada en state)
         try: c = _quien(self)
@@ -3641,12 +3651,13 @@ class H(SimpleHTTPRequestHandler):
         if SERVIDOR:   # en servidor no se exige localhost: el origen, si viene, tiene que estar en la lista (ARIA_ORIGENES), y los POST son siempre JSON
             origin = (self.headers.get('Origin') or '').lower().rstrip('/')
             if origin and origin not in ORIGENES: return False
-            return not (self.command == 'POST' and 'application/json' not in (self.headers.get('Content-Type') or '').lower())
+            ct_ = (self.headers.get('Content-Type') or '').lower(); return not (self.command == 'POST' and 'application/json' not in ct_ and not (self.path == '/api/video_subir' and ct_.startswith('video/')))   # v462: la subida del vídeo va cruda (video/*: un formulario ajeno no puede mandar ese tipo, y fetch desde otra web exige un preflight que aquí no se contesta)
         hosts = (f'localhost:{PORT}', f'127.0.0.1:{PORT}', f'[::1]:{PORT}')
         if (self.headers.get('Host') or '').lower() not in hosts: return False
         origin = (self.headers.get('Origin') or '').lower()
         if origin and origin not in tuple('http://' + h for h in hosts): return False
-        if self.command == 'POST' and 'application/json' not in (self.headers.get('Content-Type') or '').lower(): return False
+        ct_ = (self.headers.get('Content-Type') or '').lower()
+        if self.command == 'POST' and 'application/json' not in ct_ and not (self.path == '/api/video_subir' and ct_.startswith('video/')): return False   # v462
         return True
     def _get(self):
         u = urllib.parse.urlparse(self.path); q = urllib.parse.parse_qs(u.query)
@@ -4047,6 +4058,7 @@ class H(SimpleHTTPRequestHandler):
         if SERVIDOR and self.path == '/api/feedback' and not _tope('feedback', 30, 86400): return self._json(429, {'error': 'Has mandado muchos comentarios hoy: gracias. Mañana puedes seguir.'})
         if SERVIDOR and self.path in ('/api/describir', '/api/personas_img', '/api/acc_cajas', '/api/pj_analizar') and not _tope('lectura', 120, 3600): return self._json(429, {'error': 'Demasiadas lecturas seguidas: espera unos minutos.'})
         if self.path in ('/api/perfil', '/api/ficha_panel', '/api/fichas360') and aria_fija(): return self._json(403, {'error': FIJA, 'fija': True})   # todo esto escribe en la ficha de Aria
+        if self.path == '/api/video_subir': return self._video_subir()   # v462
         if self.path == '/api/video': return self.do_video()
         if self.path == '/api/ig/desconectar':   # v418: se borra el token y los datos
             if not _ig_puede(): return self._json(403, {'error': 'Solo para el equipo, de momento.'})
@@ -5494,6 +5506,24 @@ class H(SimpleHTTPRequestHandler):
         if self.path != '/api/generar': return self._json(404, {'error': 'no'})
         n = int(self.headers.get('Content-Length') or 0); body = json.loads(self.rfile.read(n) or b'{}')
         return self._json(*_generar_r(self, body))   # v387: la misma generación la usa el MCP
+    def _video_subir(self):   # v462: el vídeo de Motion control sube como fichero (cuerpo crudo, en trozos de 1 MB a un temporal); nada de base64 en el JSON ni en memoria
+        if not _rv_puede(): return self._json(403, {'error': 'Recrear un vídeo todavía no está disponible'})
+        n = int(self.headers.get('Content-Length') or 0); ct = (self.headers.get('Content-Type') or 'video/mp4').split(';')[0].strip().lower()
+        if not ct.startswith('video/'): return self._json(400, {'error': 'eso no es un vídeo'})
+        if n <= 0 or n > RV_SUBIDA_MAX: return self._json(413, {'error': 'el vídeo pesa demasiado (máximo 200 MB)'})
+        import tempfile; tok = hashlib.sha1(os.urandom(16)).hexdigest()[:20]; ext = 'mov' if ct == 'video/quicktime' else 'webm' if ct == 'video/webm' else 'mp4'
+        p = os.path.join(tempfile.gettempdir(), f'aria_sube_{tok}.{ext}'); rem = n
+        with open(p, 'wb') as o:
+            while rem > 0:
+                b = self.rfile.read(min(1 << 20, rem))
+                if not b: break
+                o.write(b); rem -= len(b)
+        if rem > 0:
+            try: os.remove(p)
+            except OSError: pass
+            return self._json(400, {'error': 'la subida se cortó'})
+        _rv_subidas_limpia(); _RV_SUBIDAS[tok] = {'p': p, 'ct': ct, 'uid': uid() if SERVIDOR else None, 't': time.time()}
+        plog(f'video_subir {tok} · {n // 1048576} MB · {ct}'); return self._json(200, {'tmp': tok, 'tam': n})
     def do_video(self):   # {mode:i2v|r2v, prompt, image:{path|data}, refs:[{path}], duration, resolution, aspect, audio, item, usd}
         n = int(self.headers.get('Content-Length') or 0); body = json.loads(self.rfile.read(n) or b'{}')
         if not nsfw_ok() and _con_aria(body) and _es_nsfw(body.get('prompt')): return self._json(400, {'error': 'El contenido NSFW con Aria Cruz no está disponible en esta cuenta.'})
@@ -5506,9 +5536,11 @@ class H(SimpleHTTPRequestHandler):
                 if not load_ws(): raise RuntimeError('Conecta tu API de WaveSpeed en «Mis APIs»')
                 v_ = body.get('video')
                 if not isinstance(v_, dict): raise RuntimeError('falta el vídeo a recrear')
-                vd, vct = img_bytes(v_)
+                if v_.get('tmp'): vd, vct = _rv_subida_toma(v_.get('tmp'))   # v462: subido aparte como fichero (vd = ruta)
+                else:
+                    vd, vct = img_bytes(v_)
+                    if len(vd) > 200 * 1024 * 1024: raise RuntimeError('el vídeo pesa demasiado (máximo 200 MB)')
                 if not str(vct).startswith('video/'): raise RuntimeError('eso no es un vídeo')
-                if len(vd) > 200 * 1024 * 1024: raise RuntimeError('el vídeo pesa demasiado (máximo 200 MB)')
                 imgs = [resolve_ws(r) for r in by_kind(body.get('refs') or [], 'image') if r.get('rol') != 'foto'][:9]
                 if not imgs and body.get('rvmodo') != 'cosa': raise RuntimeError('hace falta al menos una imagen: tu personaje')
                 fu = [{'kind': 'image', 'name': str(f.get('name') or '')[:60], 'file': f['file'], 'thumb': str(f.get('thumb') or f['file'])[:200]} for f in ((body.get('meta') or {}).get('fuentes') or []) if isinstance(f, dict) and re.fullmatch(r'assets/[A-Za-z0-9_./ -]+', str(f.get('file') or '')) and '..' not in str(f.get('file'))][:8]   # v455: con qué se hizo
@@ -5536,7 +5568,7 @@ class H(SimpleHTTPRequestHandler):
                 if not _hf_listo(): raise RuntimeError('Genjutsu es de Higgsfield: conecta tu API de Higgsfield en «Mis APIs»')
                 v_ = body.get('video')
                 if not isinstance(v_, dict): raise RuntimeError('falta el vídeo a recrear')
-                vd, vct = img_bytes(v_)
+                vd, vct = (lambda p_, c_: (open(p_, 'rb').read(), c_))(*_rv_subida_toma(v_.get('tmp'))) if v_.get('tmp') else img_bytes(v_)   # v462: Genjutsu (local) sigue con bytes
                 if not str(vct).startswith('video/'): raise RuntimeError('eso no es un vídeo')
                 if len(vd) > 200 * 1024 * 1024: raise RuntimeError('el vídeo pesa demasiado (máximo 200 MB)')
                 imgs = [resolve_image(r) for r in by_kind(body.get('refs') or [], 'image')][:8]
