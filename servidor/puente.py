@@ -43,7 +43,7 @@ MAX_CUERPO = 40 * 1024 * 1024    # tope de una petición en modo servidor
 MAX_BIBLIO = 200 * 1024 * 1024   # tope de un fichero de la biblioteca común al copiarlo
 KINDS = ('vestidor', 'hair', 'expr')   # las bibliotecas a las que una cuenta puede añadir lo suyo
 _UUID = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
-VERSION = 462
+VERSION = 463
 _ctx = threading.local()   # la cuenta del hilo: la pone cada petición (y, a mano, cada hilo de fondo)
 def uid(): return getattr(_ctx, 'uid', None)   # en local siempre None
 DUENOS = tuple(e.strip().lower() for e in (os.environ.get('ARIA_DUENOS') or 'mix1994max@gmail.com').split(',') if e.strip())   # cuentas que pueden cambiar a Aria Cruz (en la web, la de Max)
@@ -1161,7 +1161,7 @@ def _ffmpeg():
     except Exception: raise RuntimeError('este servidor no tiene ffmpeg')
 def _ff(*args, timeout=900):
     import subprocess
-    r_ = subprocess.run([_ffmpeg(), '-v', 'error', '-y', *args], capture_output=True, text=True, timeout=timeout)
+    r_ = subprocess.run(([ 'nice', '-n', '15'] if shutil.which('nice') else []) + [_ffmpeg(), '-v', 'error', '-y', *args], capture_output=True, text=True, timeout=timeout)   # v463: que el servidor siga contestando mientras prepara un vídeo
     if r_.returncode: raise RuntimeError('ffmpeg ✕ ' + (r_.stderr or '').strip()[-300:])
 def _ff_info(fp):   # (duración s, ancho, alto, tiene audio) leyendo la cabecera que imprime ffmpeg (sin ffprobe)
     import subprocess
@@ -1169,9 +1169,13 @@ def _ff_info(fp):   # (duración s, ancho, alto, tiene audio) leyendo la cabecer
     m = re.search(r'Duration: (\d+):(\d+):([\d.]+)', t); dur = (int(m.group(1)) * 3600 + int(m.group(2)) * 60 + float(m.group(3))) if m else 0.0
     v = re.search(r'Video:.*?(\d{2,5})x(\d{2,5})', t); w, h = (int(v.group(1)), int(v.group(2))) if v else (0, 0)
     return dur, w, h, bool(re.search(r'Audio:', t))
-def _rv_espera(ep, body, nombre, tope=400):   # lanza un modelo de WaveSpeed y espera su resultado → URLs
+def _rv_lanza(ep, body, nombre):   # v463: solo lanza → id de WaveSpeed (se apunta en el trabajo para poder recogerlo tras un reinicio)
     r_ = ws('POST', '/api/v3/' + ep, body); rid = (r_.get('data') or {}).get('id')
     if not rid: raise RuntimeError(nombre + ': WaveSpeed no devolvió id')
+    return rid
+def _rv_espera(ep, body, nombre, tope=400):   # lanza un modelo de WaveSpeed y espera su resultado → URLs
+    return _rv_poll(_rv_lanza(ep, body, nombre), nombre, tope)
+def _rv_poll(rid, nombre, tope=400):
     for _ in range(tope):
         time.sleep(3); w_ = (ws('GET', f'/api/v3/predictions/{rid}/result').get('data') or {})
         if w_.get('status') == 'completed': return [o for o in (w_.get('outputs') or []) if o]
@@ -1295,23 +1299,47 @@ def _rv_corre(rid, vd, vct, imgs, prompt, ver, res, c, modo='persona', motor='kl
                 try: dd = (ws('POST', '/api/v3/model/price', {'model_id': ep, 'inputs': payload}) or {}).get('data') or {}; j['usd_sd'] = float(dd['discounted_price']) if dd.get('discounted_price') is not None else float(dd.get('price') or 0)
                 except Exception: pass
                 paso(f'{nombre_} está recreando el vídeo…'); j['rv_entrada'] = time.time(); plog(f'recrear {rid[-8:]} · {ep} · ' + json.dumps({k_: v_ for k_, v_ in payload.items() if k_ not in ('image', 'video', 'images', 'reference_videos', 'reference_images')})[:400])
-                gen = _rv_espera(ep, payload, nombre_, 600)[0]; gfp = os.path.join(d, 'gen.mp4'); _rv_baja(gen, gfp)
-                paso('Devolviendo el audio original…'); fn = f"{_safe_item(j['item'])}__{rid[-8:]}.mp4"; final = os.path.join(video_dir(), fn)
-                if con_audio: _ff('-i', gfp, '-i', orig, '-map', '0:v', '-map', '1:a', '-c:v', 'copy', '-c:a', 'aac', '-b:a', '192k', '-shortest', final)
-                else: shutil.copyfile(gfp, final)
-                if bal0 is not None:
-                    try:
-                        bal1 = float((ws('GET', '/api/v3/balance').get('data') or {}).get('balance')); dlt = round(bal0 - bal1, 4)
-                        if 0 < dlt < 60: j['usd'] = dlt
-                    except Exception: pass
-                j['file'] = 'assets/video/' + fn; j['rv_st'] = 'completed'; j['t_end'] = time.time(); j['paso'] = None
-                write_meta(j, j['file'], rid, {'status': 'completed'}); _job_done(rid); poster_for(final); plog(f'recrear {rid[-8:]} ✓ {fn} · {j.get("usd")} $')
+                j['ws_id'] = _rv_lanza(ep, payload, nombre_); j['ws_nombre'] = nombre_; j['con_audio'] = bool(con_audio); j['bal0'] = bal0; _job_apunta(rid)   # v463: apuntado → si el servidor se reinicia, se recoge igual
+                gen = _rv_poll(j['ws_id'], nombre_, 600)[0]; gfp = os.path.join(d, 'gen.mp4'); _rv_baja(gen, gfp)
+                _rv_acaba(rid, j, gfp, orig if con_audio else None, bal0, paso)
             except Exception as e:
                 j['rv_st'] = 'failed'; j['failed'] = True; j['rv_err'] = str(e)[:300]; j['t_end'] = time.time(); j['paso'] = None; plog('recrear ✕ ' + str(e)[:300]); _job_done(rid)
                 try: fallida_apunta(dict((j.get('meta') or {}), tab='video'), str(e))
                 except Exception: pass
     finally:
         _RV_VIVOS.discard(rid); shutil.rmtree(d, ignore_errors=True)
+def _rv_acaba(rid, j, gfp, orig, bal0, paso):   # v463: el final de un Motion control: audio original, coste real, ficha y carátula
+    paso('Devolviendo el audio original…'); fn = f"{_safe_item(j['item'])}__{rid[-8:]}.mp4"; final = os.path.join(video_dir(), fn)
+    if orig and os.path.isfile(orig): _ff('-i', gfp, '-i', orig, '-map', '0:v', '-map', '1:a', '-c:v', 'copy', '-c:a', 'aac', '-b:a', '192k', '-shortest', final)
+    else: shutil.copyfile(gfp, final)
+    if bal0 is not None:
+        try:
+            bal1 = float((ws('GET', '/api/v3/balance').get('data') or {}).get('balance')); dlt = round(float(bal0) - bal1, 4)
+            if 0 < dlt < 60: j['usd'] = dlt
+        except Exception: pass
+    j['file'] = 'assets/video/' + fn; j['rv_st'] = 'completed'; j['t_end'] = time.time(); j['paso'] = None
+    write_meta(j, j['file'], rid, {'status': 'completed'}); _job_done(rid); poster_for(final); plog(f'recrear {rid[-8:]} ✓ {fn} · {j.get("usd")} $')
+def _rv_reanuda(rid):   # v463: el servidor se reinició con Seedance/Kling/… generando: se recoge el resultado con el id apuntado y el vídeo de referencia guardado en assets/refs
+    import tempfile
+    j = jobs.get(rid); d = tempfile.mkdtemp(prefix='rv_'); _RV_VIVOS.add(rid)
+    def paso(t): j['paso'] = t; plog(f'recrear {rid[-8:]} · {t}'); print(f'recrear {rid[-8:]} · {t} (recuperado)', flush=True)
+    try:
+        with como(j.get('owner'), j.get('email') or '', bool(j.get('interno'))):
+            try:
+                nombre_ = j.get('ws_nombre') or 'Seedance'; paso(f'{nombre_} sigue recreando el vídeo (el servidor se reinició)…')
+                gen = _rv_poll(j['ws_id'], nombre_, 600)[0]; gfp = os.path.join(d, 'gen.mp4'); _rv_baja(gen, gfp)
+                orig = os.path.join(refs_dir(), f'mc_{rid[-8:]}.mp4') if j.get('con_audio') else None
+                _rv_acaba(rid, j, gfp, orig, j.get('bal0'), paso)
+            except Exception as e:
+                j['rv_st'] = 'failed'; j['failed'] = True; j['rv_err'] = str(e)[:300]; j['t_end'] = time.time(); j['paso'] = None; plog('recrear (recuperado) ✕ ' + str(e)[:300]); _job_done(rid)
+                try: fallida_apunta(dict((j.get('meta') or {}), tab='video'), str(e))
+                except Exception: pass
+    finally:
+        _RV_VIVOS.discard(rid); shutil.rmtree(d, ignore_errors=True)
+def _rv_reanuda_todos():   # v463: al arrancar, los Motion control que se quedaron esperando a WaveSpeed
+    for rid, j in list(jobs.items()):
+        if isinstance(j, dict) and j.get('prov') == 'rv' and j.get('rv_st', 'in_progress') == 'in_progress' and j.get('ws_id') and not j.get('rv_reanudado') and rid not in _RV_VIVOS:
+            j['rv_reanudado'] = True; _RV_VIVOS.add(rid); threading.Thread(target=_rv_reanuda, args=(rid,), daemon=True).start()
 UA = 'aria-mirror/1.0 (puente local; +https://higgsfield.ai)'   # Cloudflare devuelve 403 «error code: 1010» al User-Agent por defecto de Python
 if not SERVIDOR:   # en local las carpetas de siempre existen desde el arranque; en servidor cada cuenta crea las suyas la primera vez (live_dir(), video_dir(), pers_dir(), refs_dir())
     for _d in ('live', 'video', 'personajes', 'refs'): os.makedirs(os.path.join(RAIZ, 'assets', _d), exist_ok=True)
@@ -1459,6 +1487,10 @@ class _Jobs(dict):   # cada trabajo se apunta en disco al crearse: un reinicio d
         try:
             with open(JOBS_LOG, 'a') as f: f.write(json.dumps({'rid': k, 'job': v}, ensure_ascii=False, default=str) + '\n')
         except Exception: pass
+def _job_apunta(rid):   # v463: vuelve a apuntar el trabajo con lo que tenga ahora (p. ej. el id de WaveSpeed): al recuperar, vale la última línea
+    try:
+        with open(JOBS_LOG, 'a') as f: f.write(json.dumps({'rid': rid, 'job': jobs.get(rid) or {}}, ensure_ascii=False, default=str) + '\n')
+    except Exception: pass
 def _job_done(rid):   # terminado (descargado o fallado): ya no hay que recuperarlo
     try:
         with open(JOBS_LOG, 'a') as f: f.write(json.dumps({'rid': rid, 'done': True}) + '\n')
@@ -2374,7 +2406,9 @@ def _estado(rid):   # estado de un trabajo; si ha terminado, lo descarga a la ca
                     st = {'status': 'nsfw' if re.search(r'nsfw|content.?(policy|moderation)|safety', str(e), re.I) else 'failed', 'request_id': rid, 'error': str(e)}
             if st['status'] != 'in_progress' and not j.get('t_end'): j['t_end'] = time.time()
         elif j.get('prov') == 'rv':   # v435: lo lleva un hilo del puente (si el servidor se reinició a medias, se da por perdido)
-            if j.get('rv_st', 'in_progress') == 'in_progress' and rid not in _RV_VIVOS: j['rv_st'] = 'failed'; j['failed'] = True; j['rv_err'] = 'el servidor se reinició mientras se recreaba el vídeo'; j['paso'] = None; _job_done(rid)
+            if j.get('rv_st', 'in_progress') == 'in_progress' and rid not in _RV_VIVOS:
+                if j.get('ws_id') and not j.get('rv_reanudado'): j['rv_reanudado'] = True; _RV_VIVOS.add(rid); threading.Thread(target=_rv_reanuda, args=(rid,), daemon=True).start()   # v463: ya estaba en WaveSpeed → se recoge
+                else: j['rv_st'] = 'failed'; j['failed'] = True; j['rv_err'] = 'el servidor se reinició mientras se preparaba el vídeo'; j['paso'] = None; _job_done(rid)
             st = {'status': j.get('rv_st') or 'in_progress', 'request_id': rid, 'error': j.get('rv_err')}
         elif j.get('prov') == 'el':   # v328: ya lo descarga el hilo
             st = {'status': j.get('el_st') or 'in_progress', 'request_id': rid, 'error': j.get('el_err')}
@@ -3465,7 +3499,7 @@ class H(SimpleHTTPRequestHandler):
             return self._corta(404)
         if self.command == 'GET' and self.path.startswith('/mcp/img?'): return self._mcp_img()   # v387: una creación, con enlace firmado de 24 h
         if self.command == 'GET' and self.path == '/mcp': return self._json(405, {'error': 'MCP: usa POST con JSON-RPC (Streamable HTTP)'})
-        if self.command in ('GET', 'HEAD') and self.path == '/salud': return self._json(200, {'ok': True, 'v': VERSION, 'regalo': bool(CASA_KEY)}) if self.command == 'GET' else self._corta(200)   # el alojamiento pregunta aquí si el servidor está vivo (sin sesión, sin datos)
+        if self.command in ('GET', 'HEAD') and self.path == '/salud': return self._json(200, {'ok': True, 'v': VERSION, 'regalo': bool(CASA_KEY), 'rv': len(_RV_VIVOS)}) if self.command == 'GET' else self._corta(200)   # el alojamiento pregunta aquí si el servidor está vivo (sin sesión, sin datos)
         if self.command == 'POST':
             try: n = int(self.headers.get('Content-Length') or 0)
             except ValueError: n = -1
@@ -5523,7 +5557,7 @@ class H(SimpleHTTPRequestHandler):
             except OSError: pass
             return self._json(400, {'error': 'la subida se cortó'})
         _rv_subidas_limpia(); _RV_SUBIDAS[tok] = {'p': p, 'ct': ct, 'uid': uid() if SERVIDOR else None, 't': time.time()}
-        plog(f'video_subir {tok} · {n // 1048576} MB · {ct}'); return self._json(200, {'tmp': tok, 'tam': n})
+        plog(f'video_subir {tok} · {n // 1048576} MB · {ct}'); print(f'video_subir {tok} · {n // 1048576} MB', flush=True); return self._json(200, {'tmp': tok, 'tam': n})
     def do_video(self):   # {mode:i2v|r2v, prompt, image:{path|data}, refs:[{path}], duration, resolution, aspect, audio, item, usd}
         n = int(self.headers.get('Content-Length') or 0); body = json.loads(self.rfile.read(n) or b'{}')
         if not nsfw_ok() and _con_aria(body) and _es_nsfw(body.get('prompt')): return self._json(400, {'error': 'El contenido NSFW con Aria Cruz no está disponible en esta cuenta.'})
@@ -5723,7 +5757,7 @@ if __name__ == '__main__':
         os.makedirs(os.path.join(DATOS, 'usuarios'), mode=0o700, exist_ok=True)
         if not SECRETO: print('AVISO: falta ARIA_SECRETO (32+ caracteres): no se podrán guardar claves de API', flush=True)
         if os.environ.get('ARIA_DEV') == '1' and not DEV: print('ARIA_DEV se ignora: el servidor no escucha en 127.0.0.1', flush=True)
-    _jobs_restore(); threading.Thread(target=_vigilante, daemon=True).start()
+    _jobs_restore(); threading.Thread(target=_vigilante, daemon=True).start(); _rv_reanuda_todos()   # v463
     if not SERVIDOR: threading.Thread(target=_sync_bucle, daemon=True).start()   # v350: el local, al día con la Aria de la web
     if SERVIDOR and LIGA_WEB: os.makedirs(LIGA_WEB, exist_ok=True); threading.Thread(target=_liga_vigia, daemon=True).start()   # 🥊 Workflows en la web
     if SERVIDOR: threading.Thread(target=_push_vigia, daemon=True).start()   # v375: 🔔 avisos push

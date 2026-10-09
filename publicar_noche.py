@@ -19,6 +19,9 @@ def sh(cmd, **kw):
 def salud():
     try: return json.loads(urllib.request.urlopen('https://aria-studio.onrender.com/salud', timeout=15).read()).get('v')
     except Exception: return None
+def rv_en_marcha():   # v463: Motion control generándose (el push reinicia Render y lo mataría)
+    try: return int(json.loads(urllib.request.urlopen('https://aria-studio.onrender.com/salud', timeout=15).read()).get('rv') or 0)
+    except Exception: return 0
 PU = os.path.join(W, 'servidor', 'puente.py'); FU = '/Volumes/home/🗄 Work/CLAUDE/Aria Mirror/puente.py'
 ver = int(re.search(r'^VERSION = (\d+)', open(FU, encoding='utf-8').read(), re.M).group(1))
 log(f'— publicación programada · v{ver} (en vivo ahora: v{salud()})')
@@ -30,6 +33,9 @@ cambios = sh('git status --short').strip()
 if not cambios and salud() != ver:
     log('sin cambios en git pero Render no está en la versión: se lanza un despliegue a mano'); sh('python3 render_deploys.py lanzar')
 elif cambios:
+    t_rv = time.time()
+    while rv_en_marcha() and time.time() - t_rv < 30 * 60: log(f'hay {rv_en_marcha()} Motion control en marcha: se espera antes de publicar'); time.sleep(30)
+    if rv_en_marcha(): raise SystemExit(log('✕ sigue habiendo un Motion control en marcha tras 30 min: no se publica') or 1)
     msg = f'v{ver}: publicación programada de madrugada\n\nCo-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>'
     sh('git add -A'); sh(['git', 'commit', '-q', '-m', msg])
     for i in range(4):
