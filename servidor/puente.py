@@ -43,7 +43,7 @@ MAX_CUERPO = 40 * 1024 * 1024    # tope de una petición en modo servidor
 MAX_BIBLIO = 200 * 1024 * 1024   # tope de un fichero de la biblioteca común al copiarlo
 KINDS = ('vestidor', 'hair', 'expr')   # las bibliotecas a las que una cuenta puede añadir lo suyo
 _UUID = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
-VERSION = 492
+VERSION = 493
 _ctx = threading.local()   # la cuenta del hilo: la pone cada petición (y, a mano, cada hilo de fondo)
 def uid(): return getattr(_ctx, 'uid', None)   # en local siempre None
 DUENOS = tuple(e.strip().lower() for e in (os.environ.get('ARIA_DUENOS') or 'mix1994max@gmail.com').split(',') if e.strip())   # cuentas que pueden cambiar a Aria Cruz (en la web, la de Max)
@@ -647,6 +647,7 @@ def _adm_panel():
     AP = _apodos_lee()   # v393
     CONS = _consola_lee()   # v433
     PROB = _prob_lee()   # v492
+    MOD = _mod_lee(); HERR = _herr_lee()   # v493
     if _ADM_P[1] and time.time() - _ADM_P[0] < 20: return _ADM_P[1]
     L = _mi_lista(); por_mail = {m['email']: m for m in L}
     try: us = (_sb_adm('GET', '/auth/v1/admin/users?page=1&per_page=1000') or {}).get('users') or []
@@ -660,7 +661,7 @@ def _adm_panel():
         m = por_mail.get(e) or {}; a = auth.get(e) or {}; u = uid_de.get(e) or ''
         v = vis.get(u) or {}; tiene = bool(u and _UUID.fullmatch(u) and os.path.isdir(os.path.join(DATOS, 'usuarios', u)))
         x = _adm_cuenta(u) if tiene else {}
-        filas.append(dict({'email': e, 'apodo': AP.get(e, ''), 'consola': e in CONS, 'probador': e in PROB, 'acceso': e in por_mail, 'ignorado': e in ig and e not in por_mail, 'interno': bool(m.get('interno')), 'dueno': e in DUENOS, 'precio': m.get('precio'), 'alta': m.get('alta') or '',
+        filas.append(dict({'email': e, 'apodo': AP.get(e, ''), 'consola': e in CONS, 'probador': e in PROB, 'moderador': e in MOD, 'herramientas': HERR.get(e, []), 'acceso': e in por_mail, 'ignorado': e in ig and e not in por_mail, 'interno': bool(m.get('interno')), 'dueno': e in DUENOS, 'precio': m.get('precio'), 'alta': m.get('alta') or '',
                            'cid': _cid(u) if tiene else '', 'alias': str(d['alias'].get(_cid(u)) or '')[:40] if tiene else '',
                            'registro': str(a.get('created_at') or '')[:19], 'login': str(a.get('last_sign_in_at') or '')[:19],
                            'visto': int(v.get('t') or 0), 'dias': int(v.get('dias') or 0), 'primera': int(v.get('primera') or 0), 'online': bool(v.get('t') and ahora - v['t'] < 180), 'movil': bool(v.get('movil'))}, **x))
@@ -1193,7 +1194,7 @@ WM_SOLS = {   # v466: 🧽 laboratorio de marcas de agua (precios de wavespeed.a
     'nbp':       {'ep': 'google/nano-banana-pro/edit',          'name': 'Nano Banana Pro (editor)',  'usd': 0.14,  'nota': 'el editor más caro de Google', 'activo': False, 'body': lambda u, ar: _nbp(WM_PROMPT, [u], ar, 'std')},
     'gptimg':    {'ep': 'openai/gpt-image-2.5-sunburst/edit',   'name': 'GPT Image 2.5 (editor)',    'usd': 0.039, 'nota': 'editor de OpenAI con la instrucción', 'activo': True, 'body': lambda u, ar: _gpt(WM_PROMPT, [u], ar, 'std')},
 }
-def _wm_puede(): return (not SERVIDOR) or bool(getattr(_ctx, 'interno', False)) or uid() == ARIA_UID   # el equipo y la cuenta de Aria (la de Max)
+def _wm_puede(): return (not SERVIDOR) or bool(getattr(_ctx, 'interno', False)) or uid() == ARIA_UID or 'wm' in _herr_mias()   # v493: o un miembro con la herramienta abierta   # el equipo y la cuenta de Aria (la de Max)
 def _ar_de(data):   # el formato más parecido al de la imagen (para los editores)
     try:
         from PIL import Image; import io
@@ -3219,6 +3220,21 @@ def _prob_lee():
     except Exception: return set()
 def _prob_guarda(S):
     fp = _prob_fp(); open(fp + '.tmp', 'w', encoding='utf-8').write(json.dumps(sorted(S))); os.replace(fp + '.tmp', fp)
+def _mod_fp(): return os.path.join(DATOS, 'adm_moderadores.json')   # v493: moderadores (Admin solo con Miembros)
+def _mod_lee():
+    try: return {str(e).lower() for e in json.load(open(_mod_fp(), encoding='utf-8')) if isinstance(e, str)}
+    except Exception: return set()
+def _mod_guarda(S):
+    fp = _mod_fp(); open(fp + '.tmp', 'w', encoding='utf-8').write(json.dumps(sorted(S))); os.replace(fp + '.tmp', fp)
+def _mod_es(): return bool(SERVIDOR and (getattr(_ctx, 'email', '') or '').lower() in _mod_lee())
+HERR_KEYS = ('fichas', 'wm')   # v493: herramientas que se pueden abrir a un miembro (Creador de fichas, Logos y marcas de agua)
+def _herr_fp(): return os.path.join(DATOS, 'adm_herramientas.json')
+def _herr_lee():
+    try: D = json.load(open(_herr_fp(), encoding='utf-8')); return {str(k).lower(): [x for x in v if x in HERR_KEYS] for k, v in D.items() if isinstance(v, list)}
+    except Exception: return {}
+def _herr_guarda(D):
+    fp = _herr_fp(); open(fp + '.tmp', 'w', encoding='utf-8').write(json.dumps(D, ensure_ascii=False, sort_keys=True)); os.replace(fp + '.tmp', fp)
+def _herr_mias(): return _herr_lee().get((getattr(_ctx, 'email', '') or '').lower(), []) if SERVIDOR else list(HERR_KEYS)
 def _consola_lee():   # v433: correos (minúsculas) que ven la consola de desarrollador en la web (lo decide el equipo en Admin › Miembros)
     try: return {str(e).lower() for e in json.load(open(_consola_fp(), encoding='utf-8')) if isinstance(e, str)}
     except Exception: return set()
@@ -3772,7 +3788,7 @@ class H(SimpleHTTPRequestHandler):
             try: return self._json(200, {'ok': True, 'clave': _vapid()[1]})
             except Exception as e: return self._json(500, {'error': 'avisos no disponibles: ' + str(e)[:80]})
         if u.path == '/api/ping':
-            return self._json(200, {'ok': True, **({'espacio': {'usado': espacio(), 'tope': CUOTA}, 'aria_mia': not aria_fija(), 'nsfw': nsfw_ok()} if SERVIDOR else {}), 'model': MODEL, 'default': CASA_DEF if casa_on() else 'mstudio', 'models': model_list(), 'unavailable': unavailable(), 'ws': bool(load_ws()) or casa_on(), 'casa': casa_info() or casa_info_aunque(), 'regalo_nuevo': _regalos_nuevos(), 'wfsn': _wfsn_boton()[:400], 'primera': int(((_VISTO.get(uid() or '') or {}) if SERVIDOR else {}).get('primera') or 0), 'aspects': ASPECTS, 'key': _hf_listo(), 'ark': bool(load_ark()[0]), 'ark_usd': ARK_USD, 'genjutsu': (not SERVIDOR) or GJ_WEB, 'recrear': _rv_puede(), 'consola': bool(SERVIDOR and (getattr(_ctx, 'email', '') or '').lower() in _consola_lee()), 'probador': bool(SERVIDOR and (getattr(_ctx, 'email', '') or '').lower() in _prob_lee()), 'interno': bool(getattr(_ctx, 'interno', False)) if SERVIDOR else os.path.isfile(os.path.expanduser('~/.claude/notion.env')), **({'servidor': True} if SERVIDOR else {})})   # interno = el ordenador de Max: enseña «Workflows» (en la web alojada, solo las cuentas autorizadas)
+            return self._json(200, {'ok': True, **({'espacio': {'usado': espacio(), 'tope': CUOTA}, 'aria_mia': not aria_fija(), 'nsfw': nsfw_ok()} if SERVIDOR else {}), 'model': MODEL, 'default': CASA_DEF if casa_on() else 'mstudio', 'models': model_list(), 'unavailable': unavailable(), 'ws': bool(load_ws()) or casa_on(), 'casa': casa_info() or casa_info_aunque(), 'regalo_nuevo': _regalos_nuevos(), 'wfsn': _wfsn_boton()[:400], 'primera': int(((_VISTO.get(uid() or '') or {}) if SERVIDOR else {}).get('primera') or 0), 'aspects': ASPECTS, 'key': _hf_listo(), 'ark': bool(load_ark()[0]), 'ark_usd': ARK_USD, 'genjutsu': (not SERVIDOR) or GJ_WEB, 'recrear': _rv_puede(), 'consola': bool(SERVIDOR and (getattr(_ctx, 'email', '') or '').lower() in _consola_lee()), 'probador': bool(SERVIDOR and (getattr(_ctx, 'email', '') or '').lower() in _prob_lee()), 'moderador': _mod_es(), 'herramientas': _herr_mias() if SERVIDOR else [], 'interno': bool(getattr(_ctx, 'interno', False)) if SERVIDOR else os.path.isfile(os.path.expanduser('~/.claude/notion.env')), **({'servidor': True} if SERVIDOR else {})})   # interno = el ordenador de Max: enseña «Workflows» (en la web alojada, solo las cuentas autorizadas)
         if u.path == '/api/live':   # lo ya generado por la API (assets/live/<item>_<rid>.ext) → la app lo enseña sin volver a generar
             files = {}; allf = []; ld, vd = live_dir(), video_dir()
             for fn in sorted(os.listdir(ld), key=lambda f: os.path.getmtime(os.path.join(ld, f))):
@@ -4037,13 +4053,13 @@ class H(SimpleHTTPRequestHandler):
                 try: json.dump({'t': L[0]['t']}, open(os.path.join(casa(), 'fb_visto.json'), 'w'))
                 except Exception: pass
             return self._json(200, {'ok': True, 'items': L})
-        if u.path == '/api/admin/panel':   # v280: ⚙️ Admin (solo el equipo)
-            if not SERVIDOR or aria_fija(): return self._json(403, {'error': 'solo el equipo'})
+        if u.path == '/api/admin/panel':   # v280: ⚙️ Admin (solo el equipo) · v493: también los moderadores (su panel solo enseña Miembros)
+            if not SERVIDOR or (aria_fija() and not _mod_es()): return self._json(403, {'error': 'solo el equipo'})
             if 'fresco' in q: _ADM_P[1] = None; _ADM_C.clear()
             try: return self._json(200, dict({'ok': True, 'yo_dueno': (getattr(_ctx, 'email', '') or '').lower() in DUENOS}, **_adm_panel()))
             except Exception as e: plog('admin ✕ ' + str(e)[:200]); return self._json(200, {'ok': False, 'error': 'No se ha podido leer el panel.'})
-        if u.path == '/api/miembros':   # v277: 👥 la lista de miembros (solo el equipo)
-            if not SERVIDOR or aria_fija(): return self._json(403, {'error': 'solo el equipo'})
+        if u.path == '/api/miembros':   # v277: 👥 la lista de miembros (solo el equipo) · v493: y los moderadores
+            if not SERVIDOR or (aria_fija() and not _mod_es()): return self._json(403, {'error': 'solo el equipo'})
             try: return self._json(200, {'ok': True, 'items': _mi_lista()})
             except Exception as e: plog('miembros ✕ ' + str(e)[:160]); return self._json(200, {'ok': False, 'error': 'No se ha podido leer la lista de miembros.'})
         if u.path == '/api/bolsa':   # v269: 🎁 la bolsa del saldo regalo (solo el equipo)
@@ -4994,9 +5010,23 @@ class H(SimpleHTTPRequestHandler):
             except Exception as ex: plog('admin acciones ✕ ' + str(ex)[:200]); return self._json(400, {'error': 'No se ha podido guardar el cambio.'})
         if self.path == '/api/miembros':   # v277: {accion:'alta', emails:'texto', precio?} · {accion:'baja', email} — solo el equipo; nunca toca las cuentas del equipo
             n = int(self.headers.get('Content-Length') or 0); body = json.loads(self.rfile.read(min(n, 200000)) or b'{}')
-            if not SERVIDOR or aria_fija(): return self._json(403, {'error': 'solo el equipo'})
+            if not SERVIDOR or (aria_fija() and not _mod_es()): return self._json(403, {'error': 'solo el equipo'})
             if not _tope('miembros', 60, 3600): return self._json(429, {'error': 'Demasiados cambios seguidos: espera un rato.'})
             ac = body.get('accion'); quien = getattr(_ctx, 'email', '')
+            if aria_fija() and ac not in ('alta', 'baja'): return self._json(403, {'error': 'solo el equipo'})   # v493: el moderador da altas y bajas, nada de roles
+            if ac == 'moderador':   # v493: {accion:'moderador', email, on}
+                e = str(body.get('email') or '').strip().lower()
+                if not re.fullmatch(r'[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}', e): return self._json(400, {'error': 'correo no válido'})
+                S_ = _mod_lee(); (S_.add(e) if body.get('on') else S_.discard(e)); _mod_guarda(S_); _ADM_P[1] = None; plog(f'moderador {e} → {"on" if body.get("on") else "off"} ({quien})')
+                return self._json(200, {'ok': True, 'moderador': e in S_})
+            if ac == 'herramientas':   # v493: {accion:'herramientas', email, herr:[...]} → qué herramientas de Admin ve ese miembro
+                e = str(body.get('email') or '').strip().lower()
+                if not re.fullmatch(r'[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}', e): return self._json(400, {'error': 'correo no válido'})
+                H_ = [x for x in (body.get('herr') or []) if x in HERR_KEYS]; D_ = _herr_lee()
+                if H_: D_[e] = H_
+                else: D_.pop(e, None)
+                _herr_guarda(D_); _ADM_P[1] = None; plog(f'herramientas {e} → {H_} ({quien})')
+                return self._json(200, {'ok': True, 'herramientas': H_})
             if ac == 'probador':   # v492: {accion:'probador', email, on} → ese miembro puede entrar en lo cerrado (Vídeo, Audio, Efectos) con «Visitar igualmente»
                 e = str(body.get('email') or '').strip().lower()
                 if not re.fullmatch(r'[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}', e): return self._json(400, {'error': 'correo no válido'})
