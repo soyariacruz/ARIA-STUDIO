@@ -43,7 +43,7 @@ MAX_CUERPO = 40 * 1024 * 1024    # tope de una petición en modo servidor
 MAX_BIBLIO = 200 * 1024 * 1024   # tope de un fichero de la biblioteca común al copiarlo
 KINDS = ('vestidor', 'hair', 'expr')   # las bibliotecas a las que una cuenta puede añadir lo suyo
 _UUID = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
-VERSION = 484
+VERSION = 491
 _ctx = threading.local()   # la cuenta del hilo: la pone cada petición (y, a mano, cada hilo de fondo)
 def uid(): return getattr(_ctx, 'uid', None)   # en local siempre None
 DUENOS = tuple(e.strip().lower() for e in (os.environ.get('ARIA_DUENOS') or 'mix1994max@gmail.com').split(',') if e.strip())   # cuentas que pueden cambiar a Aria Cruz (en la web, la de Max)
@@ -2289,15 +2289,30 @@ def _comp_lista(d, yo):   # para la Comunidad: las carpetas que me comparten los
         u, cs = _comp_carpetas(cid, d)
         for c in cs: out.append({'cid': cid, 'id': c['id'], 'nombre': ('🤝 Creado con tus personajes' if c.get('colab') == yo else str(c.get('nombre') or 'Carpeta'))[:40], 'n': len(_comp_items(u, c)), 'alias': str(d['alias'].get(cid) or '')[:40], 'conjunta': c.get('colab') == yo})
     return out
-def _mini_de(full):   # la miniatura (560 px) de una imagen de assets/live de cualquier cuenta; se hace la primera vez. Si no se puede, la propia imagen
+def _mini_de(full, webp=False):   # la miniatura (560 px) de una imagen de assets/live de cualquier cuenta; se hace la primera vez. Si no se puede, la propia imagen · v487: en WebP si el navegador lo acepta
     if os.sep + 'live' + os.sep not in full: return full
-    mini = os.path.join(os.path.dirname(full), '.mini', os.path.basename(full) + '.jpg')
+    mini = os.path.join(os.path.dirname(full), '.mini', os.path.basename(full) + ('.webp' if webp else '.jpg'))
     if not os.path.isfile(mini):
         try:
             from PIL import Image
-            os.makedirs(os.path.dirname(mini), exist_ok=True); im = Image.open(full).convert('RGB'); im.thumbnail((560, 560)); im.save(mini + '.tmp', 'JPEG', quality=80); os.replace(mini + '.tmp', mini)
+            os.makedirs(os.path.dirname(mini), exist_ok=True); im = Image.open(full).convert('RGB'); im.thumbnail((560, 560))
+            if webp: im.save(mini + '.tmp', 'WEBP', quality=76, method=4)
+            else: im.save(mini + '.tmp', 'JPEG', quality=80)
+            os.replace(mini + '.tmp', mini)
         except Exception: return full
     return mini
+def _mini_webp(full):   # v487: de una miniatura .mini/<x>.jpg ya hecha, su hermana .webp (se crea la primera vez)
+    if '.mini' + os.sep not in full or not full.endswith('.jpg'): return full
+    w = full[:-4] + '.webp'
+    if not os.path.isfile(w):
+        try:
+            from PIL import Image
+            Image.open(full).convert('RGB').save(w + '.tmp', 'WEBP', quality=76, method=4); os.replace(w + '.tmp', w)
+        except Exception: return full
+    return w
+def _webp_ok(h):   # v487: ¿el navegador acepta WebP?
+    try: return 'image/webp' in (h.headers.get('Accept') or '')
+    except Exception: return False
 def _favs_fp(): return os.path.join(_dir(), 'favs.json')
 def _favs_lee():   # v239: mis favoritos de la Fototeca y la Filmoteca → {'biblio': [ids], 'videoteca': [ids]}
     try: d = json.load(open(_favs_fp(), encoding='utf-8'))
@@ -3659,20 +3674,14 @@ class H(SimpleHTTPRequestHandler):
                 if u_ and '/'.join(L_[2:]) in (_com_lee().get('den') or {}) and L_[3] in ('live', 'video') and not L_[4].startswith('.'):
                     c_ = os.path.join(DATOS, 'usuarios', u_, 'assets', L_[3], L_[4]); full = c_ if os.path.isfile(c_) else None
             if not full: return self._corta(404)
-            if 'm=1' in (urllib.parse.urlparse(self.path).query or '') and '/live/' in full:   # v238: miniatura (560 px) si ya está hecha; si no, se hace ahora
-                mini = os.path.join(os.path.dirname(full), '.mini', os.path.basename(full) + '.jpg')
-                if not os.path.isfile(mini):
-                    try:
-                        from PIL import Image
-                        os.makedirs(os.path.dirname(mini), exist_ok=True); im = Image.open(full).convert('RGB'); im.thumbnail((560, 560)); im.save(mini + '.tmp', 'JPEG', quality=80); os.replace(mini + '.tmp', mini)
-                    except Exception: mini = None
-                if mini: full = mini
+            if 'm=1' in (urllib.parse.urlparse(self.path).query or '') and '/live/' in full: full = _mini_de(full, _webp_ok(self))   # v238: miniatura (560 px) si ya está hecha; si no, se hace ahora · v487: WebP
+            if '/.mini/' in rel and _webp_ok(self): full = _mini_webp(full)   # v487: la miniatura ya pedida por su ruta, en WebP
             self._cc = 'private, max-age=600'; self._fijo = full
             return super().do_HEAD() if cabeza else super().do_GET()
         if rel.startswith('assets/compartida/'):   # v220: una creación de una carpeta que otro creador me ha compartido
             full = _compartida(rel)
             if not full: return self._corta(404)
-            if 'm=1' in (urllib.parse.urlparse(self.path).query or ''): full = _mini_de(full)   # v239: miniatura
+            if 'm=1' in (urllib.parse.urlparse(self.path).query or ''): full = _mini_de(full, _webp_ok(self))   # v239: miniatura · v487: WebP
             self._cc = 'private, no-cache'; self._fijo = full
             return super().do_HEAD() if cabeza else super().do_GET()
         if rel.startswith('assets/prestamo/'):   # del personaje de otro creador: su foto, su ficha 360 y su cuerpo · v330: también la ficha (Max: quien colabora la ve en Referencias), solo con la colaboración aceptada
@@ -3683,7 +3692,8 @@ class H(SimpleHTTPRequestHandler):
         base = casa(); full = os.path.join(base, *rel.split('/'))
         if _dentro(base, full) and os.path.isfile(full):
             fijo = rel.startswith(('assets/live/', 'assets/video/')) and not rel.split('/')[-1].startswith('.')   # v416: las creaciones no cambian nunca (nombre con el id): el navegador se las queda
-            if fijo and 'm=1' in (urllib.parse.urlparse(self.path).query or '') and rel.startswith('assets/live/') and '/.mini/' not in rel: full = _mini_de(full)   # v416: miniatura para la cuadrícula
+            if fijo and 'm=1' in (urllib.parse.urlparse(self.path).query or '') and rel.startswith('assets/live/') and '/.mini/' not in rel: full = _mini_de(full, _webp_ok(self))   # v416 · v487: WebP
+            if rel.startswith('assets/live/.mini/') and _webp_ok(self): full = _mini_webp(full)   # v487: la miniatura ya pedida por su ruta, en WebP: miniatura para la cuadrícula
             self._cc = 'private, max-age=2592000, immutable' if fijo else 'private, no-cache'; self._fijo = full
             return super().do_HEAD() if cabeza else super().do_GET()
         if _biblio_ok(rel) and DATOS:   # v298: si la biblioteca común está en el disco del servidor (Filmoteca ligera, muestras de voz), se sirve de ahí; antes se mandaba al almacén público, donde no están
@@ -5114,7 +5124,7 @@ class H(SimpleHTTPRequestHandler):
                 plog('feedback ✕ Notion: ' + str(e)[:200]); return self._json(200, {'ok': True, 'local': True, 'aviso': 'guardado en local; Notion no respondió'})
         if self.path == '/api/perfil':   # datos editables del perfil de Aria + sincronizar prompt base ↔ datos (Gemini 2.5 Flash por WaveSpeed, céntimos)
             n = int(self.headers.get('Content-Length') or 0); body = json.loads(self.rfile.read(n) or b'{}'); act = body.get('action') or 'set'
-            OK_KEYS = {'bio', 'basePrompt', 'name', 'handle', 'tagline', 'ig.url', 'ig.followers', 'ig.posts', 'datos.edad', 'datos.altura', 'datos.origen', 'datos.idiomas', 'datos.nacida', 'datos.rasgos', 'datos.personalidad', 'datos.voz'}
+            OK_KEYS = {'bio', 'basePrompt', 'name', 'handle', 'tagline', 'ig.url', 'ig.followers', 'ig.posts', 'datos.edad', 'datos.altura', 'datos.origen', 'datos.idiomas', 'datos.nacida', 'datos.rasgos', 'datos.personalidad', 'datos.voz', 'peinadoId', 'peinadoNombre', 'peinadoDesc'}
             def _load():
                 return _cat_load()
             def _save(head, C): _cat_save(head, C)
