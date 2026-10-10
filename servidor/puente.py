@@ -43,7 +43,7 @@ MAX_CUERPO = 40 * 1024 * 1024    # tope de una petición en modo servidor
 MAX_BIBLIO = 200 * 1024 * 1024   # tope de un fichero de la biblioteca común al copiarlo
 KINDS = ('vestidor', 'hair', 'expr')   # las bibliotecas a las que una cuenta puede añadir lo suyo
 _UUID = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
-VERSION = 498
+VERSION = 500
 _ctx = threading.local()   # la cuenta del hilo: la pone cada petición (y, a mano, cada hilo de fondo)
 def uid(): return getattr(_ctx, 'uid', None)   # en local siempre None
 DUENOS = tuple(e.strip().lower() for e in (os.environ.get('ARIA_DUENOS') or 'mix1994max@gmail.com').split(',') if e.strip())   # cuentas que pueden cambiar a Aria Cruz (en la web, la de Max)
@@ -648,6 +648,7 @@ def _adm_panel():
     CONS = _consola_lee()   # v433
     PROB = _prob_lee()   # v492
     MOD = _mod_lee(); HERR = _herr_lee()   # v493
+    SINREG = _sinreg_lee()   # v500
     if _ADM_P[1] and time.time() - _ADM_P[0] < 20: return _ADM_P[1]
     L = _mi_lista(); por_mail = {m['email']: m for m in L}
     try: us = (_sb_adm('GET', '/auth/v1/admin/users?page=1&per_page=1000') or {}).get('users') or []
@@ -661,7 +662,7 @@ def _adm_panel():
         m = por_mail.get(e) or {}; a = auth.get(e) or {}; u = uid_de.get(e) or ''
         v = vis.get(u) or {}; tiene = bool(u and _UUID.fullmatch(u) and os.path.isdir(os.path.join(DATOS, 'usuarios', u)))
         x = _adm_cuenta(u) if tiene else {}
-        filas.append(dict({'email': e, 'apodo': AP.get(e, ''), 'consola': e in CONS, 'probador': e in PROB, 'moderador': e in MOD, 'herramientas': HERR.get(e, []), 'acceso': e in por_mail, 'ignorado': e in ig and e not in por_mail, 'interno': bool(m.get('interno')), 'dueno': e in DUENOS, 'precio': m.get('precio'), 'alta': m.get('alta') or '',
+        filas.append(dict({'email': e, 'apodo': AP.get(e, ''), 'consola': e in CONS, 'probador': e in PROB, 'moderador': e in MOD, 'herramientas': HERR.get(e, []), 'sin_regalo': e in SINREG, 'acceso': e in por_mail, 'ignorado': e in ig and e not in por_mail, 'interno': bool(m.get('interno')), 'dueno': e in DUENOS, 'precio': m.get('precio'), 'alta': m.get('alta') or '',
                            'cid': _cid(u) if tiene else '', 'alias': str(d['alias'].get(_cid(u)) or '')[:40] if tiene else '',
                            'registro': str(a.get('created_at') or '')[:19], 'login': str(a.get('last_sign_in_at') or '')[:19],
                            'visto': int(v.get('t') or 0), 'dias': int(v.get('dias') or 0), 'primera': int(v.get('primera') or 0), 'online': bool(v.get('t') and ahora - v['t'] < 180), 'movil': bool(v.get('movil'))}, **x))
@@ -968,7 +969,7 @@ def _mon_lee():   # SIEMPRE con _cerrojo('mon') cogido. Da la bienvenida la prim
     except Exception: m = {}
     if not isinstance(m, dict): m = {}
     mes = time.strftime('%Y-%m', time.gmtime()); cambia = False
-    if 'bienvenida' not in m: m.update({'bienvenida': BIENVENIDA, 'alta': int(time.time())}); cambia = True
+    if 'bienvenida' not in m: m.update({'bienvenida': 0.0 if (getattr(_ctx, 'email', '') or '').lower() in _sinreg_lee() else BIENVENIDA, 'alta': int(time.time())}); cambia = True   # v500: sin regalo si Max lo decidió al darle acceso
     for c in _bolsa_lee().get('camp') or []:   # v269: campañas para todas las cuentas (una vez cada una)
         if isinstance(c, dict) and c.get('id') and c['id'] not in (m.get('camp') or []) and (not c.get('desde_alta') or int(m.get('alta') or 0) <= int(c.get('t') or 0)):
             m['extra'] = round(float(m.get('extra') or 0) + float(c.get('usd') or 0), 4); m.setdefault('camp', []).append(c['id']); m.setdefault('hist', []).append({'t': int(time.time()), 'dia': time.strftime('%Y-%m-%d', time.gmtime()), 'usd': -float(c.get('usd') or 0), 'que': 'regalo', 'nota': str(c.get('nota') or '')[:80]}); cambia = True
@@ -3220,6 +3221,12 @@ def _prob_lee():
     except Exception: return set()
 def _prob_guarda(S):
     fp = _prob_fp(); open(fp + '.tmp', 'w', encoding='utf-8').write(json.dumps(sorted(S))); os.replace(fp + '.tmp', fp)
+def _sinreg_fp(): return os.path.join(DATOS, 'adm_sinregalo.json')   # v500: correos dados de alta SIN el regalo de bienvenida
+def _sinreg_lee():
+    try: return {str(e).lower() for e in json.load(open(_sinreg_fp(), encoding='utf-8')) if isinstance(e, str)}
+    except Exception: return set()
+def _sinreg_guarda(S):
+    fp = _sinreg_fp(); open(fp + '.tmp', 'w', encoding='utf-8').write(json.dumps(sorted(S))); os.replace(fp + '.tmp', fp)
 def _mod_fp(): return os.path.join(DATOS, 'adm_moderadores.json')   # v493: moderadores (Admin solo con Miembros)
 def _mod_lee():
     try: return {str(e).lower() for e in json.load(open(_mod_fp(), encoding='utf-8')) if isinstance(e, str)}
@@ -5051,6 +5058,8 @@ class H(SimpleHTTPRequestHandler):
                     pr = body.get('precio'); pr = None if pr in (None, '') else float(str(pr).replace(',', '.'))
                     if pr is not None and not (0 <= pr <= 5000): return self._json(400, {'error': 'El plan tiene que ser entre 0 y 5000 $.'})
                     filas = [dict({'email': e}, **({'precio': pr} if pr is not None else {})) for e in em if e not in equipo]   # las del equipo no se tocan
+                    if 'regalo' in body:   # v500 (Max): con o sin el dólar de bienvenida, persona a persona
+                        S_ = _sinreg_lee(); (S_.difference_update(em) if body.get('regalo') else S_.update(em)); _sinreg_guarda(S_)
                     if filas: _sb_adm('POST', '/rest/v1/miembros', filas, 'resolution=merge-duplicates,return=minimal')
                     _AV[1] = None; nuevos = [e for e in em if e not in ya]; plog(f'👥 miembros: {quien} da de alta {len(nuevos)} nuevos ({len(filas)} filas)')
                     return self._json(200, {'ok': True, 'nuevos': len(nuevos), 'actualizados': len(filas) - len(nuevos), 'equipo': len(em) - len(filas), 'items': _mi_lista()})
