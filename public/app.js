@@ -1267,8 +1267,8 @@ function rvImgBox() { // v439: la imagen de referencia extra (una ficha, una fot
 function rvControls(it) { // el panel de Crear vídeo cuando toca Recrear con Seedance · v439: en el orden de Max, sin scroll si cabe, y el botón siempre a la vista
   const box = el('div', 'stack'); vSync(); box.appendChild(vQueRow());
   box.appendChild(charSel('video'));
+  if (state.vchar !== false) { const tg = trayGroup(['vestidor', 'hair']); tg.querySelectorAll('.ing').forEach(d => d.addEventListener('click', () => { state.back = 'video'; }, true)); box.appendChild(tg); }   /* v450 (Max): prenda y peinado, como en Crear vídeo */   /* v503 (Max): Prenda y Peinado justo debajo del influencer */
   { const fr = el('div', 'vframes rvboxes'); fr.appendChild(gjVidBox()); fr.appendChild(rvImgBox()); box.appendChild(fr); }
-  if (state.vchar !== false) { const tg = trayGroup(['vestidor', 'hair']); tg.querySelectorAll('.ing').forEach(d => d.addEventListener('click', () => { state.back = 'video'; }, true)); box.appendChild(tg); }   /* v450 (Max): prenda y peinado, como en Crear vídeo */
   { const sil = state.rvmodo === 'persona'; box.appendChild(ddRow({ cls: 'rvque', ico: sil ? '🛡️' : '🎭', titulo: sil ? 'Método silueta' : 'Método normal', tip: 'Método', cab: 'Método',
       items: [{ k: 'normal', ico: '🎭', b: 'Normal', small: 'Como Genjutsu: Seedance ve el vídeo y la ficha de tu personaje y lo sustituye con su cara, su cuerpo, su ropa y su peinado.', on: !sil }, { k: 'persona', ico: '🛡️', b: 'Silueta', small: 'Si el normal se bloquea (censura): se analiza el vídeo y Seedance solo ve una silueta y la voz cambiada. Cuesta ' + fmtUsd(RV_PRE_USD) + ' más y tarda un poco más.', on: sil }],
       pick: k => { state.rvmodo = k; persist('am_rvmodo', k); renderSide(); } })); }
