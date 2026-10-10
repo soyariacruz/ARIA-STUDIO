@@ -582,7 +582,9 @@
 
   // ---------------------------------------------------------------- pintar el Perfil
   function top() {
-    const t = el('div', 'pjtop'); t.appendChild(el('small', 'pjk', 'Mis personajes'));
+    const t = el('div', 'pjtop');
+    if (window.CUENTA && CUENTA.web && window.COM) { const al = (COM.D && COM.D.alias) || ''; let av = ''; try { const yo = COM.D && (COM.D.cuentas || []).find(q => q.yo); if (yo && window.comAvC) av = comAvC(yo, 'sm'); } catch (e) {} const cr = el('button', 'pjcreador' + (al ? '' : ' sin'), `${av}<small>Creador</small><b>${esc(al || 'Ponte un nombre')}</b><i>✎</i>`); cr.title = 'Tu nombre y tu foto de creador: así te ven en la Comunidad y en los mensajes'; cr.onclick = () => { if (window.comNombre) comNombre(!al); }; t.appendChild(cr); }   /* v405 · v494 (Max): encima de Mis personajes, con su foto */
+    t.appendChild(el('small', 'pjk', 'Mis personajes'));
     const row = el('div', 'pjcircles');
     const add = (id, name, img) => { const c = el('button', 'pjc' + (!pj.wiz && pj.sel === id ? ' on' : ''), `<span class="pjav">${img ? `<img src="${img}" alt="">` : `<i>${(name || '?')[0]}</i>`}</span><small>${name}</small>`); c.onclick = () => { const tabAhora = pj.tabBy[pj.sel]; pj.wiz = null; if (window.FB) FB.open = false; if (window.F3) F3.open = false; saveDraft(); pj.sel = id; if (tabAhora) pj.tabBy[id] = tabAhora;   // la pestaña abierta se mantiene al cambiar de personaje
       if (window.setChar && window.CH && CH().id !== id && (id === 'aria' || pj.list.some(p => p.id === id && p.ficha360))) setChar(id, true);   // el principal va a la par del Perfil
@@ -610,7 +612,6 @@
         const fi = suyosEl().map(x => x.dataset.pid).indexOf(from); const L = pj.list.slice(); const [m] = L.splice(L.findIndex(p => p.id === from), 1); L.splice(j > fi ? j - 1 : j, 0, m); L.forEach((p, i) => { p.orden = i; }); pj.list = L; syncChars(); renderProfile();
         fetch('/api/personajes_orden', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids: L.map(p => p.id) }) }).catch(() => toast('No se pudo guardar el orden')); }; }
     t.appendChild(row);
-    if (window.CUENTA && CUENTA.web && window.COM) { const al = (COM.D && COM.D.alias) || ''; const cr = el('button', 'pjcreador' + (al ? '' : ' sin'), `<small>Creador</small><b>${esc(al || 'Ponte un nombre')}</b><i>✎</i>`); cr.title = 'Tu nombre de creador: así te ven en la Comunidad y en los mensajes'; cr.onclick = () => { if (window.comNombre) comNombre(!al); }; t.appendChild(cr); }   /* v405: el nombre de creador, junto a Mis personajes */
     return t;
   }
   function viewAria() { const P = C.perfil; const v = el('div', 'pjview two'); const col = el('div', 'pjimgcol'); const im = el('img', 'pjbig'); im.src = P.ficha; im.onclick = () => lightbox(P.ficha, 'Ficha 360 · ' + P.name); col.appendChild(im); v.appendChild(col); return v; }
@@ -938,7 +939,7 @@
       arr(p.fichas).forEach((f, k) => { const d = el('div', 'f3card wide', `<div class="f3img sm"><img src="${f.thumb || f.img}" alt=""></div><b>${esc(f.nombre)}</b><small>${infoDe(f)}</small>`); d.querySelector('.f3img').onclick = () => visorFichas(V, k);
         const a = el('div', 'f3acts'); V[k].acts.forEach(([t, fn, tip]) => { const bt = el('button', 'btn', t); bt.title = tip; bt.onclick = e => { e.stopPropagation(); fn(); }; a.appendChild(bt); }); d.appendChild(a); g.appendChild(d); });
       if (!g.children.length) g.appendChild(el('div', 'accempty', 'Todavía no has creado ninguna.')); sec2.appendChild(g); if (jobs.length) startTick(); }
-    w.appendChild(sec2);   // v253: de vuelta en «Mi ficha 360» (sin la pestaña aparte)
+    if (!(window.CUENTA && CUENTA.web) || (window.state && state.interno)) w.appendChild(sec2);   // v253: de vuelta en «Mi ficha 360» (sin la pestaña aparte) · v494 (Max): para los miembros, el Creador de fichas vive en Admin › Herramientas
     if (!p.celebrado) setTimeout(() => celebrar(p), 250);
     return w;
   }
