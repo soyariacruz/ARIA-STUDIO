@@ -43,7 +43,7 @@ MAX_CUERPO = 40 * 1024 * 1024    # tope de una petición en modo servidor
 MAX_BIBLIO = 200 * 1024 * 1024   # tope de un fichero de la biblioteca común al copiarlo
 KINDS = ('vestidor', 'hair', 'expr')   # las bibliotecas a las que una cuenta puede añadir lo suyo
 _UUID = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
-VERSION = 491
+VERSION = 492
 _ctx = threading.local()   # la cuenta del hilo: la pone cada petición (y, a mano, cada hilo de fondo)
 def uid(): return getattr(_ctx, 'uid', None)   # en local siempre None
 DUENOS = tuple(e.strip().lower() for e in (os.environ.get('ARIA_DUENOS') or 'mix1994max@gmail.com').split(',') if e.strip())   # cuentas que pueden cambiar a Aria Cruz (en la web, la de Max)
@@ -646,6 +646,7 @@ _ADM_P = [0.0, None]
 def _adm_panel():
     AP = _apodos_lee()   # v393
     CONS = _consola_lee()   # v433
+    PROB = _prob_lee()   # v492
     if _ADM_P[1] and time.time() - _ADM_P[0] < 20: return _ADM_P[1]
     L = _mi_lista(); por_mail = {m['email']: m for m in L}
     try: us = (_sb_adm('GET', '/auth/v1/admin/users?page=1&per_page=1000') or {}).get('users') or []
@@ -659,7 +660,7 @@ def _adm_panel():
         m = por_mail.get(e) or {}; a = auth.get(e) or {}; u = uid_de.get(e) or ''
         v = vis.get(u) or {}; tiene = bool(u and _UUID.fullmatch(u) and os.path.isdir(os.path.join(DATOS, 'usuarios', u)))
         x = _adm_cuenta(u) if tiene else {}
-        filas.append(dict({'email': e, 'apodo': AP.get(e, ''), 'consola': e in CONS, 'acceso': e in por_mail, 'ignorado': e in ig and e not in por_mail, 'interno': bool(m.get('interno')), 'dueno': e in DUENOS, 'precio': m.get('precio'), 'alta': m.get('alta') or '',
+        filas.append(dict({'email': e, 'apodo': AP.get(e, ''), 'consola': e in CONS, 'probador': e in PROB, 'acceso': e in por_mail, 'ignorado': e in ig and e not in por_mail, 'interno': bool(m.get('interno')), 'dueno': e in DUENOS, 'precio': m.get('precio'), 'alta': m.get('alta') or '',
                            'cid': _cid(u) if tiene else '', 'alias': str(d['alias'].get(_cid(u)) or '')[:40] if tiene else '',
                            'registro': str(a.get('created_at') or '')[:19], 'login': str(a.get('last_sign_in_at') or '')[:19],
                            'visto': int(v.get('t') or 0), 'dias': int(v.get('dias') or 0), 'primera': int(v.get('primera') or 0), 'online': bool(v.get('t') and ahora - v['t'] < 180), 'movil': bool(v.get('movil'))}, **x))
@@ -3212,6 +3213,12 @@ def _apodos_lee():   # v393: apodo interno por correo (solo lo ve el equipo)
 def _apodos_guarda(d):
     fp = _apodos_fp(); open(fp + '.tmp', 'w', encoding='utf-8').write(json.dumps(d, ensure_ascii=False)); os.replace(fp + '.tmp', fp)
 def _consola_fp(): return os.path.join(DATOS, 'adm_consola.json')
+def _prob_fp(): return os.path.join(DATOS, 'adm_probadores.json')   # v492: correos que pueden entrar en lo cerrado («Visitar igualmente»)
+def _prob_lee():
+    try: return {str(e).lower() for e in json.load(open(_prob_fp(), encoding='utf-8')) if isinstance(e, str)}
+    except Exception: return set()
+def _prob_guarda(S):
+    fp = _prob_fp(); open(fp + '.tmp', 'w', encoding='utf-8').write(json.dumps(sorted(S))); os.replace(fp + '.tmp', fp)
 def _consola_lee():   # v433: correos (minúsculas) que ven la consola de desarrollador en la web (lo decide el equipo en Admin › Miembros)
     try: return {str(e).lower() for e in json.load(open(_consola_fp(), encoding='utf-8')) if isinstance(e, str)}
     except Exception: return set()
@@ -3765,7 +3772,7 @@ class H(SimpleHTTPRequestHandler):
             try: return self._json(200, {'ok': True, 'clave': _vapid()[1]})
             except Exception as e: return self._json(500, {'error': 'avisos no disponibles: ' + str(e)[:80]})
         if u.path == '/api/ping':
-            return self._json(200, {'ok': True, **({'espacio': {'usado': espacio(), 'tope': CUOTA}, 'aria_mia': not aria_fija(), 'nsfw': nsfw_ok()} if SERVIDOR else {}), 'model': MODEL, 'default': CASA_DEF if casa_on() else 'mstudio', 'models': model_list(), 'unavailable': unavailable(), 'ws': bool(load_ws()) or casa_on(), 'casa': casa_info() or casa_info_aunque(), 'regalo_nuevo': _regalos_nuevos(), 'wfsn': _wfsn_boton()[:400], 'primera': int(((_VISTO.get(uid() or '') or {}) if SERVIDOR else {}).get('primera') or 0), 'aspects': ASPECTS, 'key': _hf_listo(), 'ark': bool(load_ark()[0]), 'ark_usd': ARK_USD, 'genjutsu': (not SERVIDOR) or GJ_WEB, 'recrear': _rv_puede(), 'consola': bool(SERVIDOR and (getattr(_ctx, 'email', '') or '').lower() in _consola_lee()), 'interno': bool(getattr(_ctx, 'interno', False)) if SERVIDOR else os.path.isfile(os.path.expanduser('~/.claude/notion.env')), **({'servidor': True} if SERVIDOR else {})})   # interno = el ordenador de Max: enseña «Workflows» (en la web alojada, solo las cuentas autorizadas)
+            return self._json(200, {'ok': True, **({'espacio': {'usado': espacio(), 'tope': CUOTA}, 'aria_mia': not aria_fija(), 'nsfw': nsfw_ok()} if SERVIDOR else {}), 'model': MODEL, 'default': CASA_DEF if casa_on() else 'mstudio', 'models': model_list(), 'unavailable': unavailable(), 'ws': bool(load_ws()) or casa_on(), 'casa': casa_info() or casa_info_aunque(), 'regalo_nuevo': _regalos_nuevos(), 'wfsn': _wfsn_boton()[:400], 'primera': int(((_VISTO.get(uid() or '') or {}) if SERVIDOR else {}).get('primera') or 0), 'aspects': ASPECTS, 'key': _hf_listo(), 'ark': bool(load_ark()[0]), 'ark_usd': ARK_USD, 'genjutsu': (not SERVIDOR) or GJ_WEB, 'recrear': _rv_puede(), 'consola': bool(SERVIDOR and (getattr(_ctx, 'email', '') or '').lower() in _consola_lee()), 'probador': bool(SERVIDOR and (getattr(_ctx, 'email', '') or '').lower() in _prob_lee()), 'interno': bool(getattr(_ctx, 'interno', False)) if SERVIDOR else os.path.isfile(os.path.expanduser('~/.claude/notion.env')), **({'servidor': True} if SERVIDOR else {})})   # interno = el ordenador de Max: enseña «Workflows» (en la web alojada, solo las cuentas autorizadas)
         if u.path == '/api/live':   # lo ya generado por la API (assets/live/<item>_<rid>.ext) → la app lo enseña sin volver a generar
             files = {}; allf = []; ld, vd = live_dir(), video_dir()
             for fn in sorted(os.listdir(ld), key=lambda f: os.path.getmtime(os.path.join(ld, f))):
@@ -4990,6 +4997,11 @@ class H(SimpleHTTPRequestHandler):
             if not SERVIDOR or aria_fija(): return self._json(403, {'error': 'solo el equipo'})
             if not _tope('miembros', 60, 3600): return self._json(429, {'error': 'Demasiados cambios seguidos: espera un rato.'})
             ac = body.get('accion'); quien = getattr(_ctx, 'email', '')
+            if ac == 'probador':   # v492: {accion:'probador', email, on} → ese miembro puede entrar en lo cerrado (Vídeo, Audio, Efectos) con «Visitar igualmente»
+                e = str(body.get('email') or '').strip().lower()
+                if not re.fullmatch(r'[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}', e): return self._json(400, {'error': 'correo no válido'})
+                S_ = _prob_lee(); (S_.add(e) if body.get('on') else S_.discard(e)); _prob_guarda(S_); _ADM_P[1] = None; plog(f'probador {e} → {"on" if body.get("on") else "off"} ({quien})')
+                return self._json(200, {'ok': True, 'probador': e in S_})
             if ac == 'consola':   # v433: {accion:'consola', email, on} → ese miembro ve la consola de desarrollador en la web
                 e = str(body.get('email') or '').strip().lower()
                 if not re.fullmatch(r'[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}', e): return self._json(400, {'error': 'correo no válido'})
