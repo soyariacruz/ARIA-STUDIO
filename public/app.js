@@ -1840,16 +1840,21 @@ function comCreadorDr(c, o) { // v425: la ficha de un CREADOR (quién es y sus i
   dr.appendChild(el('div', 'cpfmast', 'Sus influencers')); const g = el('div', 'cpgal m'); vis.forEach(p => { const d = el('div', 'cpcard chica' + (p.abierto ? ' abierta' : ''), `<div class="cpimg">${comFoto(c, p)}${p.nuevo ? '<em class="cpnew">NEW</em>' : ''}</div><div class="cpinf"><b>${esc(p.nombre)}</b>${comIgU(p.ig) ? `<small class="cpigs">📸 @${esc(comIgU(p.ig))}</small>` : `<small>${esc(p.usuario || '')}</small>`}</div>`); d.onclick = () => o.pj(c.cid, p.pid); g.appendChild(d); }); dr.appendChild(g); comAvPon(dr); return dr; }
 async function fichaPop(cid, pid) { // v323: la MISMA ficha que en la Comunidad (comFichaDr), en una ventana sobre donde estés
   if (typeof COM === 'undefined') return; if (!COM.D) await comCarga(); const c = COM.D && comCta(cid); const p = c && (c.personajes || []).find(z => z.pid === pid);
-  if (!p) { if (!COM.on) await comAbre('dir'); COM.pz = { cid, creador: true }; comPinta(); return; }
+  if (!p) { if (c && typeof comCreadorDr === 'function') { creadorPop(cid); return; } if (!COM.on) await comAbre('dir'); COM.pz = { cid, creador: true }; comPinta(); return; }   /* v496 (Max): el creador también en ventana, sin salir */
   let m0 = $('#fpop'); if (m0) m0.remove(); m0 = el('div', 'cpfbg fijo'); m0.id = 'fpop'; document.body.appendChild(m0); COM.fpop = [cid, pid];
   const cierra = () => { m0.remove(); COM.fpop = null; }; m0.onmousedown = e => { if (e.target === m0) cierra(); };
   const irCom = async pz => { cierra(); if (!COM.on) await comAbre('dir'); COM.pz = pz; comPinta(); };
   m0.appendChild(comFichaDr(c, p, { cerrar: cierra, ver: pz => pz.pid ? fichaPop(pz.cid, pz.pid) : irCom(pz), msg: async x => { cierra(); await comAbre('msg', x); }, fuera: cierra })); comAvPon(m0); }
+function creadorPop(cid) { // v496 (Max): la ficha de un CREADOR en una ventana sobre donde estés (la misma que en la Comunidad)
+  const c = COM.D && comCta(cid); if (!c) return; let m0 = $('#fpop'); if (m0) m0.remove(); m0 = el('div', 'cpfbg fijo'); m0.id = 'fpop'; document.body.appendChild(m0); COM.fpop = [cid, null];
+  const cierra = () => { m0.remove(); COM.fpop = null; }; m0.onmousedown = e => { if (e.target === m0) cierra(); };
+  m0.appendChild(comCreadorDr(c, { cerrar: cierra, ver: pz => { if (pz.pid) fichaPop(pz.cid, pz.pid); }, msg: async x => { cierra(); await comAbre('msg', x); }, fuera: cierra })); comAvPon(m0); }
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && $('#fpop') && !document.getElementById('compide')) { $('#fpop').remove(); COM.fpop = null; } });
 async function pubFicha(x) { // v303: el circulito → la ficha de ese influencer (o la del creador) en la Comunidad
   if (typeof COM === 'undefined') return; COM.visto = true; if (!COM.D) await comCarga(); let pz = { cid: x.cid, creador: true };
   if (x.pid === 'aria') { const a = comAria(), p0 = comAriaPj(a); if (a && p0) pz = { cid: a.cid, pid: p0.pid }; } else if (x.pid) { const c = comCta(x.cid); if (c && (c.personajes || []).some(p => p.pid === x.pid)) pz = { cid: x.cid, pid: x.pid }; }
   if (pz.pid) { fichaPop(pz.cid, pz.pid); return; }   /* v321: la ficha en una ventana, sin salir */
+  if (comCta(pz.cid) && typeof comCreadorDr === 'function') { creadorPop(pz.cid); return; }   /* v496 (Max): el creador, en ventana, sin irse a la Comunidad */
   if (!COM.on) await comAbre('dir'); COM.pz = pz; comPinta(); }
 function pubSubir(kind) { // v303: subir a la Fototeca / Filmoteca de la comunidad algo hecho fuera — solo con su archivo Y su prompt
   const vid = kind === 'video'; let m0 = $('#pubsub'); if (m0) m0.remove(); m0 = el('div', 'fxm'); m0.id = 'pubsub'; document.body.appendChild(m0); const cierra = () => m0.remove(); m0.onclick = e => { if (e.target === m0) cierra(); };
@@ -4133,7 +4138,7 @@ const tagAPI = t => String(t || '').replace(/@IMG(\d+)/gi, '@Image$1');   // v31
 const tagUI = t => String(t || '').replace(/@Image(\d+)/g, '@IMG$1');   // v307: las marcas del resaltado no se mandan
 /* v485 (Max): modo Fácil / Pro en Crear imagen. Fácil: eliges, escribes tu idea (una caja) y se junta sola al generar. Pro: una caja «Prompt», lo que escribes es lo que se manda; lo elegido arriba entra como frases rosas que puedes borrar. De momento solo equipo y local */
 function modoCur() { if (!state.modo) { try { state.modo = localStorage.getItem('am_modo') || 'facil'; } catch (e) { state.modo = 'facil'; } } return state.modo; }
-function modoOk() { return !(window.CUENTA && CUENTA.web) || !!state.interno || !!(window.CUENTA && (CUENTA.interno || CUENTA.ariaMia)); }
+function modoOk() { return !(window.CUENTA && CUENTA.web) || !!state.interno || !!state.probador || !!(window.CUENTA && (CUENTA.interno || CUENTA.ariaMia)); }   /* v496: también los beta testers */
 function modoPro() { return modoOk() && modoCur() === 'pro'; }
 function proMarcado(it) { // v487 (Max): bloques separados por una línea en blanco: PERSONAJE (la base) y uno por preset elegido, cada uno en rosa
   state._marcaPartes = true; let p; try { p = tagUI(livePlan('crear', it).prompt); } finally { state._marcaPartes = false; }
