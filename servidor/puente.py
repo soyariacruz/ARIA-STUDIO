@@ -43,7 +43,7 @@ MAX_CUERPO = 40 * 1024 * 1024    # tope de una petición en modo servidor
 MAX_BIBLIO = 200 * 1024 * 1024   # tope de un fichero de la biblioteca común al copiarlo
 KINDS = ('vestidor', 'hair', 'expr')   # las bibliotecas a las que una cuenta puede añadir lo suyo
 _UUID = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
-VERSION = 501
+VERSION = 502
 _ctx = threading.local()   # la cuenta del hilo: la pone cada petición (y, a mano, cada hilo de fondo)
 def uid(): return getattr(_ctx, 'uid', None)   # en local siempre None
 DUENOS = tuple(e.strip().lower() for e in (os.environ.get('ARIA_DUENOS') or 'mix1994max@gmail.com').split(',') if e.strip())   # cuentas que pueden cambiar a Aria Cruz (en la web, la de Max)
@@ -649,6 +649,7 @@ def _adm_panel():
     PROB = _prob_lee()   # v492
     MOD = _mod_lee(); HERR = _herr_lee()   # v493
     SINREG = _sinreg_lee()   # v500
+    ALTAPOR = _altapor_lee()   # v502
     if _ADM_P[1] and time.time() - _ADM_P[0] < 20: return _ADM_P[1]
     L = _mi_lista(); por_mail = {m['email']: m for m in L}
     try: us = (_sb_adm('GET', '/auth/v1/admin/users?page=1&per_page=1000') or {}).get('users') or []
@@ -662,7 +663,7 @@ def _adm_panel():
         m = por_mail.get(e) or {}; a = auth.get(e) or {}; u = uid_de.get(e) or ''
         v = vis.get(u) or {}; tiene = bool(u and _UUID.fullmatch(u) and os.path.isdir(os.path.join(DATOS, 'usuarios', u)))
         x = _adm_cuenta(u) if tiene else {}
-        filas.append(dict({'email': e, 'apodo': AP.get(e, ''), 'consola': e in CONS, 'probador': e in PROB, 'moderador': e in MOD, 'herramientas': HERR.get(e, []), 'sin_regalo': e in SINREG, 'acceso': e in por_mail, 'ignorado': e in ig and e not in por_mail, 'interno': bool(m.get('interno')), 'dueno': e in DUENOS, 'precio': m.get('precio'), 'alta': m.get('alta') or '',
+        filas.append(dict({'email': e, 'apodo': AP.get(e, ''), 'consola': e in CONS, 'probador': e in PROB, 'moderador': e in MOD, 'herramientas': HERR.get(e, []), 'sin_regalo': e in SINREG, 'alta_por': ALTAPOR.get(e, ''), 'acceso': e in por_mail, 'ignorado': e in ig and e not in por_mail, 'interno': bool(m.get('interno')), 'dueno': e in DUENOS, 'precio': m.get('precio'), 'alta': m.get('alta') or '',
                            'cid': _cid(u) if tiene else '', 'alias': str(d['alias'].get(_cid(u)) or '')[:40] if tiene else '',
                            'registro': str(a.get('created_at') or '')[:19], 'login': str(a.get('last_sign_in_at') or '')[:19],
                            'visto': int(v.get('t') or 0), 'dias': int(v.get('dias') or 0), 'primera': int(v.get('primera') or 0), 'online': bool(v.get('t') and ahora - v['t'] < 180), 'movil': bool(v.get('movil'))}, **x))
@@ -3227,6 +3228,17 @@ def _sinreg_lee():
     except Exception: return set()
 def _sinreg_guarda(S):
     fp = _sinreg_fp(); open(fp + '.tmp', 'w', encoding='utf-8').write(json.dumps(sorted(S))); os.replace(fp + '.tmp', fp)
+def _altapor_fp(): return os.path.join(DATOS, 'adm_altas_por.json')   # v502: quién dio de alta a cada correo {correo: correo_de_quien}
+def _altapor_lee():
+    try: D = json.load(open(_altapor_fp(), encoding='utf-8')); return {str(k).lower(): str(v).lower() for k, v in D.items()} if isinstance(D, dict) else {}
+    except Exception: return {}
+def _altapor_apunta(nuevos, quien):
+    try:
+        D = _altapor_lee(); ch = False
+        for e in nuevos:
+            if e not in D: D[e] = (quien or '').lower(); ch = True
+        if ch: fp = _altapor_fp(); open(fp + '.tmp', 'w', encoding='utf-8').write(json.dumps(D, ensure_ascii=False, sort_keys=True)); os.replace(fp + '.tmp', fp)
+    except Exception as e_: plog('altas_por ✕ ' + str(e_)[:120])
 def _mod_fp(): return os.path.join(DATOS, 'adm_moderadores.json')   # v493: moderadores (Admin solo con Miembros)
 def _mod_lee():
     try: return {str(e).lower() for e in json.load(open(_mod_fp(), encoding='utf-8')) if isinstance(e, str)}
@@ -4063,7 +4075,11 @@ class H(SimpleHTTPRequestHandler):
         if u.path == '/api/admin/panel':   # v280: ⚙️ Admin (solo el equipo) · v493: también los moderadores (su panel solo enseña Miembros)
             if not SERVIDOR or (aria_fija() and not _mod_es()): return self._json(403, {'error': 'solo el equipo'})
             if 'fresco' in q: _ADM_P[1] = None; _ADM_C.clear()
-            try: return self._json(200, dict({'ok': True, 'yo_dueno': (getattr(_ctx, 'email', '') or '').lower() in DUENOS}, **_adm_panel()))
+            try:
+                P_ = _adm_panel()
+                if aria_fija():   # v502: el moderador solo ve a quien ha dado de alta él
+                    yo_ = (getattr(_ctx, 'email', '') or '').lower(); P_ = {'filas': [z for z in (P_.get('filas') or []) if z.get('alta_por') == yo_], 'resumen': {}, 'disco': None}
+                return self._json(200, dict({'ok': True, 'yo_dueno': (getattr(_ctx, 'email', '') or '').lower() in DUENOS}, **P_))
             except Exception as e: plog('admin ✕ ' + str(e)[:200]); return self._json(200, {'ok': False, 'error': 'No se ha podido leer el panel.'})
         if u.path == '/api/miembros':   # v277: 👥 la lista de miembros (solo el equipo) · v493: y los moderadores
             if not SERVIDOR or (aria_fija() and not _mod_es()): return self._json(403, {'error': 'solo el equipo'})
@@ -5061,7 +5077,7 @@ class H(SimpleHTTPRequestHandler):
                     if 'regalo' in body:   # v500 (Max): con o sin el dólar de bienvenida, persona a persona
                         S_ = _sinreg_lee(); (S_.difference_update(em) if body.get('regalo') else S_.update(em)); _sinreg_guarda(S_)
                     if filas: _sb_adm('POST', '/rest/v1/miembros', filas, 'resolution=merge-duplicates,return=minimal')
-                    _AV[1] = None; nuevos = [e for e in em if e not in ya]; plog(f'👥 miembros: {quien} da de alta {len(nuevos)} nuevos ({len(filas)} filas)')
+                    _AV[1] = None; nuevos = [e for e in em if e not in ya]; _altapor_apunta(nuevos, quien); plog(f'👥 miembros: {quien} da de alta {len(nuevos)} nuevos ({len(filas)} filas)')
                     return self._json(200, {'ok': True, 'nuevos': len(nuevos), 'actualizados': len(filas) - len(nuevos), 'equipo': len(em) - len(filas), 'items': _mi_lista()})
                 if ac == 'baja':
                     e = str(body.get('email') or '').strip().lower()
